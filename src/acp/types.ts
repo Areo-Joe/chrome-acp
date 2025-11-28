@@ -59,15 +59,60 @@ export type ProxyResponse =
   | ProxyPromptCompleteMessage
   | ProxyPermissionRequestMessage;
 
+// Content block types
+export interface TextContent {
+  type: "text";
+  text: string;
+}
+
+export interface ImageContent {
+  type: "image";
+  mimeType: string;
+  data: string;
+}
+
+export type ContentBlock = TextContent | ImageContent | { type: string; text?: string };
+
 // Session update types from ACP
+export interface AgentMessageChunkUpdate {
+  sessionUpdate: "agent_message_chunk";
+  content: ContentBlock;
+}
+
+export interface ToolCallUpdate {
+  sessionUpdate: "tool_call";
+  toolCallId: string;
+  title: string;
+  status: string;
+}
+
+export interface ToolCallStatusUpdate {
+  sessionUpdate: "tool_call_update";
+  toolCallId: string;
+  status: string;
+}
+
+export interface AgentThoughtChunkUpdate {
+  sessionUpdate: "agent_thought_chunk";
+  content: ContentBlock;
+}
+
+export interface PlanUpdate {
+  sessionUpdate: "plan";
+}
+
+export interface UserMessageChunkUpdate {
+  sessionUpdate: "user_message_chunk";
+  content: ContentBlock;
+}
+
 export type SessionUpdate =
-  | {
-      sessionUpdate: "agent_message_chunk";
-      content: { type: string; text?: string };
-    }
-  | { sessionUpdate: "tool_call"; title: string; status: string }
-  | { sessionUpdate: "tool_call_update"; toolCallId: string; status: string }
-  | { sessionUpdate: "plan" | "agent_thought_chunk" | "user_message_chunk" };
+  | AgentMessageChunkUpdate
+  | ToolCallUpdate
+  | ToolCallStatusUpdate
+  | AgentThoughtChunkUpdate
+  | PlanUpdate
+  | UserMessageChunkUpdate;
 
 // Connection state
 export type ConnectionState =

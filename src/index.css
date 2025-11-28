@@ -5,8 +5,12 @@
     @apply font-sans;
   }
 
+  html, body, #root {
+    @apply h-full w-full m-0 p-0;
+  }
+
   body {
-    @apply grid place-items-center min-w-[320px] min-h-screen relative m-0 bg-background text-foreground;
+    @apply min-w-[320px] relative bg-background text-foreground;
   }
 }
 
