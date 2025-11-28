@@ -1,0 +1,15 @@
+{
+  "name": "acp-proxy-server",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "private": true,
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.5.1"
+  }
+}
