@@ -94,4 +94,3 @@ function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
     </div>
   );
 }
-
