@@ -137,11 +137,26 @@ const result = await Bun.build({
 
 const end = performance.now();
 
-const outputTable = result.outputs.map(output => ({
-  File: path.relative(process.cwd(), output.path),
-  Type: output.kind,
-  Size: formatFileSize(output.size),
-}));
+// Rename index.html to hello.html
+const indexHtmlPath = path.join(outdir, "index.html");
+const helloHtmlPath = path.join(outdir, "hello.html");
+if (existsSync(indexHtmlPath)) {
+  await Bun.write(helloHtmlPath, Bun.file(indexHtmlPath));
+  await rm(indexHtmlPath);
+}
+
+const outputTable = result.outputs.map(output => {
+  let filePath = output.path;
+  // Show hello.html instead of index.html in output
+  if (filePath.endsWith("index.html")) {
+    filePath = filePath.replace("index.html", "hello.html");
+  }
+  return {
+    File: path.relative(process.cwd(), filePath),
+    Type: output.kind,
+    Size: formatFileSize(output.size),
+  };
+});
 
 console.table(outputTable);
 const buildTime = (end - start).toFixed(2);
