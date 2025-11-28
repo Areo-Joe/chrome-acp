@@ -3,7 +3,17 @@
   "description": "Base Level Extension",
   "version": "1.0",
   "manifest_version": 3,
+  "permissions": [
+    "sidePanel"
+  ],
   "action": {
-    "default_popup": "dist/hello.html"
+    "default_title": "Open Side Panel"
+  },
+  "side_panel": {
+    "default_path": "dist/sidepanel.html"
+  },
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
   }
 }

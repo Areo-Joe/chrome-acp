@@ -129,6 +129,10 @@ const result = await Bun.build({
   minify: true,
   target: "browser",
   sourcemap: "linked",
+  naming: {
+    chunk: "[name]-[hash].[ext]",
+    asset: "[name]-[hash].[ext]",
+  },
   define: {
     "process.env.NODE_ENV": JSON.stringify("production"),
   },
@@ -137,22 +141,22 @@ const result = await Bun.build({
 
 const end = performance.now();
 
-// Rename index.html to hello.html
-const indexHtmlPath = path.join(outdir, "index.html");
-const helloHtmlPath = path.join(outdir, "hello.html");
-if (existsSync(indexHtmlPath)) {
-  await Bun.write(helloHtmlPath, Bun.file(indexHtmlPath));
-  await rm(indexHtmlPath);
-}
+// Build background service worker separately
+const bgResult = await Bun.build({
+  entrypoints: [path.resolve("src", "background.ts")],
+  outdir,
+  minify: true,
+  target: "browser",
+  sourcemap: "linked",
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+  },
+});
 
-const outputTable = result.outputs.map(output => {
-  let filePath = output.path;
-  // Show hello.html instead of index.html in output
-  if (filePath.endsWith("index.html")) {
-    filePath = filePath.replace("index.html", "hello.html");
-  }
+const allOutputs = [...result.outputs, ...bgResult.outputs];
+const outputTable = allOutputs.map(output => {
   return {
-    File: path.relative(process.cwd(), filePath),
+    File: path.relative(process.cwd(), output.path),
     Type: output.kind,
     Size: formatFileSize(output.size),
   };
