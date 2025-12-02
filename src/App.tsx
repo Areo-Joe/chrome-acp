@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { ACPConnect } from "@/components/ACPConnect";
 import { ChatInterface } from "@/components/ChatInterface";
 import type { ACPClient } from "@/acp/client";
@@ -9,6 +9,26 @@ import "./index.css";
 export function App() {
   const [client, setClient] = useState<ACPClient | null>(null);
   const [showSettings, setShowSettings] = useState(true);
+  // Track if we've auto-hidden settings for the current connection
+  const hasAutoHiddenRef = useRef(false);
+
+  const handleClientReady = (c: ACPClient | null) => {
+    const wasConnected = client !== null;
+    const isNowConnected = c !== null;
+
+    setClient(c);
+
+    // Only auto-hide on initial connection (transition from disconnected to connected)
+    if (!wasConnected && isNowConnected && !hasAutoHiddenRef.current) {
+      hasAutoHiddenRef.current = true;
+      setShowSettings(false);
+    }
+
+    // Reset the flag when disconnected
+    if (!isNowConnected) {
+      hasAutoHiddenRef.current = false;
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen w-full max-w-2xl mx-auto">
@@ -27,10 +47,7 @@ export function App() {
 
       {/* Settings Panel (collapsible) - keep mounted to preserve connection */}
       <div className={showSettings ? "p-4 border-b bg-muted/30" : "hidden"}>
-        <ACPConnect onClientReady={(c) => {
-          setClient(c);
-          if (c) setShowSettings(false);
-        }} />
+        <ACPConnect onClientReady={handleClientReady} />
       </div>
 
       {/* Main Content */}
