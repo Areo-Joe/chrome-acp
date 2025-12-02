@@ -1,17 +1,42 @@
 {
   "name": "acp-proxy-server",
-  "module": "index.ts",
+  "version": "1.0.0",
+  "description": "WebSocket proxy server that bridges Chrome extensions to ACP agents",
   "type": "module",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "bin": {
+    "acp-proxy": "./dist/cli/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "bun run build"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/node": "^22"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
-  "private": true,
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.5.1",
+    "@hono/node-server": "^1.13.8",
+    "@hono/node-ws": "^1.0.5",
     "@stricli/auto-complete": "^1.2.4",
-    "@stricli/core": "^1.2.4"
-  }
+    "@stricli/core": "^1.2.4",
+    "hono": "^4.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "acp",
+    "agent",
+    "proxy",
+    "websocket"
+  ],
+  "license": "MIT"
 }

@@ -1,6 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { Writable, Readable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
+import { createNodeWebSocket } from "@hono/node-ws";
+import type { WSContext } from "hono/ws";
 
 export interface ServerConfig {
   port: number;
@@ -21,17 +25,18 @@ let AGENT_COMMAND: string;
 let AGENT_ARGS: string[];
 let AGENT_CWD: string;
 
-const clients = new Map<unknown, ClientState>();
+const clients = new Map<WSContext, ClientState>();
 
 // Send a message to the WebSocket client
-function send(ws: { readyState: number; send: (data: string) => void }, type: string, payload?: unknown): void {
-  if (ws.readyState === WebSocket.OPEN) {
+function send(ws: WSContext, type: string, payload?: unknown): void {
+  if (ws.readyState === 1) {
+    // WebSocket.OPEN
     ws.send(JSON.stringify({ type, payload }));
   }
 }
 
 // Create a Client implementation that forwards events to WebSocket
-function createClient(ws: { readyState: number; send: (data: string) => void }): acp.Client {
+function createClient(ws: WSContext): acp.Client {
   return {
     async requestPermission(params) {
       console.log("[Client] Permission requested:", params.toolCall.title);
@@ -65,7 +70,7 @@ function createClient(ws: { readyState: number; send: (data: string) => void }):
   };
 }
 
-async function handleConnect(ws: { readyState: number; send: (data: string) => void }): Promise<void> {
+async function handleConnect(ws: WSContext): Promise<void> {
   const state = clients.get(ws);
   if (!state) return;
 
@@ -77,7 +82,9 @@ async function handleConnect(ws: { readyState: number; send: (data: string) => v
   }
 
   try {
-    console.log(`[Server] Spawning agent: ${AGENT_COMMAND} ${AGENT_ARGS.join(" ")}`);
+    console.log(
+      `[Server] Spawning agent: ${AGENT_COMMAND} ${AGENT_ARGS.join(" ")}`,
+    );
 
     // Spawn the agent process using Node.js child_process
     const agentProcess = spawn(AGENT_COMMAND, AGENT_ARGS, {
@@ -88,14 +95,18 @@ async function handleConnect(ws: { readyState: number; send: (data: string) => v
     state.process = agentProcess;
 
     // Create streams for ACP SDK
-    const input = Writable.toWeb(agentProcess.stdin!);
-    const output = Readable.toWeb(agentProcess.stdout!);
+    const input = Writable.toWeb(
+      agentProcess.stdin!,
+    ) as unknown as WritableStream<Uint8Array>;
+    const output = Readable.toWeb(
+      agentProcess.stdout!,
+    ) as unknown as ReadableStream<Uint8Array>;
 
     // Create ACP connection
     const stream = acp.ndJsonStream(input, output);
     const connection = new acp.ClientSideConnection(
       (_agent) => createClient(ws),
-      stream
+      stream,
     );
 
     state.connection = connection;
@@ -111,7 +122,9 @@ async function handleConnect(ws: { readyState: number; send: (data: string) => v
       },
     });
 
-    console.log(`[Server] Agent initialized (protocol v${initResult.protocolVersion})`);
+    console.log(
+      `[Server] Agent initialized (protocol v${initResult.protocolVersion})`,
+    );
 
     send(ws, "status", {
       connected: true,
@@ -126,16 +139,17 @@ async function handleConnect(ws: { readyState: number; send: (data: string) => v
       state.sessionId = null;
       send(ws, "status", { connected: false });
     });
-
   } catch (error) {
     console.error("[Server] Failed to connect:", error);
-    send(ws, "error", { message: `Failed to connect: ${(error as Error).message}` });
+    send(ws, "error", {
+      message: `Failed to connect: ${(error as Error).message}`,
+    });
   }
 }
 
 async function handleNewSession(
-  ws: { readyState: number; send: (data: string) => void },
-  params: { cwd?: string }
+  ws: WSContext,
+  params: { cwd?: string },
 ): Promise<void> {
   const state = clients.get(ws);
   if (!state?.connection) {
@@ -154,13 +168,15 @@ async function handleNewSession(
     send(ws, "session_created", result);
   } catch (error) {
     console.error("[Server] Failed to create session:", error);
-    send(ws, "error", { message: `Failed to create session: ${(error as Error).message}` });
+    send(ws, "error", {
+      message: `Failed to create session: ${(error as Error).message}`,
+    });
   }
 }
 
 async function handlePrompt(
-  ws: { readyState: number; send: (data: string) => void },
-  params: { text: string }
+  ws: WSContext,
+  params: { text: string },
 ): Promise<void> {
   const state = clients.get(ws);
   if (!state?.connection || !state.sessionId) {
@@ -180,11 +196,13 @@ async function handlePrompt(
     send(ws, "prompt_complete", result);
   } catch (error) {
     console.error("[Server] Prompt failed:", error);
-    send(ws, "error", { message: `Prompt failed: ${(error as Error).message}` });
+    send(ws, "error", {
+      message: `Prompt failed: ${(error as Error).message}`,
+    });
   }
 }
 
-function handleDisconnect(ws: { readyState: number; send: (data: string) => void }): void {
+function handleDisconnect(ws: WSContext): void {
   const state = clients.get(ws);
   if (!state) return;
 
@@ -211,35 +229,30 @@ export async function startServer(config: ServerConfig): Promise<void> {
   AGENT_ARGS = args;
   AGENT_CWD = cwd;
 
-  const server = Bun.serve({
-    port,
-    fetch(req, server) {
-      const url = new URL(req.url);
+  const app = new Hono();
+  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
-      if (url.pathname === "/health") {
-        return new Response(JSON.stringify({ status: "ok" }), {
-          headers: { "Content-Type": "application/json" },
-        });
-      }
+  // Health check endpoint
+  app.get("/health", (c) => {
+    return c.json({ status: "ok" });
+  });
 
-      if (url.pathname === "/ws") {
-        const upgraded = server.upgrade(req);
-        if (!upgraded) {
-          return new Response("WebSocket upgrade failed", { status: 400 });
-        }
-        return undefined;
-      }
+  // Root endpoint
+  app.get("/", (c) => {
+    return c.text("ACP Proxy Server");
+  });
 
-      return new Response("ACP Proxy Server", { status: 200 });
-    },
-    websocket: {
-      open(ws) {
+  // WebSocket endpoint
+  app.get(
+    "/ws",
+    upgradeWebSocket(() => ({
+      onOpen(_event, ws) {
         console.log("[Server] Client connected");
         clients.set(ws, { process: null, connection: null, sessionId: null });
       },
-      async message(ws, message) {
+      async onMessage(event, ws) {
         try {
-          const data: ProxyMessage = JSON.parse(message.toString());
+          const data: ProxyMessage = JSON.parse(event.data.toString());
           console.log(`[Server] Received: ${data.type}`);
 
           switch (data.type) {
@@ -250,26 +263,34 @@ export async function startServer(config: ServerConfig): Promise<void> {
               handleDisconnect(ws);
               break;
             case "new_session":
-              await handleNewSession(ws, (data.payload as { cwd?: string }) || {});
+              await handleNewSession(
+                ws,
+                (data.payload as { cwd?: string }) || {},
+              );
               break;
             case "prompt":
               await handlePrompt(ws, data.payload as { text: string });
               break;
             default:
-              send(ws, "error", { message: `Unknown message type: ${data.type}` });
+              send(ws, "error", {
+                message: `Unknown message type: ${data.type}`,
+              });
           }
         } catch (error) {
           console.error("[Server] Error:", error);
           send(ws, "error", { message: `Error: ${(error as Error).message}` });
         }
       },
-      close(ws) {
+      onClose(_event, ws) {
         console.log("[Server] Client disconnected");
         handleDisconnect(ws);
         clients.delete(ws);
       },
-    },
-  });
+    })),
+  );
+
+  const server = serve({ fetch: app.fetch, port });
+  injectWebSocket(server);
 
   console.log(`🚀 ACP Proxy Server running on http://localhost:${port}`);
   console.log(`   WebSocket endpoint: ws://localhost:${port}/ws`);
@@ -281,4 +302,3 @@ export async function startServer(config: ServerConfig): Promise<void> {
   // Keep the server running
   await new Promise(() => {});
 }
-

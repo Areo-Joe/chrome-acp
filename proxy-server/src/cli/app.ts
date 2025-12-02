@@ -1,5 +1,5 @@
 import { buildApplication } from "@stricli/core";
-import { command } from "./command";
+import { command } from "./command.js";
 
 export const app = buildApplication(command, {
   name: "acp-proxy",

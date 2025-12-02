@@ -1,5 +1,5 @@
 import { buildCommand, numberParser } from "@stricli/core";
-import type { LocalContext } from "./context";
+import type { LocalContext } from "./context.js";
 
 export const command = buildCommand({
   docs: {
@@ -39,7 +39,7 @@ export const command = buildCommand({
     const cwd = process.cwd();
 
     // Import and run the server
-    const { startServer } = await import("../server");
+    const { startServer } = await import("../server.js");
     await startServer({ port, command: command!, args: [...agentArgs], cwd });
   },
 });

@@ -1,5 +1,5 @@
-import type { Subprocess } from "bun";
-import type { JsonRpcMessage } from "./types";
+import { spawn, type ChildProcess } from "node:child_process";
+import type { JsonRpcMessage } from "./types.js";
 
 export interface AgentConfig {
   command: string; // Can be a full command string like "nvm run 22 /path/to/agent"
@@ -48,8 +48,7 @@ export type AgentErrorHandler = (error: string) => void;
 export type AgentCloseHandler = (code: number | null) => void;
 
 export class AgentProcess {
-  private process: Subprocess<"pipe", "pipe", "pipe"> | null = null;
-  private buffer: string = "";
+  private process: ChildProcess | null = null;
   private onMessage: AgentMessageHandler | null = null;
   private onError: AgentErrorHandler | null = null;
   private onClose: AgentCloseHandler | null = null;
@@ -67,57 +66,59 @@ export class AgentProcess {
       `[Agent] Spawning: cmd: "${parsed.cmd}" args: [${fullArgs.map((a) => `"${a}"`).join(", ")}]`,
     );
 
-    this.process = Bun.spawn([parsed.cmd, ...fullArgs], {
+    this.process = spawn(parsed.cmd, fullArgs, {
       cwd,
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
+      stdio: ["pipe", "pipe", "pipe"],
     });
 
     // Read stdout (ACP messages from agent)
-    this.readStream(this.process.stdout, (line) => {
-      this.handleLine(line);
-    });
+    if (this.process.stdout) {
+      this.readStream(this.process.stdout, (line) => {
+        this.handleLine(line);
+      });
+    }
 
     // Read stderr (logging from agent)
-    this.readStream(this.process.stderr, (line) => {
-      console.log(`[Agent stderr] ${line}`);
-    });
+    if (this.process.stderr) {
+      this.readStream(this.process.stderr, (line) => {
+        console.log(`[Agent stderr] ${line}`);
+      });
+    }
 
     // Handle process exit
-    this.process.exited.then((code) => {
+    this.process.on("close", (code) => {
       console.log(`[Agent] Process exited with code: ${code}`);
       this.onClose?.(code);
       this.process = null;
     });
+
+    this.process.on("error", (error) => {
+      console.error("[Agent] Process error:", error);
+      this.onError?.(error.message);
+    });
   }
 
-  private async readStream(
-    stream: ReadableStream<Uint8Array>,
+  private readStream(
+    stream: NodeJS.ReadableStream,
     onLine: (line: string) => void,
-  ): Promise<void> {
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
+  ): void {
     let buffer = "";
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    stream.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.trim()) {
-            onLine(line);
-          }
+      for (const line of lines) {
+        if (line.trim()) {
+          onLine(line);
         }
       }
-    } catch (error) {
+    });
+
+    stream.on("error", (error) => {
       console.error("[Agent] Stream read error:", error);
-    }
+    });
   }
 
   private handleLine(line: string): void {
