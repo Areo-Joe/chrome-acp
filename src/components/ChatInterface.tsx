@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import type { ACPClient } from "@/acp/client";
-import type { SessionUpdate } from "@/acp/types";
+import type { SessionUpdate, ToolCallContent } from "@/acp/types";
 
 // AI Elements components
 import {
@@ -33,6 +33,7 @@ interface ToolCallData {
   id: string;
   title: string;
   status: "running" | "complete" | "error";
+  content?: ToolCallContent[];
 }
 
 interface ChatMessageData {
@@ -44,6 +45,30 @@ interface ChatMessageData {
 
 interface ChatInterfaceProps {
   client: ACPClient;
+}
+
+// Helper to format tool call content for display
+function formatToolOutput(content?: ToolCallContent[]): unknown {
+  if (!content || content.length === 0) return null;
+
+  // Extract text content from the tool call results
+  const results: string[] = [];
+
+  for (const item of content) {
+    if (item.type === "content") {
+      if (item.content.type === "text" && item.content.text) {
+        results.push(item.content.text);
+      }
+    } else if (item.type === "diff") {
+      results.push(`📝 ${item.path}\n--- Old\n+++ New\n${item.newText}`);
+    } else if (item.type === "terminal") {
+      results.push(`🖥️ Terminal: ${item.terminalId}`);
+    }
+  }
+
+  if (results.length === 0) return null;
+  if (results.length === 1) return results[0];
+  return results.join("\n\n");
 }
 
 export function ChatInterface({ client }: ChatInterfaceProps) {
@@ -101,10 +126,18 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
         }
       });
     } else if (update.sessionUpdate === "tool_call") {
+      // ACP status values: "pending", "in_progress", "completed", "failed"
+      const mapStatus = (status: string): "running" | "complete" | "error" => {
+        if (status === "completed") return "complete";
+        if (status === "failed") return "error";
+        return "running"; // pending, in_progress
+      };
+
       const toolCall: ToolCallData = {
         id: update.toolCallId,
         title: update.title,
-        status: update.status === "running" ? "running" : "complete",
+        status: mapStatus(update.status),
+        content: update.content,
       };
 
       setMessages((prev) => {
@@ -128,17 +161,35 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
         );
       });
     } else if (update.sessionUpdate === "tool_call_update") {
+      // ACP status values: "pending", "in_progress", "completed", "failed"
+      const mapStatus = (
+        status: string | undefined,
+      ): "running" | "complete" | "error" | undefined => {
+        if (!status) return undefined;
+        if (status === "completed") return "complete";
+        if (status === "failed") return "error";
+        return "running"; // pending, in_progress
+      };
+
       setMessages((prev) =>
         prev.map((msg) => ({
           ...msg,
-          toolCalls: msg.toolCalls?.map((tc) =>
-            tc.id === update.toolCallId
-              ? {
-                  ...tc,
-                  status: update.status === "complete" ? "complete" : "running",
-                }
-              : tc,
-          ),
+          toolCalls: msg.toolCalls?.map((tc) => {
+            if (tc.id !== update.toolCallId) return tc;
+
+            const newStatus = mapStatus(update.status);
+            // Merge content: append new content to existing
+            const mergedContent = update.content
+              ? [...(tc.content || []), ...update.content]
+              : tc.content;
+
+            return {
+              ...tc,
+              ...(newStatus && { status: newStatus }),
+              ...(update.title && { title: update.title }),
+              content: mergedContent,
+            };
+          }),
         })),
       );
     }
@@ -194,29 +245,37 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
                   {message.content && (
                     <MessageResponse>{message.content}</MessageResponse>
                   )}
-                  {message.toolCalls?.map((tool) => (
-                    <Tool key={tool.id}>
-                      <ToolHeader
-                        title={tool.title}
-                        type="tool-invocation"
-                        state={
-                          tool.status === "running"
-                            ? "input-available"
-                            : "output-available"
-                        }
-                      />
-                      <ToolContent>
-                        <ToolOutput
-                          output={null}
-                          errorText={
+                  {message.toolCalls?.map((tool) => {
+                    const toolOutput = formatToolOutput(tool.content);
+                    const hasOutput =
+                      tool.status !== "running" && toolOutput !== null;
+
+                    return (
+                      <Tool key={tool.id} defaultOpen={hasOutput}>
+                        <ToolHeader
+                          title={tool.title}
+                          type="tool-invocation"
+                          state={
                             tool.status === "error"
-                              ? "Tool execution failed"
-                              : undefined
+                              ? "output-error"
+                              : tool.status === "running"
+                                ? "input-available"
+                                : "output-available"
                           }
                         />
-                      </ToolContent>
-                    </Tool>
-                  ))}
+                        <ToolContent>
+                          <ToolOutput
+                            output={toolOutput}
+                            errorText={
+                              tool.status === "error"
+                                ? "Tool execution failed"
+                                : undefined
+                            }
+                          />
+                        </ToolContent>
+                      </Tool>
+                    );
+                  })}
                 </MessageContent>
               </Message>
             ))

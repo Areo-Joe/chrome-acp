@@ -72,17 +72,40 @@ export interface AgentMessageChunkUpdate {
   content: ContentBlock;
 }
 
+// Tool call content types from ACP
+export interface ToolCallContentBlock {
+  type: "content";
+  content: ContentBlock;
+}
+
+export interface ToolCallDiffContent {
+  type: "diff";
+  path: string;
+  oldText?: string | null;
+  newText: string;
+}
+
+export interface ToolCallTerminalContent {
+  type: "terminal";
+  terminalId: string;
+}
+
+export type ToolCallContent = ToolCallContentBlock | ToolCallDiffContent | ToolCallTerminalContent;
+
 export interface ToolCallUpdate {
   sessionUpdate: "tool_call";
   toolCallId: string;
   title: string;
   status: string;
+  content?: ToolCallContent[];
 }
 
 export interface ToolCallStatusUpdate {
   sessionUpdate: "tool_call_update";
   toolCallId: string;
-  status: string;
+  status?: string;
+  title?: string;
+  content?: ToolCallContent[];
 }
 
 export interface AgentThoughtChunkUpdate {
