@@ -1,9 +1,49 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { Writable, Readable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
-import type { ProxyConnectParams } from "./src/types";
 
-const PORT = parseInt(process.env.PORT || "9315");
+// Parse CLI arguments
+function parseArgs(): { port: number; command: string; args: string[] } {
+  const args = process.argv.slice(2);
+
+  let port = 9315;
+  let commandStart = 0;
+
+  // Check for --port option
+  if (args[0] === "--port") {
+    if (!args[1]) {
+      console.error("Error: --port requires a value");
+      process.exit(1);
+    }
+    port = parseInt(args[1], 10);
+    if (isNaN(port)) {
+      console.error("Error: --port must be a number");
+      process.exit(1);
+    }
+    commandStart = 2;
+  }
+
+  const command = args[commandStart];
+  const commandArgs = args.slice(commandStart + 1);
+
+  if (!command) {
+    console.error("Usage: acp-proxy [--port PORT] <command> [args...]");
+    console.error("");
+    console.error("Examples:");
+    console.error("  acp-proxy /path/to/agent");
+    console.error("  acp-proxy /path/to/agent --verbose");
+    console.error("  acp-proxy --port 9000 /path/to/agent");
+    process.exit(1);
+  }
+
+  return { port, command, args: commandArgs };
+}
+
+const config = parseArgs();
+const PORT = config.port;
+const AGENT_COMMAND = config.command;
+const AGENT_ARGS = config.args;
+const AGENT_CWD = process.cwd();
 
 // Track connected clients and their agent connections
 interface ClientState {
@@ -56,7 +96,7 @@ function createClient(ws: WebSocket): acp.Client {
   };
 }
 
-async function handleConnect(ws: WebSocket, params: ProxyConnectParams): Promise<void> {
+async function handleConnect(ws: WebSocket): Promise<void> {
   const state = clients.get(ws);
   if (!state) return;
 
@@ -68,12 +108,11 @@ async function handleConnect(ws: WebSocket, params: ProxyConnectParams): Promise
   }
 
   try {
-    const { command, args = [], cwd } = params;
-    console.log(`[Server] Spawning agent: ${command} ${args.join(" ")}`);
+    console.log(`[Server] Spawning agent: ${AGENT_COMMAND} ${AGENT_ARGS.join(" ")}`);
 
     // Spawn the agent process using Node.js child_process
-    const agentProcess = spawn(command, args, {
-      cwd,
+    const agentProcess = spawn(AGENT_COMMAND, AGENT_ARGS, {
+      cwd: AGENT_CWD,
       stdio: ["pipe", "pipe", "inherit"],
     });
 
@@ -187,7 +226,7 @@ function handleDisconnect(ws: WebSocket): void {
 
 interface ProxyMessage {
   type: "connect" | "disconnect" | "new_session" | "prompt" | "cancel";
-  payload?: unknown;
+  payload?: { cwd?: string } | { text: string };
 }
 
 const server = Bun.serve({
@@ -223,7 +262,7 @@ const server = Bun.serve({
 
         switch (data.type) {
           case "connect":
-            await handleConnect(ws, data.payload as ProxyConnectParams);
+            await handleConnect(ws);
             break;
           case "disconnect":
             handleDisconnect(ws);
@@ -253,3 +292,6 @@ const server = Bun.serve({
 console.log(`🚀 ACP Proxy Server running on http://localhost:${PORT}`);
 console.log(`   WebSocket endpoint: ws://localhost:${PORT}/ws`);
 console.log(`   Health check: http://localhost:${PORT}/health`);
+console.log(``);
+console.log(`📦 Agent: ${AGENT_COMMAND} ${AGENT_ARGS.join(" ")}`);
+console.log(`   Working directory: ${AGENT_CWD}`);

@@ -83,14 +83,7 @@ export class ACPClient {
           console.log(
             "[ACPClient] WebSocket connected, sending connect command",
           );
-          this.send({
-            type: "connect",
-            payload: {
-              command: this.settings.agentCommand,
-              args: this.settings.agentArgs,
-              cwd: this.settings.agentCwd,
-            },
-          });
+          this.send({ type: "connect" });
         };
 
         this.ws.onmessage = (event) => {

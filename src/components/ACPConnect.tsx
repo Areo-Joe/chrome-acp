@@ -106,45 +106,6 @@ export function ACPConnect({ onClientReady }: ACPConnectProps) {
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="agentCommand">Agent Command</Label>
-          <Input
-            id="agentCommand"
-            value={settings.agentCommand}
-            onChange={(e) => updateSetting("agentCommand", e.target.value)}
-            placeholder="e.g., /usr/bin/claude-agent"
-            disabled={isConnected || isConnecting}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="agentArgs">Arguments (comma-separated)</Label>
-          <Input
-            id="agentArgs"
-            value={(settings.agentArgs || []).join(", ")}
-            onChange={(e) => {
-              const args = e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean);
-              updateSetting("agentArgs", args);
-            }}
-            placeholder="e.g., --verbose, --config, /path/to/config"
-            disabled={isConnected || isConnecting}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="agentCwd">Working Directory (optional)</Label>
-          <Input
-            id="agentCwd"
-            value={settings.agentCwd || ""}
-            onChange={(e) => updateSetting("agentCwd", e.target.value)}
-            placeholder="e.g., /path/to/project"
-            disabled={isConnected || isConnecting}
-          />
-        </div>
-
         {error && (
           <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
             {error}
@@ -155,7 +116,7 @@ export function ACPConnect({ onClientReady }: ACPConnectProps) {
           {!isConnected ? (
             <Button
               onClick={handleConnect}
-              disabled={isConnecting || !settings.agentCommand}
+              disabled={isConnecting}
               className="flex-1"
             >
               {isConnecting ? "Connecting..." : "Connect"}

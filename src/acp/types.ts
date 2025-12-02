@@ -1,13 +1,6 @@
-// Proxy Protocol Types (communication with proxy server)
-export interface ProxyConnectParams {
-  command: string;
-  args?: string[];
-  cwd?: string;
-}
-
 // Messages sent TO the proxy server
 export type ProxyMessage =
-  | { type: "connect"; payload: ProxyConnectParams }
+  | { type: "connect" }
   | { type: "disconnect" }
   | { type: "new_session"; payload?: { cwd?: string } }
   | { type: "prompt"; payload: { text: string } }
@@ -124,14 +117,8 @@ export type ConnectionState =
 // Settings
 export interface ACPSettings {
   proxyUrl: string;
-  agentCommand: string;
-  agentArgs?: string[];
-  agentCwd?: string;
 }
 
 export const DEFAULT_SETTINGS: ACPSettings = {
   proxyUrl: "ws://localhost:9315/ws",
-  agentCommand: "",
-  agentArgs: [],
-  agentCwd: "",
 };
