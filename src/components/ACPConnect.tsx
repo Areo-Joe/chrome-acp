@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ACPClient } from "@/acp/client";
 import type { ACPSettings, ConnectionState } from "@/acp/types";
 import { DEFAULT_SETTINGS } from "@/acp/types";
+import { executeBrowserTool } from "@/tools/browser";
 
 // Storage key for settings
 const STORAGE_KEY = "acp_settings";
@@ -45,6 +46,13 @@ export function ACPConnect({ onClientReady }: ACPConnectProps) {
       setConnectionState(state);
       setError(err || null);
     });
+
+    // Register browser tool handler
+    acpClient.setBrowserToolCallHandler(async (_callId, params) => {
+      console.log("[ACPConnect] Executing browser tool:", params);
+      return await executeBrowserTool(params);
+    });
+
     setClient(acpClient);
 
     return () => {

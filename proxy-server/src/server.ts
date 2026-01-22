@@ -5,6 +5,11 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import type { WSContext } from "hono/ws";
+import {
+  handleMcpRequest,
+  setExtensionWebSocket,
+  handleBrowserToolResponse,
+} from "./mcp/handler.js";
 
 export interface ServerConfig {
   port: number;
@@ -24,6 +29,7 @@ interface ClientState {
 let AGENT_COMMAND: string;
 let AGENT_ARGS: string[];
 let AGENT_CWD: string;
+let SERVER_PORT: number;
 
 const clients = new Map<WSContext, ClientState>();
 
@@ -114,6 +120,10 @@ async function handleConnect(ws: WSContext): Promise<void> {
     // Initialize the connection
     const initResult = await connection.initialize({
       protocolVersion: acp.PROTOCOL_VERSION,
+      clientInfo: {
+        name: "zed",
+        version: "1.0.0",
+      },
       clientCapabilities: {
         fs: {
           readTextFile: true,
@@ -160,7 +170,14 @@ async function handleNewSession(
   try {
     const result = await state.connection.newSession({
       cwd: params.cwd || AGENT_CWD,
-      mcpServers: [],
+      mcpServers: [
+        {
+          type: "http",
+          url: `http://localhost:${SERVER_PORT}/mcp`,
+          name: "browser",
+          headers: [],
+        },
+      ],
     });
 
     state.sessionId = result.sessionId;
@@ -228,6 +245,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
   AGENT_COMMAND = command;
   AGENT_ARGS = args;
   AGENT_CWD = cwd;
+  SERVER_PORT = port;
 
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -242,6 +260,9 @@ export async function startServer(config: ServerConfig): Promise<void> {
     return c.text("ACP Proxy Server");
   });
 
+  // MCP Streamable HTTP endpoint for browser tool
+  app.post("/mcp", handleMcpRequest);
+
   // WebSocket endpoint
   app.get(
     "/ws",
@@ -249,10 +270,12 @@ export async function startServer(config: ServerConfig): Promise<void> {
       onOpen(_event, ws) {
         console.log("[Server] Client connected");
         clients.set(ws, { process: null, connection: null, sessionId: null });
+        // Register this WebSocket for browser tool calls
+        setExtensionWebSocket(ws);
       },
       async onMessage(event, ws) {
         try {
-          const data: ProxyMessage = JSON.parse(event.data.toString());
+          const data = JSON.parse(event.data.toString());
           console.log(`[Server] Received: ${data.type}`);
 
           switch (data.type) {
@@ -271,6 +294,10 @@ export async function startServer(config: ServerConfig): Promise<void> {
             case "prompt":
               await handlePrompt(ws, data.payload as { text: string });
               break;
+            case "browser_tool_result":
+              // Handle response from extension for browser tool call
+              handleBrowserToolResponse(data.callId, data.result);
+              break;
             default:
               send(ws, "error", {
                 message: `Unknown message type: ${data.type}`,
@@ -285,6 +312,8 @@ export async function startServer(config: ServerConfig): Promise<void> {
         console.log("[Server] Client disconnected");
         handleDisconnect(ws);
         clients.delete(ws);
+        // Clear extension WebSocket if this was it
+        setExtensionWebSocket(null);
       },
     })),
   );
@@ -294,10 +323,13 @@ export async function startServer(config: ServerConfig): Promise<void> {
 
   console.log(`🚀 ACP Proxy Server running on http://localhost:${port}`);
   console.log(`   WebSocket endpoint: ws://localhost:${port}/ws`);
+  console.log(`   MCP endpoint: http://localhost:${port}/mcp`);
   console.log(`   Health check: http://localhost:${port}/health`);
   console.log(``);
   console.log(`📦 Agent: ${AGENT_COMMAND} ${AGENT_ARGS.join(" ")}`);
   console.log(`   Working directory: ${AGENT_CWD}`);
+  console.log(``);
+  console.log(`🌐 Browser tool available via MCP`);
 
   // Keep the server running
   await new Promise(() => {});

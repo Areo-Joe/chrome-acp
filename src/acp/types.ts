@@ -4,7 +4,46 @@ export type ProxyMessage =
   | { type: "disconnect" }
   | { type: "new_session"; payload?: { cwd?: string } }
   | { type: "prompt"; payload: { text: string } }
-  | { type: "cancel" };
+  | { type: "cancel" }
+  | { type: "browser_tool_result"; callId: string; result: BrowserToolResult | { error: string } };
+
+// Browser tool types
+export interface BrowserToolParams {
+  action: "read" | "execute" | "screenshot";
+  script?: string;
+}
+
+export interface BrowserReadResult {
+  action: "read";
+  url: string;
+  title: string;
+  dom: string;
+  viewport: {
+    width: number;
+    height: number;
+    scrollX: number;
+    scrollY: number;
+  };
+  selection: string | null;
+}
+
+export interface BrowserExecuteResult {
+  action: "execute";
+  url: string;
+  result?: unknown;
+  error?: string;
+}
+
+export interface BrowserScreenshotResult {
+  action: "screenshot";
+  url: string;
+  screenshot: string;
+}
+
+export type BrowserToolResult =
+  | BrowserReadResult
+  | BrowserExecuteResult
+  | BrowserScreenshotResult;
 
 // Messages received FROM the proxy server
 export interface ProxyStatusMessage {
@@ -44,13 +83,20 @@ export interface ProxyPermissionRequestMessage {
   payload: unknown;
 }
 
+export interface ProxyBrowserToolCallMessage {
+  type: "browser_tool_call";
+  callId: string;
+  params: BrowserToolParams;
+}
+
 export type ProxyResponse =
   | ProxyStatusMessage
   | ProxyErrorMessage
   | ProxySessionCreatedMessage
   | ProxySessionUpdateMessage
   | ProxyPromptCompleteMessage
-  | ProxyPermissionRequestMessage;
+  | ProxyPermissionRequestMessage
+  | ProxyBrowserToolCallMessage;
 
 // Content block types
 export interface TextContent {

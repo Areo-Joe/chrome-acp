@@ -4,8 +4,27 @@
   "version": "1.0.0",
   "manifest_version": 3,
   "permissions": [
-    "sidePanel"
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "declarativeNetRequest"
   ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "strip_csp",
+        "enabled": true,
+        "path": "rules/strip_csp.json"
+      }
+    ]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval' http://localhost:*; object-src 'self'; connect-src 'self' http://localhost:* ws://localhost:* wss://localhost:* https://* wss://*;"
+  },
   "action": {
     "default_title": "Open ACP Chat",
     "default_icon": {
