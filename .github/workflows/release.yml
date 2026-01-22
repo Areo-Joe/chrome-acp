@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: |
+          bun install
+          cd proxy-server && bun install
+
+      - name: Build extension
+        run: bun run build
+
+      - name: Build proxy server
+        run: cd proxy-server && bun run build
+
+      - name: Package extension
+        run: |
+          # Remove sourcemaps (not needed for production)
+          rm -f dist/*.map
+          # Zip only required files
+          zip -r chrome-acp.zip manifest.json icons/ rules/ dist/
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update proxy-server version
+        run: |
+          cd proxy-server
+          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
+
+      - name: Publish to npm
+        run: |
+          cd proxy-server
+          npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: chrome-acp.zip
+          generate_release_notes: true
+
