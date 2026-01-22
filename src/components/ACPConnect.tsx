@@ -31,9 +31,10 @@ function saveSettings(settings: ACPSettings): void {
 
 interface ACPConnectProps {
   onClientReady?: (client: ACPClient | null) => void;
+  onConnectionStateChange?: (state: ConnectionState, proxyUrl: string) => void;
 }
 
-export function ACPConnect({ onClientReady }: ACPConnectProps) {
+export function ACPConnect({ onClientReady, onConnectionStateChange }: ACPConnectProps) {
   const [settings, setSettings] = useState<ACPSettings>(loadSettings);
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +73,11 @@ export function ACPConnect({ onClientReady }: ACPConnectProps) {
   useEffect(() => {
     onClientReady?.(connectionState === "connected" ? client : null);
   }, [connectionState, client, onClientReady]);
+
+  // Notify parent of connection state changes
+  useEffect(() => {
+    onConnectionStateChange?.(connectionState, settings.proxyUrl);
+  }, [connectionState, settings.proxyUrl, onConnectionStateChange]);
 
   const handleConnect = useCallback(async () => {
     if (!client) return;
