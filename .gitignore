@@ -6,6 +6,9 @@ out
 dist
 *.tgz
 
+# Chrome extension metadata (auto-generated)
+_metadata
+
 # code coverage
 coverage
 *.lcov
