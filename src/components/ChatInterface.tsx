@@ -39,11 +39,15 @@ interface ToolCallData {
   rawOutput?: Record<string, unknown>;
 }
 
+// Message part: either text or a tool call
+type MessagePart =
+  | { type: "text"; text: string }
+  | { type: "tool_call"; toolCall: ToolCallData };
+
 interface ChatMessageData {
   id: string;
   role: "user" | "assistant";
-  content: string;
-  toolCalls?: ToolCallData[];
+  parts: MessagePart[];
 }
 
 interface ChatInterfaceProps {
@@ -123,27 +127,40 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
       if (!text) return;
 
       setMessages((prev) => {
-        // Check if we already have a current agent message
         if (currentAgentMessageIdRef.current) {
-          // Append to existing message
-          return prev.map((msg) =>
-            msg.id === currentAgentMessageIdRef.current
-              ? { ...msg, content: msg.content + text }
-              : msg,
-          );
+          // Find current message and append text
+          return prev.map((msg) => {
+            if (msg.id !== currentAgentMessageIdRef.current) return msg;
+
+            const lastPart = msg.parts[msg.parts.length - 1];
+            // If last part is text, append to it
+            if (lastPart?.type === "text") {
+              return {
+                ...msg,
+                parts: [
+                  ...msg.parts.slice(0, -1),
+                  { type: "text", text: lastPart.text + text },
+                ],
+              };
+            }
+            // Otherwise add new text part
+            return {
+              ...msg,
+              parts: [...msg.parts, { type: "text", text }],
+            };
+          });
         } else {
           // Create new agent message
           const newId = `agent-${Date.now()}`;
           currentAgentMessageIdRef.current = newId;
-          return [...prev, { id: newId, role: "assistant", content: text }];
+          return [...prev, { id: newId, role: "assistant", parts: [{ type: "text", text }] }];
         }
       });
     } else if (update.sessionUpdate === "tool_call") {
-      // ACP status values: "pending", "in_progress", "completed", "failed"
       const mapStatus = (status: string): "running" | "complete" | "error" => {
         if (status === "completed") return "complete";
         if (status === "failed") return "error";
-        return "running"; // pending, in_progress
+        return "running";
       };
 
       const toolCall: ToolCallData = {
@@ -164,47 +181,49 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
             {
               id: newId,
               role: "assistant",
-              content: "",
-              toolCalls: [toolCall],
+              parts: [{ type: "tool_call", toolCall }],
             },
           ];
         }
+        // Add tool call as new part
         return prev.map((msg) =>
           msg.id === currentAgentMessageIdRef.current
-            ? { ...msg, toolCalls: [...(msg.toolCalls || []), toolCall] }
+            ? { ...msg, parts: [...msg.parts, { type: "tool_call", toolCall }] }
             : msg,
         );
       });
     } else if (update.sessionUpdate === "tool_call_update") {
-      // ACP status values: "pending", "in_progress", "completed", "failed"
       const mapStatus = (
         status: string | undefined,
       ): "running" | "complete" | "error" | undefined => {
         if (!status) return undefined;
         if (status === "completed") return "complete";
         if (status === "failed") return "error";
-        return "running"; // pending, in_progress
+        return "running";
       };
 
       setMessages((prev) =>
         prev.map((msg) => ({
           ...msg,
-          toolCalls: msg.toolCalls?.map((tc) => {
-            if (tc.id !== update.toolCallId) return tc;
+          parts: msg.parts.map((part) => {
+            if (part.type !== "tool_call") return part;
+            if (part.toolCall.id !== update.toolCallId) return part;
 
             const newStatus = mapStatus(update.status);
-            // Merge content: append new content to existing
             const mergedContent = update.content
-              ? [...(tc.content || []), ...update.content]
-              : tc.content;
+              ? [...(part.toolCall.content || []), ...update.content]
+              : part.toolCall.content;
 
             return {
-              ...tc,
-              ...(newStatus && { status: newStatus }),
-              ...(update.title && { title: update.title }),
-              content: mergedContent,
-              ...(update.rawInput && { rawInput: update.rawInput }),
-              ...(update.rawOutput && { rawOutput: update.rawOutput }),
+              type: "tool_call" as const,
+              toolCall: {
+                ...part.toolCall,
+                ...(newStatus && { status: newStatus }),
+                ...(update.title && { title: update.title }),
+                content: mergedContent,
+                ...(update.rawInput && { rawInput: update.rawInput }),
+                ...(update.rawOutput && { rawOutput: update.rawOutput }),
+              },
             };
           }),
         })),
@@ -220,7 +239,7 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     const userMessage: ChatMessageData = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: text,
+      parts: [{ type: "text", text }],
     };
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
@@ -259,10 +278,14 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
             messages.map((message) => (
               <Message key={message.id} from={message.role}>
                 <MessageContent>
-                  {message.content && (
-                    <MessageResponse>{message.content}</MessageResponse>
-                  )}
-                  {message.toolCalls?.map((tool) => {
+                  {message.parts.map((part, index) => {
+                    if (part.type === "text") {
+                      return (
+                        <MessageResponse key={index}>{part.text}</MessageResponse>
+                      );
+                    }
+                    // part.type === "tool_call"
+                    const tool = part.toolCall;
                     const toolOutput = formatToolOutput(tool.content, tool.rawOutput);
                     const hasOutput =
                       tool.status !== "running" && toolOutput !== null;
