@@ -26,6 +26,7 @@ import {
   Tool,
   ToolHeader,
   ToolContent,
+  ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool";
 
@@ -34,6 +35,8 @@ interface ToolCallData {
   title: string;
   status: "running" | "complete" | "error";
   content?: ToolCallContent[];
+  rawInput?: Record<string, unknown>;
+  rawOutput?: Record<string, unknown>;
 }
 
 interface ChatMessageData {
@@ -48,27 +51,37 @@ interface ChatInterfaceProps {
 }
 
 // Helper to format tool call content for display
-function formatToolOutput(content?: ToolCallContent[]): unknown {
-  if (!content || content.length === 0) return null;
+function formatToolOutput(
+  content?: ToolCallContent[],
+  rawOutput?: Record<string, unknown>,
+): unknown {
+  // First try to extract from structured content
+  if (content && content.length > 0) {
+    const results: string[] = [];
 
-  // Extract text content from the tool call results
-  const results: string[] = [];
-
-  for (const item of content) {
-    if (item.type === "content") {
-      if (item.content.type === "text" && item.content.text) {
-        results.push(item.content.text);
+    for (const item of content) {
+      if (item.type === "content") {
+        if (item.content.type === "text" && item.content.text) {
+          results.push(item.content.text);
+        }
+      } else if (item.type === "diff") {
+        results.push(`📝 ${item.path}\n--- Old\n+++ New\n${item.newText}`);
+      } else if (item.type === "terminal") {
+        results.push(`🖥️ Terminal: ${item.terminalId}`);
       }
-    } else if (item.type === "diff") {
-      results.push(`📝 ${item.path}\n--- Old\n+++ New\n${item.newText}`);
-    } else if (item.type === "terminal") {
-      results.push(`🖥️ Terminal: ${item.terminalId}`);
+    }
+
+    if (results.length > 0) {
+      return results.length === 1 ? results[0] : results.join("\n\n");
     }
   }
 
-  if (results.length === 0) return null;
-  if (results.length === 1) return results[0];
-  return results.join("\n\n");
+  // Fall back to rawOutput if content didn't produce results
+  if (rawOutput && Object.keys(rawOutput).length > 0) {
+    return rawOutput;
+  }
+
+  return null;
 }
 
 export function ChatInterface({ client }: ChatInterfaceProps) {
@@ -138,6 +151,8 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
         title: update.title,
         status: mapStatus(update.status),
         content: update.content,
+        rawInput: update.rawInput,
+        rawOutput: update.rawOutput,
       };
 
       setMessages((prev) => {
@@ -188,6 +203,8 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
               ...(newStatus && { status: newStatus }),
               ...(update.title && { title: update.title }),
               content: mergedContent,
+              ...(update.rawInput && { rawInput: update.rawInput }),
+              ...(update.rawOutput && { rawOutput: update.rawOutput }),
             };
           }),
         })),
@@ -246,7 +263,7 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
                     <MessageResponse>{message.content}</MessageResponse>
                   )}
                   {message.toolCalls?.map((tool) => {
-                    const toolOutput = formatToolOutput(tool.content);
+                    const toolOutput = formatToolOutput(tool.content, tool.rawOutput);
                     const hasOutput =
                       tool.status !== "running" && toolOutput !== null;
 
@@ -264,6 +281,9 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
                           }
                         />
                         <ToolContent>
+                          {tool.rawInput && (
+                            <ToolInput input={tool.rawInput} />
+                          )}
                           <ToolOutput
                             output={toolOutput}
                             errorText={

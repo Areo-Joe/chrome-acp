@@ -144,6 +144,8 @@ export interface ToolCallUpdate {
   title: string;
   status: string;
   content?: ToolCallContent[];
+  rawInput?: Record<string, unknown>;
+  rawOutput?: Record<string, unknown>;
 }
 
 export interface ToolCallStatusUpdate {
@@ -152,6 +154,8 @@ export interface ToolCallStatusUpdate {
   status?: string;
   title?: string;
   content?: ToolCallContent[];
+  rawInput?: Record<string, unknown>;
+  rawOutput?: Record<string, unknown>;
 }
 
 export interface AgentThoughtChunkUpdate {
