@@ -42,21 +42,10 @@ jobs:
           # Zip only required files
           zip -r chrome-acp.zip manifest.json icons/ rules/ dist/
 
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Update proxy-server version
-        run: |
-          cd proxy-server
-          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
-
       - name: Publish to npm
         run: |
           cd proxy-server
           npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
