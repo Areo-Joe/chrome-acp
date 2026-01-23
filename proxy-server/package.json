@@ -2,6 +2,14 @@
   "name": "acp-proxy-server",
   "version": "1.0.0",
   "description": "WebSocket proxy server that bridges Chrome extensions to ACP agents",
+  "author": "Areo Joe <zengjoe@foxmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Areo-Joe/chrome-acp.git",
+    "directory": "proxy-server"
+  },
+  "homepage": "https://github.com/Areo-Joe/chrome-acp#readme",
+  "bugs": "https://github.com/Areo-Joe/chrome-acp/issues",
   "type": "module",
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",
