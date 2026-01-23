@@ -1,7 +1,7 @@
 {
   "name": "acp-proxy-server",
   "version": "1.0.0",
-  "description": "WebSocket proxy server that bridges Chrome extensions to ACP agents",
+  "description": "Proxy server that connects ACP agents to Chrome extension, exposing browser tools via MCP",
   "author": "Areo Joe <zengjoe@foxmail.com>",
   "repository": {
     "type": "git",
@@ -42,9 +42,10 @@
   },
   "keywords": [
     "acp",
+    "mcp",
     "agent",
-    "proxy",
-    "websocket"
+    "browser",
+    "chrome"
   ],
   "license": "MIT"
 }
