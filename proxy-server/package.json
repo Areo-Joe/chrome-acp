@@ -5,7 +5,7 @@
   "author": "Areo Joe <zengjoe@foxmail.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Areo-Joe/chrome-acp.git",
+    "url": "git+https://github.com/Areo-Joe/chrome-acp.git",
     "directory": "proxy-server"
   },
   "homepage": "https://github.com/Areo-Joe/chrome-acp#readme",
@@ -14,7 +14,7 @@
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",
   "bin": {
-    "acp-proxy": "./dist/cli/bin.js"
+    "acp-proxy": "dist/cli/bin.js"
   },
   "files": [
     "dist"
