@@ -57,7 +57,7 @@ bun run build
 1. Open `chrome://extensions`
 2. Enable "Developer mode"
 3. Click "Load unpacked"
-4. Select the `dist/` directory
+4. Select the project root directory (where `manifest.json` is)
 
 ### 5. Start chatting
 
