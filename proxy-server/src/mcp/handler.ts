@@ -198,7 +198,6 @@ function formatScreenshotResult(
 
   return {
     content: [
-      { type: "text", text: `Screenshot captured from: ${result.url}` },
       { type: "image", data: result.screenshot, mimeType: "image/png" },
     ],
   };
