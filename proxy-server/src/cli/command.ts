@@ -18,6 +18,11 @@ export const command = buildCommand({
         brief: "Port to listen on",
         default: "9315",
       },
+      debug: {
+        kind: "boolean",
+        brief: "Enable debug logging to file",
+        default: false,
+      },
     },
     positional: {
       kind: "array",
@@ -31,15 +36,20 @@ export const command = buildCommand({
   },
   func: async function (
     this: LocalContext,
-    flags: { port: number },
+    flags: { port: number; debug: boolean },
     ...args: readonly string[]
   ) {
     const port = flags.port;
+    const debug = flags.debug;
     const [command, ...agentArgs] = args;
     const cwd = process.cwd();
 
+    // Initialize logger
+    const { initLogger } = await import("../logger.js");
+    initLogger({ debug });
+
     // Import and run the server
     const { startServer } = await import("../server.js");
-    await startServer({ port, command: command!, args: [...agentArgs], cwd });
+    await startServer({ port, command: command!, args: [...agentArgs], cwd, debug });
   },
 });

@@ -10,12 +10,14 @@ import {
   setExtensionWebSocket,
   handleBrowserToolResponse,
 } from "./mcp/handler.js";
+import { log } from "./logger.js";
 
 export interface ServerConfig {
   port: number;
   command: string;
   args: string[];
   cwd: string;
+  debug?: boolean;
 }
 
 // Track connected clients and their agent connections
@@ -45,7 +47,7 @@ function send(ws: WSContext, type: string, payload?: unknown): void {
 function createClient(ws: WSContext): acp.Client {
   return {
     async requestPermission(params) {
-      console.log("[Client] Permission requested:", params.toolCall.title);
+      log.debug("Permission requested", { title: params.toolCall.title });
       send(ws, "permission_request", params);
 
       // For now, auto-approve with the first option
@@ -63,13 +65,13 @@ function createClient(ws: WSContext): acp.Client {
     },
 
     async readTextFile(params) {
-      console.log("[Client] Read file:", params.path);
+      log.debug("Read file", { path: params.path });
       // TODO: Forward to extension to read file
       return { content: "" };
     },
 
     async writeTextFile(params) {
-      console.log("[Client] Write file:", params.path);
+      log.debug("Write file", { path: params.path });
       // TODO: Forward to extension to write file
       return {};
     },
@@ -88,9 +90,7 @@ async function handleConnect(ws: WSContext): Promise<void> {
   }
 
   try {
-    console.log(
-      `[Server] Spawning agent: ${AGENT_COMMAND} ${AGENT_ARGS.join(" ")}`,
-    );
+    log.info("Spawning agent", { command: AGENT_COMMAND, args: AGENT_ARGS });
 
     // Spawn the agent process using Node.js child_process
     const agentProcess = spawn(AGENT_COMMAND, AGENT_ARGS, {
@@ -132,9 +132,7 @@ async function handleConnect(ws: WSContext): Promise<void> {
       },
     });
 
-    console.log(
-      `[Server] Agent initialized (protocol v${initResult.protocolVersion})`,
-    );
+    log.info("Agent initialized", { protocolVersion: initResult.protocolVersion });
 
     send(ws, "status", {
       connected: true,
@@ -144,13 +142,13 @@ async function handleConnect(ws: WSContext): Promise<void> {
 
     // Handle connection close
     connection.closed.then(() => {
-      console.log("[Server] Agent connection closed");
+      log.info("Agent connection closed");
       state.connection = null;
       state.sessionId = null;
       send(ws, "status", { connected: false });
     });
   } catch (error) {
-    console.error("[Server] Failed to connect:", error);
+    log.error("Failed to connect", { error: (error as Error).message });
     send(ws, "error", {
       message: `Failed to connect: ${(error as Error).message}`,
     });
@@ -181,10 +179,10 @@ async function handleNewSession(
     });
 
     state.sessionId = result.sessionId;
-    console.log(`[Server] Session created: ${result.sessionId}`);
+    log.info("Session created", { sessionId: result.sessionId });
     send(ws, "session_created", result);
   } catch (error) {
-    console.error("[Server] Failed to create session:", error);
+    log.error("Failed to create session", { error: (error as Error).message });
     send(ws, "error", {
       message: `Failed to create session: ${(error as Error).message}`,
     });
@@ -202,17 +200,17 @@ async function handlePrompt(
   }
 
   try {
-    console.log(`[Server] Sending prompt: ${params.text.slice(0, 50)}...`);
+    log.debug("Sending prompt", { text: params.text.slice(0, 100) });
 
     const result = await state.connection.prompt({
       sessionId: state.sessionId,
       prompt: [{ type: "text", text: params.text }],
     });
 
-    console.log(`[Server] Prompt completed: ${result.stopReason}`);
+    log.info("Prompt completed", { stopReason: result.stopReason });
     send(ws, "prompt_complete", result);
   } catch (error) {
-    console.error("[Server] Prompt failed:", error);
+    log.error("Prompt failed", { error: (error as Error).message });
     send(ws, "error", {
       message: `Prompt failed: ${(error as Error).message}`,
     });
@@ -268,7 +266,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
     "/ws",
     upgradeWebSocket(() => ({
       onOpen(_event, ws) {
-        console.log("[Server] Client connected");
+        log.info("Client connected");
         clients.set(ws, { process: null, connection: null, sessionId: null });
         // Register this WebSocket for browser tool calls
         setExtensionWebSocket(ws);
@@ -276,7 +274,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
       async onMessage(event, ws) {
         try {
           const data = JSON.parse(event.data.toString());
-          console.log(`[Server] Received: ${data.type}`);
+          log.debug("Received message", { type: data.type });
 
           switch (data.type) {
             case "connect":
@@ -296,6 +294,10 @@ export async function startServer(config: ServerConfig): Promise<void> {
               break;
             case "browser_tool_result":
               // Handle response from extension for browser tool call
+              log.trace("Raw browser_tool_result from extension", {
+                callId: data.callId,
+                result: data.result,
+              });
               handleBrowserToolResponse(data.callId, data.result);
               break;
             default:
@@ -304,12 +306,12 @@ export async function startServer(config: ServerConfig): Promise<void> {
               });
           }
         } catch (error) {
-          console.error("[Server] Error:", error);
+          log.error("WebSocket message error", { error: (error as Error).message });
           send(ws, "error", { message: `Error: ${(error as Error).message}` });
         }
       },
       onClose(_event, ws) {
-        console.log("[Server] Client disconnected");
+        log.info("Client disconnected");
         handleDisconnect(ws);
         clients.delete(ws);
         // Clear extension WebSocket if this was it
@@ -321,6 +323,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
   const server = serve({ fetch: app.fetch, port });
   injectWebSocket(server);
 
+  // Log server startup info (keep console for user-facing banner)
   console.log(`🚀 ACP Proxy Server running on http://localhost:${port}`);
   console.log(`   WebSocket endpoint: ws://localhost:${port}/ws`);
   console.log(`   MCP endpoint: http://localhost:${port}/mcp`);
@@ -330,6 +333,16 @@ export async function startServer(config: ServerConfig): Promise<void> {
   console.log(`   Working directory: ${AGENT_CWD}`);
   console.log(``);
   console.log(`🌐 Browser tool available via MCP`);
+
+  // Also log to file when debug is enabled
+  log.info("Server started", {
+    port,
+    wsEndpoint: `ws://localhost:${port}/ws`,
+    mcpEndpoint: `http://localhost:${port}/mcp`,
+    agent: AGENT_COMMAND,
+    agentArgs: AGENT_ARGS,
+    cwd: AGENT_CWD,
+  });
 
   // Keep the server running
   await new Promise(() => {});

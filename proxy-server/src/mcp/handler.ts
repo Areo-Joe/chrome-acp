@@ -15,6 +15,7 @@ import {
   MCP_METHODS,
   BROWSER_TOOLS,
 } from "./types.js";
+import { log } from "../logger.js";
 
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 
@@ -38,22 +39,22 @@ export function handleBrowserToolResponse(
   callId: string,
   result: BrowserToolResult | { error: string },
 ): void {
-  console.log(`[MCP] Browser tool response received for call: ${callId}`);
+  log.debug("Browser tool response received", { callId });
 
   const pending = pendingBrowserCalls.get(callId);
   if (!pending) {
-    console.warn(`[MCP] No pending call found for ID: ${callId}`);
+    log.warn("No pending call found", { callId });
     return;
   }
 
   pendingBrowserCalls.delete(callId);
 
   if ("error" in result && !("url" in result)) {
-    console.error(`[MCP] Browser tool error:`, result.error);
+    log.error("Browser tool error", { error: result.error });
     pending.reject(new Error(result.error));
   } else {
     const browserResult = result as BrowserToolResult;
-    console.log(`[MCP] Browser tool result:`, {
+    log.debug("Browser tool result", {
       action: browserResult.action,
       url: browserResult.url,
     });
@@ -64,18 +65,15 @@ export function handleBrowserToolResponse(
 async function executeBrowserTool(
   params: BrowserToolParams,
 ): Promise<BrowserToolResult> {
-  console.log(
-    "[MCP] Browser tool called with params:",
-    JSON.stringify(params, null, 2),
-  );
+  log.debug("Browser tool called", { params });
 
   if (!extensionWs) {
-    console.error("[MCP] No browser extension connected");
+    log.error("No browser extension connected");
     throw new Error("No browser extension connected");
   }
 
   const callId = crypto.randomUUID();
-  console.log(`[MCP] Browser tool call ID: ${callId}`);
+  log.debug("Browser tool call", { callId });
 
   // Send request to extension
   extensionWs.send(
@@ -94,7 +92,7 @@ async function executeBrowserTool(
     setTimeout(() => {
       if (pendingBrowserCalls.has(callId)) {
         pendingBrowserCalls.delete(callId);
-        console.error(`[MCP] Browser tool call timed out: ${callId}`);
+        log.error("Browser tool call timed out", { callId });
         reject(new Error("Browser tool call timed out"));
       }
     }, 30000);
@@ -142,7 +140,14 @@ function formatReadResult(result: BrowserReadResult): McpToolCallResult {
     .filter(Boolean)
     .join("\n");
 
-  console.log(`[MCP] Read result: ${textContent.length} chars`);
+  log.debug("Read result", {
+    url: result.url,
+    title: result.title,
+    viewport: result.viewport,
+    selection: result.selection,
+    domLength: result.dom?.length || 0,
+    totalChars: textContent.length,
+  });
 
   return {
     content: [{ type: "text", text: textContent }],
@@ -162,7 +167,13 @@ function formatExecuteResult(result: BrowserExecuteResult): McpToolCallResult {
     .filter(Boolean)
     .join("\n");
 
-  console.log(`[MCP] Execute result: ${textContent.length} chars`);
+  log.debug("Execute result", {
+    url: result.url,
+    result: result.result,
+    error: result.error,
+    isError: !!result.error,
+    totalChars: textContent.length,
+  });
 
   return {
     content: [{ type: "text", text: textContent }],
@@ -173,9 +184,17 @@ function formatExecuteResult(result: BrowserExecuteResult): McpToolCallResult {
 function formatScreenshotResult(
   result: BrowserScreenshotResult,
 ): McpToolCallResult {
-  console.log(
-    `[MCP] Screenshot result: ${result.screenshot.length} bytes base64`,
-  );
+  log.debug("Screenshot result", {
+    url: result.url,
+    bytesBase64: result.screenshot.length,
+    estimatedSizeKB: Math.round(result.screenshot.length * 0.75 / 1024),
+  });
+
+  // Log full base64 data at trace level for debugging
+  log.trace("Screenshot data", {
+    url: result.url,
+    dataUrl: `data:image/png;base64,${result.screenshot}`,
+  });
 
   return {
     content: [
@@ -189,6 +208,12 @@ async function handleToolCall(
   id: string | number,
   params: McpToolCallParams,
 ): Promise<McpResponse> {
+  log.info("Tool call started", {
+    id,
+    tool: params.name,
+    arguments: params.arguments,
+  });
+
   // Map tool name to action
   const toolToAction: Record<string, BrowserToolParams["action"]> = {
     browser_read: "read",
@@ -198,6 +223,7 @@ async function handleToolCall(
 
   const action = toolToAction[params.name];
   if (!action) {
+    log.warn("Unknown tool requested", { tool: params.name });
     return {
       jsonrpc: "2.0",
       id,
@@ -214,7 +240,16 @@ async function handleToolCall(
       script: (params.arguments as { script?: string })?.script,
     };
 
+    const startTime = Date.now();
     const browserResult = await executeBrowserTool(browserParams);
+    const duration = Date.now() - startTime;
+
+    log.info("Tool call completed", {
+      id,
+      tool: params.name,
+      action,
+      durationMs: duration,
+    });
 
     let result: McpToolCallResult;
 
@@ -232,8 +267,17 @@ async function handleToolCall(
         throw new Error(`Unknown action: ${(browserResult as BrowserToolResult).action}`);
     }
 
-    return { jsonrpc: "2.0", id, result };
+    const response: McpResponse = { jsonrpc: "2.0", id, result };
+    log.trace("MCP tool call response", { response });
+    return response;
   } catch (error) {
+    log.error("Tool call failed", {
+      id,
+      tool: params.name,
+      error: (error as Error).message,
+      stack: (error as Error).stack,
+    });
+
     const result: McpToolCallResult = {
       content: [{ type: "text", text: (error as Error).message }],
       isError: true,
@@ -245,7 +289,7 @@ async function handleToolCall(
 
 export async function handleMcpRequest(c: Context): Promise<Response> {
   const request = (await c.req.json()) as McpRequest;
-  console.log(`[MCP] Received: ${request.method}`);
+  log.debug("MCP request received", { method: request.method });
 
   let response: McpResponse;
 
