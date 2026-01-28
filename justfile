@@ -40,7 +40,7 @@ release version:
 
     # Update proxy-server/package.json
     echo "📝 Updating packages/proxy-server/package.json..."
-    cd packages/proxy-server && npm version "$VERSION" --no-git-tag-version && cd ../..
+    sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' packages/proxy-server/package.json
 
     # Commit changes
     echo "📦 Committing version bump..."
