@@ -10,19 +10,27 @@ Chrome Extension ◄──WebSocket──► Proxy Server ◄──stdin/stdout�
 
 Chrome extensions can't spawn subprocesses, so a local proxy server bridges the connection.
 
+## Packages
+
+This is a Bun monorepo with two packages:
+
+| Package | Description |
+|---------|-------------|
+| [`packages/chrome-extension`](./packages/chrome-extension) | Chrome extension with sidepanel chat UI |
+| [`packages/proxy-server`](./packages/proxy-server) | WebSocket proxy server (npm: `acp-proxy-server`) |
+
 ## Quick Start
 
 ### 1. Install dependencies
 
 ```bash
 bun install
-cd proxy-server && bun install && cd ..
 ```
 
 ### 2. Start proxy server
 
 ```bash
-cd proxy-server
+cd packages/proxy-server
 bun src/cli/bin.ts [proxy-options] <agent-command> [-- agent-args]
 ```
 
@@ -57,7 +65,7 @@ bun run build
 1. Open `chrome://extensions`
 2. Enable "Developer mode"
 3. Click "Load unpacked"
-4. Select the project root directory (where `manifest.json` is)
+4. Select `packages/chrome-extension` directory
 
 ### 5. Start chatting
 
@@ -72,6 +80,22 @@ The extension exposes three browser tools to agents via MCP:
 | `browser_read` | Read current page content (returns simplified DOM) |
 | `browser_execute` | Execute JavaScript on the page |
 | `browser_screenshot` | Capture screenshot of current page |
+
+## Development
+
+```bash
+# Build all packages
+bun run build
+
+# Build extension only
+bun run build:extension
+
+# Build proxy server only
+bun run build:proxy
+
+# Development mode (extension)
+bun run dev
+```
 
 ## License
 
