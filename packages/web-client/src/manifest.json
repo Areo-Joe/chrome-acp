@@ -1,0 +1,18 @@
+{
+  "name": "ACP Chat",
+  "short_name": "ACP",
+  "description": "Chat with ACP agents",
+  "start_url": "/app/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
+

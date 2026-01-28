@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#000000">
+  <meta name="description" content="ACP Chat - Chat with ACP agents">
+  <link rel="manifest" href="/app/manifest.json">
+  <link rel="icon" href="/app/logo.svg" type="image/svg+xml">
+  <title>ACP Chat</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="./frontend.tsx"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/app/sw.js');
+    }
+  </script>
+</body>
+</html>
+

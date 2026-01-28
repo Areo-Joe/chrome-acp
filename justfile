@@ -10,6 +10,10 @@ build:
 build-proxy:
     bun run build:proxy
 
+# Build web client (PWA)
+build-web:
+    bun run build:web
+
 # Build all
 build-all:
     bun run build

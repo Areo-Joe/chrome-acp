@@ -1,8 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { Writable, Readable } from "node:stream";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import * as acp from "@agentclientprotocol/sdk";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
 import type { WSContext } from "hono/ws";
 import {
@@ -11,6 +14,11 @@ import {
   handleBrowserToolResponse,
 } from "./mcp/handler.js";
 import { log } from "./logger.js";
+
+// Get the directory of this file to resolve public folder path
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PUBLIC_DIR = join(__dirname, "..", "public");
 
 export interface ServerConfig {
   port: number;
@@ -261,6 +269,15 @@ export async function startServer(config: ServerConfig): Promise<void> {
   // MCP Streamable HTTP endpoint for browser tool
   app.post("/mcp", handleMcpRequest);
 
+  // Serve PWA from /app (use absolute path so it works from any CWD)
+  app.use("/app/*", serveStatic({
+    root: PUBLIC_DIR,
+    rewriteRequestPath: (path) => path.replace(/^\/app/, ""),
+  }));
+
+  // Redirect /app to /app/ for clean URLs
+  app.get("/app", (c) => c.redirect("/app/"));
+
   // WebSocket endpoint
   app.get(
     "/ws",
@@ -325,9 +342,9 @@ export async function startServer(config: ServerConfig): Promise<void> {
 
   // Log server startup info (keep console for user-facing banner)
   console.log(`🚀 ACP Proxy Server running on http://localhost:${port}`);
-  console.log(`   WebSocket endpoint: ws://localhost:${port}/ws`);
-  console.log(`   MCP endpoint: http://localhost:${port}/mcp`);
-  console.log(`   Health check: http://localhost:${port}/health`);
+  console.log(`   Chat UI: http://localhost:${port}/app`);
+  console.log(`   WebSocket: ws://localhost:${port}/ws`);
+  console.log(`   MCP: http://localhost:${port}/mcp`);
   console.log(``);
   console.log(`📦 Agent: ${AGENT_COMMAND} ${AGENT_ARGS.join(" ")}`);
   console.log(`   Working directory: ${AGENT_CWD}`);

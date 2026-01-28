@@ -5,6 +5,7 @@ node_modules
 out
 dist
 *.tgz
+packages/proxy-server/public/
 
 # Chrome extension metadata (auto-generated)
 _metadata

@@ -6,9 +6,10 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "dev": "bun run --filter chrome-extension dev",
-    "build": "bun run --filter '*' build",
+    "build": "bun run build:web && bun run build:extension && bun run build:proxy",
     "build:extension": "bun run --filter chrome-extension build",
-    "build:proxy": "bun run --filter acp-proxy-server build"
+    "build:proxy": "bun run --filter acp-proxy-server build",
+    "build:web": "bun run --filter web-client build"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
