@@ -25,26 +25,22 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
-        run: |
-          bun install
-          cd proxy-server && bun install
+        run: bun install
 
-      - name: Build extension
+      - name: Build all packages
         run: bun run build
-
-      - name: Build proxy server
-        run: cd proxy-server && bun run build
 
       - name: Package extension
         run: |
+          cd packages/chrome-extension
           # Remove sourcemaps (not needed for production)
           rm -f dist/*.map
           # Zip only required files
-          zip -r chrome-acp.zip manifest.json icons/ rules/ dist/
+          zip -r ../../chrome-acp.zip manifest.json icons/ rules/ dist/
 
       - name: Publish to npm
         run: |
-          cd proxy-server
+          cd packages/proxy-server
           npm publish --provenance --access public
 
       - name: Create GitHub Release

@@ -6,7 +6,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Areo-Joe/chrome-acp.git",
-    "directory": "proxy-server"
+    "directory": "packages/proxy-server"
   },
   "homepage": "https://github.com/Areo-Joe/chrome-acp#readme",
   "bugs": "https://github.com/Areo-Joe/chrome-acp/issues",
