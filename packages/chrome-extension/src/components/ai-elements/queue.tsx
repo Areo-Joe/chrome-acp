@@ -1,13 +1,13 @@
 "use client";
 
-import { Button } from "acp-shared/components/ui/button";
+import { Button } from "@chrome-acp/shared/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "acp-shared/components/ui/collapsible";
-import { ScrollArea } from "acp-shared/components/ui/scroll-area";
-import { cn } from "acp-shared/lib/utils";
+} from "@chrome-acp/shared/components/ui/collapsible";
+import { ScrollArea } from "@chrome-acp/shared/components/ui/scroll-area";
+import { cn } from "@chrome-acp/shared/lib/utils";
 import { ChevronDownIcon, PaperclipIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 

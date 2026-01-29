@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "acp-shared/lib/utils";
+import { cn } from "@chrome-acp/shared/lib/utils";
 import { Controls as ControlsPrimitive } from "@xyflow/react";
 import type { ComponentProps } from "react";
 

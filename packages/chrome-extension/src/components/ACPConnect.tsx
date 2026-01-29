@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { Button } from "acp-shared/components/ui/button";
-import { Input } from "acp-shared/components/ui/input";
-import { Label } from "acp-shared/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "acp-shared/components/ui/card";
+import { Button } from "@chrome-acp/shared/components/ui/button";
+import { Input } from "@chrome-acp/shared/components/ui/input";
+import { Label } from "@chrome-acp/shared/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@chrome-acp/shared/components/ui/card";
 import { ACPClient } from "@/acp/client";
 import type { ACPSettings, ConnectionState } from "@/acp/types";
 import { DEFAULT_SETTINGS } from "@/acp/types";

@@ -1,13 +1,13 @@
 "use client";
 
-import { Button } from "acp-shared/components/ui/button";
-import { Separator } from "acp-shared/components/ui/separator";
+import { Button } from "@chrome-acp/shared/components/ui/button";
+import { Separator } from "@chrome-acp/shared/components/ui/separator";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "acp-shared/components/ui/tooltip";
-import { cn } from "acp-shared/lib/utils";
+} from "@chrome-acp/shared/components/ui/tooltip";
+import { cn } from "@chrome-acp/shared/lib/utils";
 import { BookmarkIcon, type LucideProps } from "lucide-react";
 import type { ComponentProps, HTMLAttributes } from "react";
 

@@ -11,10 +11,10 @@
       "name": "chrome-extension",
       "version": "0.1.0",
       "dependencies": {
+        "@chrome-acp/shared": "workspace:*",
         "@radix-ui/react-progress": "^1.1.8",
         "@radix-ui/react-use-controllable-state": "^1.2.2",
         "@xyflow/react": "^12.9.3",
-        "acp-shared": "workspace:*",
         "bun-plugin-tailwind": "^0.1.2",
         "embla-carousel-react": "^8.6.0",
         "motion": "^12.23.24",
@@ -54,7 +54,7 @@
       },
     },
     "packages/shared": {
-      "name": "acp-shared",
+      "name": "@chrome-acp/shared",
       "version": "0.1.0",
       "dependencies": {
         "@radix-ui/react-collapsible": "^1.1.12",
@@ -94,7 +94,7 @@
       "name": "web-client",
       "version": "0.1.0",
       "dependencies": {
-        "acp-shared": "workspace:*",
+        "@chrome-acp/shared": "workspace:*",
         "react": "^19",
         "react-dom": "^19",
       },
@@ -164,6 +164,8 @@
     "@chevrotain/types": ["@chevrotain/types@11.0.3", "", {}, "sha512-gsiM3G8b58kZC2HaWR50gu6Y1440cHiJ+i3JUvcp/35JchYejb2+5MVeJK0iKThYpAa/P2PYFV4hoi44HD+aHQ=="],
 
     "@chevrotain/utils": ["@chevrotain/utils@11.0.3", "", {}, "sha512-YslZMgtJUyuMbZ+aKvfF3x1f5liK4mWNxghFRv7jqRR9C3R3fAOGTTKvxXDa2Y1s9zSbcpuO0cAxDYsc9SrXoQ=="],
+
+    "@chrome-acp/shared": ["@chrome-acp/shared@workspace:packages/shared"],
 
     "@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.27.2", "", { "os": "aix", "cpu": "ppc64" }, "sha512-GZMB+a0mOMZs4MpDbj8RJp4cw+w1WV5NYD6xzgvzUJ5Ek2jerwfO2eADyI6ExDSUED+1X8aMbegahsJi+8mgpw=="],
 
@@ -570,8 +572,6 @@
     "acorn": ["acorn@8.15.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-NZyJarBfL7nWwIq+FDL6Zp/yHEhePMNnnJ0y3qfieCrmNvYct8uvtiV41UvlSe6apAfk0fY1FbWx+NwfmpvtTg=="],
 
     "acp-proxy-server": ["acp-proxy-server@workspace:packages/proxy-server"],
-
-    "acp-shared": ["acp-shared@workspace:packages/shared"],
 
     "aria-hidden": ["aria-hidden@1.2.6", "", { "dependencies": { "tslib": "^2.0.0" } }, "sha512-ik3ZgC9dY/lYVVM++OISsaYDeg1tb0VtP5uL3ouh1koGOaUMDPpbFIei4JkFimWUFPn90sbMNMXQAIVOlnYKJA=="],
 

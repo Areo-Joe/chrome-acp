@@ -1,4 +1,4 @@
-import { cn } from "acp-shared/lib/utils";
+import { cn } from "@chrome-acp/shared/lib/utils";
 import { NodeToolbar, Position } from "@xyflow/react";
 import type { ComponentProps } from "react";
 

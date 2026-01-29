@@ -1,4 +1,4 @@
-import { cn } from "acp-shared/lib/utils";
+import { cn } from "@chrome-acp/shared/lib/utils";
 import type { HTMLAttributes } from "react";
 
 type LoaderIconProps = {

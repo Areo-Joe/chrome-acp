@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "acp-shared": "workspace:*",
+    "@chrome-acp/shared": "workspace:*",
     "react": "^19",
     "react-dom": "^19"
   },

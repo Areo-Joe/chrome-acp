@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge } from "acp-shared/components/ui/badge";
+import { Badge } from "@chrome-acp/shared/components/ui/badge";
 import {
   Carousel,
   type CarouselApi,
@@ -11,8 +11,8 @@ import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "acp-shared/components/ui/hover-card";
-import { cn } from "acp-shared/lib/utils";
+} from "@chrome-acp/shared/components/ui/hover-card";
+import { cn } from "@chrome-acp/shared/lib/utils";
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import {
   type ComponentProps,

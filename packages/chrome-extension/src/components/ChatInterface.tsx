@@ -9,26 +9,26 @@ import {
   ConversationContent,
   ConversationEmptyState,
   ConversationScrollButton,
-} from "acp-shared/components/ai-elements/conversation";
+} from "@chrome-acp/shared/components/ai-elements/conversation";
 import {
   Message,
   MessageContent,
   MessageResponse,
-} from "acp-shared/components/ai-elements/message";
+} from "@chrome-acp/shared/components/ai-elements/message";
 import {
   PromptInput,
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputSubmit,
   type PromptInputMessage,
-} from "acp-shared/components/ai-elements/prompt-input";
+} from "@chrome-acp/shared/components/ai-elements/prompt-input";
 import {
   Tool,
   ToolHeader,
   ToolContent,
   ToolInput,
   ToolOutput,
-} from "acp-shared/components/ai-elements/tool";
+} from "@chrome-acp/shared/components/ai-elements/tool";
 
 interface ToolCallData {
   id: string;

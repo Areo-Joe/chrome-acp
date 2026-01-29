@@ -9,7 +9,7 @@
     "build": "bun run build.ts"
   },
   "dependencies": {
-    "acp-shared": "workspace:*",
+    "@chrome-acp/shared": "workspace:*",
     "@radix-ui/react-progress": "^1.1.8",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@xyflow/react": "^12.9.3",

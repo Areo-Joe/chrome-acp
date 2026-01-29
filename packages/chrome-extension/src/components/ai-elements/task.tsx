@@ -4,8 +4,8 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "acp-shared/components/ui/collapsible";
-import { cn } from "acp-shared/lib/utils";
+} from "@chrome-acp/shared/components/ui/collapsible";
+import { cn } from "@chrome-acp/shared/lib/utils";
 import { ChevronDownIcon, SearchIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 

@@ -1,19 +1,19 @@
 "use client";
 
-import { Button } from "acp-shared/components/ui/button";
+import { Button } from "@chrome-acp/shared/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "acp-shared/components/ui/collapsible";
-import { Input } from "acp-shared/components/ui/input";
+} from "@chrome-acp/shared/components/ui/collapsible";
+import { Input } from "@chrome-acp/shared/components/ui/input";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "acp-shared/components/ui/tooltip";
-import { cn } from "acp-shared/lib/utils";
+} from "@chrome-acp/shared/components/ui/tooltip";
+import { cn } from "@chrome-acp/shared/lib/utils";
 import { ChevronDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { createContext, useContext, useEffect, useState } from "react";

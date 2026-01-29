@@ -6,8 +6,8 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "acp-shared/components/ui/card";
-import { cn } from "acp-shared/lib/utils";
+} from "@chrome-acp/shared/components/ui/card";
+import { cn } from "@chrome-acp/shared/lib/utils";
 import { Handle, Position } from "@xyflow/react";
 import type { ComponentProps } from "react";
 

@@ -8,14 +8,14 @@ import {
   CommandList,
   CommandSeparator,
   CommandShortcut,
-} from "acp-shared/components/ui/command";
+} from "@chrome-acp/shared/components/ui/command";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
   DialogTrigger,
-} from "acp-shared/components/ui/dialog";
-import { cn } from "acp-shared/lib/utils";
+} from "@chrome-acp/shared/components/ui/dialog";
+import { cn } from "@chrome-acp/shared/lib/utils";
 import type { ComponentProps, ReactNode } from "react";
 
 export type ModelSelectorProps = ComponentProps<typeof Dialog>;

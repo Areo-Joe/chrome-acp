@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "acp-shared/components/ui/button";
+import { Button } from "@chrome-acp/shared/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,8 +8,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "acp-shared/components/ui/dropdown-menu";
-import { cn } from "acp-shared/lib/utils";
+} from "@chrome-acp/shared/components/ui/dropdown-menu";
+import { cn } from "@chrome-acp/shared/lib/utils";
 import {
   ChevronDownIcon,
   ExternalLinkIcon,
