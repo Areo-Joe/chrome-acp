@@ -24,24 +24,13 @@ export default defineConfig({
         main: resolve(__dirname, "src/index.html"),
       },
       output: {
-        // Enable code splitting with proper chunking
-        manualChunks: {
-          // Split vendor chunks for better caching
-          react: ["react", "react-dom"],
-          radix: [
-            "@radix-ui/react-collapsible",
-            "@radix-ui/react-dialog",
-            "@radix-ui/react-dropdown-menu",
-            "@radix-ui/react-hover-card",
-            "@radix-ui/react-label",
-            "@radix-ui/react-scroll-area",
-            "@radix-ui/react-select",
-            "@radix-ui/react-separator",
-            "@radix-ui/react-slot",
-            "@radix-ui/react-tooltip",
+        // Enable code splitting with proper chunking (Rolldown advancedChunks)
+        advancedChunks: {
+          groups: [
+            { name: "react", test: /[\\/]react(?:-dom)?[\\/]/ },
+            { name: "radix", test: /@radix-ui[\\/]/ },
+            { name: "shiki", test: /[\\/]shiki[\\/]/ },
           ],
-          // Shiki is large, split it separately for lazy loading potential
-          shiki: ["shiki"],
         },
         assetFileNames: "assets/[name]-[hash][extname]",
         chunkFileNames: "assets/[name]-[hash].js",
