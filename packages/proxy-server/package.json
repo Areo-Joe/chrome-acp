@@ -1,5 +1,5 @@
 {
-  "name": "acp-proxy-server",
+  "name": "@chrome-acp/proxy-server",
   "version": "1.0.5",
   "description": "Proxy server that connects ACP agents to Chrome extension, exposing browser tools via MCP",
   "author": "Areo Joe <zengjoe@foxmail.com>",

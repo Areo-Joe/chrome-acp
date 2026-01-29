@@ -1,5 +1,5 @@
 {
-  "name": "chrome-extension",
+  "name": "@chrome-acp/extension",
   "version": "0.1.0",
   "private": true,
   "type": "module",

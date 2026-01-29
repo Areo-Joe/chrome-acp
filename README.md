@@ -21,7 +21,7 @@ This is a Bun monorepo with four packages:
 | [`packages/chrome-extension`](./packages/chrome-extension) | Chrome extension with sidepanel chat UI |
 | [`packages/web-client`](./packages/web-client) | PWA web client, served at `http://localhost:{port}/app` |
 | [`packages/shared`](./packages/shared) | Shared UI components and utilities (`@chrome-acp/shared`) |
-| [`packages/proxy-server`](./packages/proxy-server) | WebSocket proxy server (npm: `acp-proxy-server`) |
+| [`packages/proxy-server`](./packages/proxy-server) | WebSocket proxy server (npm: `@chrome-acp/proxy-server`) |
 
 ## Quick Start
 

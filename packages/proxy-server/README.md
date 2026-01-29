@@ -9,7 +9,7 @@ Part of the [chrome-acp](https://github.com/Areo-Joe/chrome-acp) monorepo.
 ### From npm
 
 ```bash
-npm install -g acp-proxy-server
+npm install -g @chrome-acp/proxy-server
 ```
 
 ### From source
@@ -24,7 +24,7 @@ bun install
 ### Via npx
 
 ```bash
-npx acp-proxy-server /path/to/agent
+npx @chrome-acp/proxy-server /path/to/agent
 ```
 
 ### Via global install

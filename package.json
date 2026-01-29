@@ -5,11 +5,11 @@
   "type": "module",
   "workspaces": ["packages/*"],
   "scripts": {
-    "dev": "bun run --filter chrome-extension dev",
+    "dev": "bun run --filter @chrome-acp/extension dev",
     "build": "bun run build:web && bun run build:extension && bun run build:proxy",
-    "build:extension": "bun run --filter chrome-extension build",
-    "build:proxy": "bun run --filter acp-proxy-server build",
-    "build:web": "bun run --filter web-client build"
+    "build:extension": "bun run --filter @chrome-acp/extension build",
+    "build:proxy": "bun run --filter @chrome-acp/proxy-server build",
+    "build:web": "bun run --filter @chrome-acp/web-client build"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
