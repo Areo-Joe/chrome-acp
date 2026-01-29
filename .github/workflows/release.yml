@@ -41,7 +41,14 @@ jobs:
       - name: Publish to npm
         run: |
           cd packages/proxy-server
-          npm publish --provenance --access public
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *"-"* ]]; then
+            # Prerelease version (contains hyphen, e.g., 1.0.10-beta.1)
+            npm publish --provenance --access public --tag beta
+          else
+            # Stable version
+            npm publish --provenance --access public
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
