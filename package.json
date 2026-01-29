@@ -1,9 +1,11 @@
 {
   "name": "chrome-acp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "bun run --filter @chrome-acp/extension dev",
     "build": "bun run build:web && bun run build:extension && bun run build:proxy",
