@@ -3,32 +3,32 @@ import { Loader2 } from "lucide-react";
 import type { ACPClient } from "@/acp/client";
 import type { SessionUpdate, ToolCallContent } from "@/acp/types";
 
-// AI Elements components
+// AI Elements components from shared package
 import {
   Conversation,
   ConversationContent,
   ConversationEmptyState,
   ConversationScrollButton,
-} from "@/components/ai-elements/conversation";
+} from "acp-shared/components/ai-elements/conversation";
 import {
   Message,
   MessageContent,
   MessageResponse,
-} from "@/components/ai-elements/message";
+} from "acp-shared/components/ai-elements/message";
 import {
   PromptInput,
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputSubmit,
   type PromptInputMessage,
-} from "@/components/ai-elements/prompt-input";
+} from "acp-shared/components/ai-elements/prompt-input";
 import {
   Tool,
   ToolHeader,
   ToolContent,
   ToolInput,
   ToolOutput,
-} from "@/components/ai-elements/tool";
+} from "acp-shared/components/ai-elements/tool";
 
 interface ToolCallData {
   id: string;

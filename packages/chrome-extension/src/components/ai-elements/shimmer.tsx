@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { cn } from "acp-shared/lib/utils";
 import { motion } from "motion/react";
 import {
   type CSSProperties,

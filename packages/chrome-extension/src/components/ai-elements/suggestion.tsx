@@ -1,11 +1,11 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "acp-shared/components/ui/button";
 import {
   ScrollArea,
   ScrollBar,
-} from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+} from "acp-shared/components/ui/scroll-area";
+import { cn } from "acp-shared/lib/utils";
 import type { ComponentProps } from "react";
 
 export type SuggestionsProps = ComponentProps<typeof ScrollArea>;

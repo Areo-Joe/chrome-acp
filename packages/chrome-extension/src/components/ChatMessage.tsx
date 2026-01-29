@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "acp-shared/lib/utils";
 import { User, Bot, Wrench, Loader2 } from "lucide-react";
 
 export interface ToolCall {

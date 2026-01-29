@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Scan shared package for Tailwind classes - use direct relative path instead of node_modules */
+@source "../../../shared/src";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
