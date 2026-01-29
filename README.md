@@ -1,23 +1,26 @@
 # Chrome ACP
 
-A Chrome extension for chatting with [ACP](https://agentclientprotocol.com) agents via sidepanel.
+A Chrome extension and web client for chatting with [ACP](https://agentclientprotocol.com) agents.
 
 ## Architecture
 
 ```
-Chrome Extension ◄──WebSocket──► Proxy Server ◄──stdin/stdout──► ACP Agent
+Chrome Extension ◄──┐
+                    ├──WebSocket──► Proxy Server ◄──stdin/stdout──► ACP Agent
+Web Client (PWA) ◄──┘
 ```
 
-Chrome extensions can't spawn subprocesses, so a local proxy server bridges the connection.
+Chrome extensions can't spawn subprocesses, so a local proxy server bridges the connection. The web client provides an alternative browser-based UI.
 
 ## Packages
 
-This is a Bun monorepo with two packages:
+This is a Bun monorepo with three packages:
 
 | Package | Description |
 |---------|-------------|
 | [`packages/chrome-extension`](./packages/chrome-extension) | Chrome extension with sidepanel chat UI |
 | [`packages/proxy-server`](./packages/proxy-server) | WebSocket proxy server (npm: `acp-proxy-server`) |
+| [`packages/web-client`](./packages/web-client) | PWA web client, served at `http://localhost:{port}/app` |
 
 ## Quick Start
 
@@ -69,7 +72,13 @@ bun run build
 
 ### 5. Start chatting
 
+**Option A: Chrome Extension**
+
 Click extension icon → Open sidepanel → Connect → Chat
+
+**Option B: Web Client**
+
+Open `http://localhost:9315/app` in your browser (no extension needed)
 
 ## Browser Tools
 
@@ -87,11 +96,10 @@ The extension exposes three browser tools to agents via MCP:
 # Build all packages
 bun run build
 
-# Build extension only
-bun run build:extension
-
-# Build proxy server only
-bun run build:proxy
+# Build individual packages
+bun run build:extension  # Chrome extension
+bun run build:proxy      # Proxy server
+bun run build:web        # Web client
 
 # Development mode (extension)
 bun run dev
