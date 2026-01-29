@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2 } from "lucide-react";
 import type { ACPClient } from "@/acp/client";
 import type { SessionUpdate, ToolCallContent } from "@/acp/types";
 
@@ -29,6 +28,7 @@ import {
   ToolInput,
   ToolOutput,
 } from "@chrome-acp/shared/components/ai-elements/tool";
+import { Shimmer } from "@chrome-acp/shared/components/ai-elements/shimmer";
 
 interface ToolCallData {
   id: string;
@@ -265,9 +265,8 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
       <Conversation className="flex-1">
         <ConversationContent>
           {!sessionReady ? (
-            <div className="flex items-center justify-center p-4 text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              Creating session...
+            <div className="flex items-center justify-center p-4">
+              <Shimmer>Creating session...</Shimmer>
             </div>
           ) : messages.length === 0 ? (
             <ConversationEmptyState
@@ -275,53 +274,63 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
               description="Type a message below to chat with the ACP agent"
             />
           ) : (
-            messages.map((message) => (
-              <Message key={message.id} from={message.role}>
-                <MessageContent>
-                  {message.parts.map((part, index) => {
-                    if (part.type === "text") {
-                      return (
-                        <MessageResponse key={index}>{part.text}</MessageResponse>
-                      );
-                    }
-                    // part.type === "tool_call"
-                    const tool = part.toolCall;
-                    const toolOutput = formatToolOutput(tool.content, tool.rawOutput);
-                    const hasOutput =
-                      tool.status !== "running" && toolOutput !== null;
+            <>
+              {messages.map((message) => (
+                <Message key={message.id} from={message.role}>
+                  <MessageContent>
+                    {message.parts.map((part, index) => {
+                      if (part.type === "text") {
+                        return (
+                          <MessageResponse key={index}>{part.text}</MessageResponse>
+                        );
+                      }
+                      // part.type === "tool_call"
+                      const tool = part.toolCall;
+                      const toolOutput = formatToolOutput(tool.content, tool.rawOutput);
+                      const hasOutput =
+                        tool.status !== "running" && toolOutput !== null;
 
-                    return (
-                      <Tool key={tool.id} defaultOpen={hasOutput}>
-                        <ToolHeader
-                          title={tool.title}
-                          type="tool-invocation"
-                          state={
-                            tool.status === "error"
-                              ? "output-error"
-                              : tool.status === "running"
-                                ? "input-available"
-                                : "output-available"
-                          }
-                        />
-                        <ToolContent>
-                          {tool.rawInput && (
-                            <ToolInput input={tool.rawInput} />
-                          )}
-                          <ToolOutput
-                            output={toolOutput}
-                            errorText={
+                      return (
+                        <Tool key={tool.id} defaultOpen={hasOutput}>
+                          <ToolHeader
+                            title={tool.title}
+                            type="tool-invocation"
+                            state={
                               tool.status === "error"
-                                ? "Tool execution failed"
-                                : undefined
+                                ? "output-error"
+                                : tool.status === "running"
+                                  ? "input-available"
+                                  : "output-available"
                             }
                           />
-                        </ToolContent>
-                      </Tool>
-                    );
-                  })}
-                </MessageContent>
-              </Message>
-            ))
+                          <ToolContent>
+                            {tool.rawInput && (
+                              <ToolInput input={tool.rawInput} />
+                            )}
+                            <ToolOutput
+                              output={toolOutput}
+                              errorText={
+                                tool.status === "error"
+                                  ? "Tool execution failed"
+                                  : undefined
+                              }
+                            />
+                          </ToolContent>
+                        </Tool>
+                      );
+                    })}
+                  </MessageContent>
+                </Message>
+              ))}
+              {/* Thinking indicator - show when loading and no agent response yet */}
+              {isLoading && !currentAgentMessageIdRef.current && (
+                <Message from="assistant">
+                  <MessageContent>
+                    <Shimmer>Thinking...</Shimmer>
+                  </MessageContent>
+                </Message>
+              )}
+            </>
           )}
         </ConversationContent>
         <ConversationScrollButton />
