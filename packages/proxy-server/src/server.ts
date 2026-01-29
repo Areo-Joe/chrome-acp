@@ -26,6 +26,7 @@ export interface ServerConfig {
   args: string[];
   cwd: string;
   debug?: boolean;
+  termux?: boolean;
 }
 
 // Track connected clients and their agent connections
@@ -244,8 +245,55 @@ interface ProxyMessage {
   payload?: { cwd?: string } | { text: string };
 }
 
+// Launch PWA via Termux am command
+async function launchTermuxPwa(pwaName: string): Promise<void> {
+  const { exec } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execAsync = promisify(exec);
+
+  try {
+    // Find WebAPK package by app name using aapt
+    const { stdout: packagesOutput } = await execAsync(
+      "pm list packages 2>/dev/null | grep webapk | cut -d: -f2"
+    );
+    const packages = packagesOutput.trim().split("\n").filter(Boolean);
+
+    for (const pkg of packages) {
+      try {
+        // Get APK path
+        const { stdout: pathOutput } = await execAsync(`pm path ${pkg} 2>/dev/null | cut -d: -f2`);
+        const apkPath = pathOutput.trim();
+        if (!apkPath) continue;
+
+        // Check app label using aapt
+        const { stdout: aaptOutput } = await execAsync(`aapt dump badging "${apkPath}" 2>/dev/null`);
+        const labelMatch = aaptOutput.match(/application-label:'([^']+)'/);
+        if (labelMatch && labelMatch[1] === pwaName) {
+          // Found the PWA, launch it
+          const activityMatch = aaptOutput.match(/launchable-activity: name='([^']+)'/);
+          if (activityMatch) {
+            const activity = activityMatch[1];
+            await execAsync(`am start -n ${pkg}/${activity}`);
+            log.info("Launched PWA via Termux", { package: pkg, activity });
+            console.log(`📱 Launched PWA: ${pwaName}`);
+            return;
+          }
+        }
+      } catch {
+        // Skip this package if any error
+        continue;
+      }
+    }
+    log.warn("PWA not found", { name: pwaName });
+    console.log(`⚠️  PWA "${pwaName}" not found`);
+  } catch (error) {
+    log.error("Failed to launch PWA", { error: (error as Error).message });
+    console.log(`⚠️  Failed to launch PWA: ${(error as Error).message}`);
+  }
+}
+
 export async function startServer(config: ServerConfig): Promise<void> {
-  const { port, command, args, cwd } = config;
+  const { port, command, args, cwd, termux } = config;
 
   // Set module-level config
   AGENT_COMMAND = command;
@@ -360,6 +408,14 @@ export async function startServer(config: ServerConfig): Promise<void> {
     agentArgs: AGENT_ARGS,
     cwd: AGENT_CWD,
   });
+
+  // Launch PWA via Termux if --termux flag is set
+  if (termux) {
+    // Small delay to ensure server is ready
+    setTimeout(() => {
+      launchTermuxPwa("ACP");
+    }, 500);
+  }
 
   // Keep the server running
   await new Promise(() => {});

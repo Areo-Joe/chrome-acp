@@ -65,3 +65,47 @@ release version:
     echo "✅ Done! GitHub Actions will handle the rest."
     echo "   Watch: https://github.com/Areo-Joe/chrome-acp/actions"
 
+# Release a beta version
+# Usage: just release-beta 1.2.3-beta.1
+release-beta version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    VERSION="{{version}}"
+
+    # Validate version format (must contain hyphen for prerelease)
+    if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[a-zA-Z0-9.]+$ ]]; then
+        echo "❌ Invalid beta version format. Use: X.Y.Z-tag (e.g., 1.2.3-beta.1)"
+        exit 1
+    fi
+
+    echo "🧪 Releasing beta version $VERSION"
+
+    # Detect OS for sed compatibility
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        SED_INPLACE="sed -i ''"
+    else
+        SED_INPLACE="sed -i"
+    fi
+
+    # Update proxy-server/package.json only (no extension update for beta)
+    echo "📝 Updating packages/proxy-server/package.json..."
+    $SED_INPLACE 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' packages/proxy-server/package.json
+
+    # Commit changes
+    echo "📦 Committing version bump..."
+    git add packages/proxy-server/package.json
+    git commit -m "chore: bump version to $VERSION"
+
+    # Create and push tag
+    echo "🏷️  Creating tag v$VERSION..."
+    git tag "v$VERSION"
+
+    echo "⬆️  Pushing to GitHub..."
+    git push
+    git push --tags
+
+    echo "✅ Done! GitHub Actions will handle the rest."
+    echo "   Install with: npm install -g @chrome-acp/proxy-server@$VERSION"
+    echo "   Watch: https://github.com/Areo-Joe/chrome-acp/actions"
+
