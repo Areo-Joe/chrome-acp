@@ -3,8 +3,8 @@ import { join } from "path";
 
 const outdir = join(import.meta.dir, "../proxy-server/public");
 
-// Copy PWA assets (manifest.json, service-worker.js, logo)
-const pwaAssets = ["manifest.json", "sw.js", "logo.svg"];
+// Copy PWA assets (manifest.json, service-worker.js, logo, icons)
+const pwaAssets = ["manifest.json", "sw.js", "logo.svg", "icon-192.png", "icon-512.png"];
 for (const asset of pwaAssets) {
   const src = join(import.meta.dir, "src", asset);
   const dest = join(outdir, asset);
