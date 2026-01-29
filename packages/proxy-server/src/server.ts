@@ -261,9 +261,9 @@ export async function startServer(config: ServerConfig): Promise<void> {
     return c.json({ status: "ok" });
   });
 
-  // Root endpoint
+  // Root endpoint - redirect to PWA
   app.get("/", (c) => {
-    return c.text("ACP Proxy Server");
+    return c.redirect("/app/");
   });
 
   // MCP Streamable HTTP endpoint for browser tool
