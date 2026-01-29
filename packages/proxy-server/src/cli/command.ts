@@ -23,6 +23,11 @@ export const command = buildCommand({
         brief: "Enable debug logging to file",
         default: false,
       },
+      termux: {
+        kind: "boolean",
+        brief: "Auto-launch PWA via Termux (finds and opens the ACP WebAPK)",
+        default: false,
+      },
     },
     positional: {
       kind: "array",
@@ -36,11 +41,12 @@ export const command = buildCommand({
   },
   func: async function (
     this: LocalContext,
-    flags: { port: number; debug: boolean },
+    flags: { port: number; debug: boolean; termux: boolean },
     ...args: readonly string[]
   ) {
     const port = flags.port;
     const debug = flags.debug;
+    const termux = flags.termux;
     const [command, ...agentArgs] = args;
     const cwd = process.cwd();
 
@@ -50,6 +56,6 @@ export const command = buildCommand({
 
     // Import and run the server
     const { startServer } = await import("../server.js");
-    await startServer({ port, command: command!, args: [...agentArgs], cwd, debug });
+    await startServer({ port, command: command!, args: [...agentArgs], cwd, debug, termux });
   },
 });
