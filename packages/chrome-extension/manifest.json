@@ -1,7 +1,7 @@
 {
   "name": "Chrome ACP",
   "description": "Chat interface for Agent Client Protocol (ACP) agents. Connect to any ACP-compatible AI agent through a proxy server.",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "manifest_version": 3,
   "permissions": [
     "sidePanel",
