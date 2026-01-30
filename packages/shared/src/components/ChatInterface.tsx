@@ -29,6 +29,11 @@ import {
   ToolOutput,
 } from "./ai-elements/tool";
 import { Shimmer } from "./ai-elements/shimmer";
+import {
+  Reasoning,
+  ReasoningTrigger,
+  ReasoningContent,
+} from "./ai-elements/reasoning";
 import { ToolPermissionButtons } from "./ai-elements/permission-request";
 
 // =============================================================================
@@ -606,15 +611,19 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
                       <MessageContent>
                         {entry.chunks.map((chunk, chunkIndex) => {
                           if (chunk.type === "thought") {
-                            // Render thought with special styling
+                            // Determine if this thought chunk is still streaming
+                            const isLastChunk = chunkIndex === entry.chunks.length - 1;
+                            const isThoughtStreaming = isLoading && isLastChunk;
                             return (
-                              <div
+                              <Reasoning
                                 key={chunkIndex}
-                                className="text-muted-foreground italic border-l-2 border-muted pl-3 my-2"
+                                isStreaming={isThoughtStreaming}
                               >
-                                <span className="text-xs uppercase tracking-wide">Thinking</span>
-                                <MessageResponse>{chunk.text}</MessageResponse>
-                              </div>
+                                <ReasoningTrigger />
+                                <ReasoningContent>
+                                  <MessageResponse>{chunk.text}</MessageResponse>
+                                </ReasoningContent>
+                              </Reasoning>
                             );
                           }
                           // Regular message chunk
