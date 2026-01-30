@@ -34,20 +34,22 @@ release version:
 
     echo "🚀 Releasing version $VERSION"
 
-    # Detect OS for sed compatibility
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        SED_INPLACE="sed -i ''"
-    else
-        SED_INPLACE="sed -i"
-    fi
+    # Cross-platform sed in-place function
+    sed_inplace() {
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "$@"
+        else
+            sed -i "$@"
+        fi
+    }
 
     # Update manifest.json
     echo "📝 Updating packages/chrome-extension/manifest.json..."
-    $SED_INPLACE 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' packages/chrome-extension/manifest.json
+    sed_inplace 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' packages/chrome-extension/manifest.json
 
     # Update proxy-server/package.json
     echo "📝 Updating packages/proxy-server/package.json..."
-    $SED_INPLACE 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' packages/proxy-server/package.json
+    sed_inplace 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' packages/proxy-server/package.json
 
     # Commit changes
     echo "📦 Committing version bump..."
@@ -81,16 +83,18 @@ release-beta version:
 
     echo "🧪 Releasing beta version $VERSION"
 
-    # Detect OS for sed compatibility
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        SED_INPLACE="sed -i ''"
-    else
-        SED_INPLACE="sed -i"
-    fi
+    # Cross-platform sed in-place function
+    sed_inplace() {
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "$@"
+        else
+            sed -i "$@"
+        fi
+    }
 
     # Update proxy-server/package.json only (no extension update for beta)
     echo "📝 Updating packages/proxy-server/package.json..."
-    $SED_INPLACE 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' packages/proxy-server/package.json
+    sed_inplace 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' packages/proxy-server/package.json
 
     # Commit changes
     echo "📦 Committing version bump..."
