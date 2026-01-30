@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { ACPClient } from "../acp/client";
 import type { SessionUpdate, ToolCallContent, PermissionRequestPayload, PermissionOption } from "../acp/types";
 
@@ -31,10 +31,18 @@ import {
 import { Shimmer } from "./ai-elements/shimmer";
 import { ToolPermissionButtons } from "./ai-elements/permission-request";
 
+// =============================================================================
+// Type Definitions - Flat Entry Structure (matching Zed's architecture)
+// =============================================================================
+
+// Tool call status
+type ToolCallStatus = "running" | "complete" | "error" | "waiting_for_confirmation" | "rejected";
+
+// Tool call data
 interface ToolCallData {
   id: string;
   title: string;
-  status: "running" | "complete" | "error" | "waiting_for_confirmation" | "rejected";
+  status: ToolCallStatus;
   content?: ToolCallContent[];
   rawInput?: Record<string, unknown>;
   rawOutput?: Record<string, unknown>;
@@ -44,20 +52,36 @@ interface ToolCallData {
     options: PermissionOption[];
   };
   // True if this is a standalone permission request (not attached to a real tool call)
-  // When approved, standalone permission requests should be marked as complete immediately
   isStandalonePermission?: boolean;
 }
 
-// Message part: either text or a tool call
-type MessagePart =
-  | { type: "text"; text: string }
-  | { type: "tool_call"; toolCall: ToolCallData };
+// Assistant message chunk - can be regular message or thought
+type AssistantChunk =
+  | { type: "message"; text: string }
+  | { type: "thought"; text: string };
 
-interface ChatMessageData {
+// User message entry
+interface UserMessageEntry {
+  type: "user_message";
   id: string;
-  role: "user" | "assistant";
-  parts: MessagePart[];
+  content: string;
 }
+
+// Assistant message entry - contains chunks (text + thoughts)
+interface AssistantMessageEntry {
+  type: "assistant_message";
+  id: string;
+  chunks: AssistantChunk[];
+}
+
+// Tool call entry - standalone, not nested in messages
+interface ToolCallEntry {
+  type: "tool_call";
+  toolCall: ToolCallData;
+}
+
+// Thread entry - flat list of all entries
+type ThreadEntry = UserMessageEntry | AssistantMessageEntry | ToolCallEntry;
 
 interface ChatInterfaceProps {
   client: ACPClient;
@@ -97,93 +121,299 @@ function formatToolOutput(
   return null;
 }
 
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+// Map ACP status string to our status type
+function mapToolStatus(status: string): ToolCallStatus {
+  if (status === "completed") return "complete";
+  if (status === "failed") return "error";
+  return "running";
+}
+
+// Find tool call index in entries (search from end, like Zed)
+function findToolCallIndex(entries: ThreadEntry[], toolCallId: string): number {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry && entry.type === "tool_call" && entry.toolCall.id === toolCallId) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// =============================================================================
+// ChatInterface Component
+// =============================================================================
+
 export function ChatInterface({ client }: ChatInterfaceProps) {
-  const [messages, setMessages] = useState<ChatMessageData[]>([]);
+  // Flat list of entries (like Zed's entries: Vec<AgentThreadEntry>)
+  const [entries, setEntries] = useState<ThreadEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
 
-  // Use ref for tracking current agent message ID to avoid stale closure issues
-  const currentAgentMessageIdRef = useRef<string | null>(null);
-
-  // Handle permission request by updating the corresponding tool call status
-  // or creating a standalone permission request if no matching tool call exists
+  // =============================================================================
+  // Permission Request Handler
+  // =============================================================================
   const handlePermissionRequest = useCallback((request: PermissionRequestPayload) => {
     console.log("[ChatInterface] Permission request:", request);
 
-    setMessages((prev) => {
-      // First, check if there's a matching tool call
-      const hasMatchingToolCall = prev.some((msg) =>
-        msg.parts.some(
-          (part) =>
-            part.type === "tool_call" &&
-            part.toolCall.id === request.toolCall.toolCallId &&
-            part.toolCall.status === "running"
-        )
-      );
+    setEntries((prev) => {
+      // Find matching tool call (search from end)
+      const toolCallIndex = findToolCallIndex(prev, request.toolCall.toolCallId);
 
-      if (hasMatchingToolCall) {
-        // Update the existing tool call's status
-        return prev.map((msg) => ({
-          ...msg,
-          parts: msg.parts.map((part) => {
-            if (part.type !== "tool_call") return part;
-            if (part.toolCall.id !== request.toolCall.toolCallId) return part;
-            if (part.toolCall.status !== "running") return part;
+      if (toolCallIndex >= 0) {
+        // Update existing tool call's status
+        return prev.map((entry, index) => {
+          if (index !== toolCallIndex) return entry;
+          if (entry.type !== "tool_call") return entry;
+          if (entry.toolCall.status !== "running") return entry;
 
-            return {
-              type: "tool_call" as const,
-              toolCall: {
-                ...part.toolCall,
-                status: "waiting_for_confirmation" as const,
-                permissionRequest: {
-                  requestId: request.requestId,
-                  options: request.options,
-                },
+          return {
+            type: "tool_call",
+            toolCall: {
+              ...entry.toolCall,
+              status: "waiting_for_confirmation" as const,
+              permissionRequest: {
+                requestId: request.requestId,
+                options: request.options,
               },
-            };
-          }),
-        }));
+            },
+          };
+        });
       } else {
-        // No matching tool call - create a standalone permission request as a new tool call
+        // No matching tool call - create standalone permission request as new entry
         console.log("[ChatInterface] No matching tool call, creating standalone permission request");
 
-        // Find or create an agent message to add the permission request to
-        const lastAgentMsgIndex = prev.findLastIndex((msg) => msg.role === "agent");
-
-        const permissionToolCall: ToolCallData = {
-          id: request.toolCall.toolCallId,
-          title: request.toolCall.title || "Permission Request",
-          status: "waiting_for_confirmation",
-          permissionRequest: {
-            requestId: request.requestId,
-            options: request.options,
+        const permissionToolCall: ToolCallEntry = {
+          type: "tool_call",
+          toolCall: {
+            id: request.toolCall.toolCallId,
+            title: request.toolCall.title || "Permission Request",
+            status: "waiting_for_confirmation",
+            permissionRequest: {
+              requestId: request.requestId,
+              options: request.options,
+            },
+            isStandalonePermission: true,
           },
-          isStandalonePermission: true, // Mark as standalone - will be completed immediately when approved
         };
 
-        if (lastAgentMsgIndex >= 0) {
-          // Add to existing agent message
-          return prev.map((msg, index) => {
-            if (index !== lastAgentMsgIndex) return msg;
-            return {
-              ...msg,
-              parts: [...msg.parts, { type: "tool_call" as const, toolCall: permissionToolCall }],
-            };
-          });
-        } else {
-          // Create a new agent message with the permission request
-          const newAgentMessage: Message = {
-            id: `perm-msg-${request.requestId}`,
-            role: "agent",
-            parts: [{ type: "tool_call" as const, toolCall: permissionToolCall }],
-          };
-          return [...prev, newAgentMessage];
-        }
+        return [...prev, permissionToolCall];
       }
     });
   }, []);
 
-  // Auto-create session on mount
+  // =============================================================================
+  // Session Update Handler (Zed-style: check last entry type)
+  // =============================================================================
+  const handleSessionUpdate = useCallback((update: SessionUpdate) => {
+    // Handle agent message chunk
+    if (update.sessionUpdate === "agent_message_chunk") {
+      const text = update.content.type === "text" && update.content.text ? update.content.text : "";
+      if (!text) return;
+
+      setEntries((prev) => {
+        const lastEntry = prev[prev.length - 1];
+
+        // If last entry is AssistantMessage, append to it
+        if (lastEntry?.type === "assistant_message") {
+          const lastChunk = lastEntry.chunks[lastEntry.chunks.length - 1];
+
+          // If last chunk is same type (message), append text
+          if (lastChunk?.type === "message") {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...lastEntry,
+                chunks: [
+                  ...lastEntry.chunks.slice(0, -1),
+                  { type: "message", text: lastChunk.text + text },
+                ],
+              },
+            ];
+          }
+
+          // Otherwise add new message chunk
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...lastEntry,
+              chunks: [...lastEntry.chunks, { type: "message", text }],
+            },
+          ];
+        }
+
+        // Create new AssistantMessage entry
+        const newEntry: AssistantMessageEntry = {
+          type: "assistant_message",
+          id: `assistant-${Date.now()}`,
+          chunks: [{ type: "message", text }],
+        };
+        return [...prev, newEntry];
+      });
+    }
+    // Handle agent thought chunk (NEW - was missing before)
+    else if (update.sessionUpdate === "agent_thought_chunk") {
+      const text = update.content.type === "text" && update.content.text ? update.content.text : "";
+      if (!text) return;
+
+      setEntries((prev) => {
+        const lastEntry = prev[prev.length - 1];
+
+        // If last entry is AssistantMessage, append to it
+        if (lastEntry?.type === "assistant_message") {
+          const lastChunk = lastEntry.chunks[lastEntry.chunks.length - 1];
+
+          // If last chunk is same type (thought), append text
+          if (lastChunk?.type === "thought") {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...lastEntry,
+                chunks: [
+                  ...lastEntry.chunks.slice(0, -1),
+                  { type: "thought", text: lastChunk.text + text },
+                ],
+              },
+            ];
+          }
+
+          // Otherwise add new thought chunk
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...lastEntry,
+              chunks: [...lastEntry.chunks, { type: "thought", text }],
+            },
+          ];
+        }
+
+        // Create new AssistantMessage entry with thought
+        const newEntry: AssistantMessageEntry = {
+          type: "assistant_message",
+          id: `assistant-${Date.now()}`,
+          chunks: [{ type: "thought", text }],
+        };
+        return [...prev, newEntry];
+      });
+    }
+    // Handle user message chunk (NEW - was missing before)
+    else if (update.sessionUpdate === "user_message_chunk") {
+      const text = update.content.type === "text" && update.content.text ? update.content.text : "";
+      if (!text) return;
+
+      setEntries((prev) => {
+        const lastEntry = prev[prev.length - 1];
+
+        // If last entry is UserMessage, append to it
+        if (lastEntry?.type === "user_message") {
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...lastEntry,
+              content: lastEntry.content + text,
+            },
+          ];
+        }
+
+        // Create new UserMessage entry
+        const newEntry: UserMessageEntry = {
+          type: "user_message",
+          id: `user-${Date.now()}`,
+          content: text,
+        };
+        return [...prev, newEntry];
+      });
+    }
+    // Handle tool call (UPSERT - update if exists, create if not)
+    else if (update.sessionUpdate === "tool_call") {
+      const toolCallData: ToolCallData = {
+        id: update.toolCallId,
+        title: update.title,
+        status: mapToolStatus(update.status),
+        content: update.content,
+        rawInput: update.rawInput,
+        rawOutput: update.rawOutput,
+      };
+
+      setEntries((prev) => {
+        // UPSERT: Check if tool call already exists
+        const existingIndex = findToolCallIndex(prev, update.toolCallId);
+
+        if (existingIndex >= 0) {
+          // UPDATE existing tool call
+          return prev.map((entry, index) => {
+            if (index !== existingIndex) return entry;
+            if (entry.type !== "tool_call") return entry;
+
+            return {
+              type: "tool_call",
+              toolCall: {
+                ...entry.toolCall,
+                ...toolCallData,
+              },
+            };
+          });
+        }
+
+        // CREATE new tool call entry
+        const newEntry: ToolCallEntry = {
+          type: "tool_call",
+          toolCall: toolCallData,
+        };
+        return [...prev, newEntry];
+      });
+    }
+    // Handle tool call update (partial update)
+    else if (update.sessionUpdate === "tool_call_update") {
+      setEntries((prev) => {
+        const existingIndex = findToolCallIndex(prev, update.toolCallId);
+
+        if (existingIndex < 0) {
+          // Tool call not found - create a failed tool call entry (like Zed)
+          console.warn(`[ChatInterface] Tool call not found for update: ${update.toolCallId}`);
+          const failedEntry: ToolCallEntry = {
+            type: "tool_call",
+            toolCall: {
+              id: update.toolCallId,
+              title: update.title || "Tool call not found",
+              status: "error",
+              content: [{ type: "content", content: { type: "text", text: "Tool call not found" } }],
+            },
+          };
+          return [...prev, failedEntry];
+        }
+
+        return prev.map((entry, index) => {
+          if (index !== existingIndex) return entry;
+          if (entry.type !== "tool_call") return entry;
+
+          const newStatus = update.status ? mapToolStatus(update.status) : entry.toolCall.status;
+          const mergedContent = update.content
+            ? [...(entry.toolCall.content || []), ...update.content]
+            : entry.toolCall.content;
+
+          return {
+            type: "tool_call",
+            toolCall: {
+              ...entry.toolCall,
+              status: newStatus,
+              ...(update.title && { title: update.title }),
+              content: mergedContent,
+              ...(update.rawInput && { rawInput: update.rawInput }),
+              ...(update.rawOutput && { rawOutput: update.rawOutput }),
+            },
+          };
+        });
+      });
+    }
+  }, []);
+
+  // =============================================================================
+  // Setup Effect
+  // =============================================================================
   useEffect(() => {
     client.setSessionCreatedHandler((sessionId) => {
       console.log("[ChatInterface] Session created:", sessionId);
@@ -197,140 +427,28 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     client.setPromptCompleteHandler((stopReason) => {
       console.log("[ChatInterface] Prompt complete:", stopReason);
       setIsLoading(false);
-      currentAgentMessageIdRef.current = null;
     });
 
     client.setPermissionRequestHandler(handlePermissionRequest);
 
     // Create session
     client.createSession();
-  }, [client, handlePermissionRequest]);
+  }, [client, handlePermissionRequest, handleSessionUpdate]);
 
-  const handleSessionUpdate = useCallback((update: SessionUpdate) => {
-    if (update.sessionUpdate === "agent_message_chunk") {
-      const text =
-        update.content.type === "text" && update.content.text
-          ? update.content.text
-          : "";
-
-      if (!text) return;
-
-      setMessages((prev) => {
-        if (currentAgentMessageIdRef.current) {
-          // Find current message and append text
-          return prev.map((msg) => {
-            if (msg.id !== currentAgentMessageIdRef.current) return msg;
-
-            const lastPart = msg.parts[msg.parts.length - 1];
-            // If last part is text, append to it
-            if (lastPart?.type === "text") {
-              return {
-                ...msg,
-                parts: [
-                  ...msg.parts.slice(0, -1),
-                  { type: "text", text: lastPart.text + text },
-                ],
-              };
-            }
-            // Otherwise add new text part
-            return {
-              ...msg,
-              parts: [...msg.parts, { type: "text", text }],
-            };
-          });
-        } else {
-          // Create new agent message
-          const newId = `agent-${Date.now()}`;
-          currentAgentMessageIdRef.current = newId;
-          return [...prev, { id: newId, role: "assistant", parts: [{ type: "text", text }] }];
-        }
-      });
-    } else if (update.sessionUpdate === "tool_call") {
-      const mapStatus = (status: string): "running" | "complete" | "error" => {
-        if (status === "completed") return "complete";
-        if (status === "failed") return "error";
-        return "running";
-      };
-
-      const toolCall: ToolCallData = {
-        id: update.toolCallId,
-        title: update.title,
-        status: mapStatus(update.status),
-        content: update.content,
-        rawInput: update.rawInput,
-        rawOutput: update.rawOutput,
-      };
-
-      setMessages((prev) => {
-        if (!currentAgentMessageIdRef.current) {
-          const newId = `agent-${Date.now()}`;
-          currentAgentMessageIdRef.current = newId;
-          return [
-            ...prev,
-            {
-              id: newId,
-              role: "assistant",
-              parts: [{ type: "tool_call", toolCall }],
-            },
-          ];
-        }
-        // Add tool call as new part
-        return prev.map((msg) =>
-          msg.id === currentAgentMessageIdRef.current
-            ? { ...msg, parts: [...msg.parts, { type: "tool_call", toolCall }] }
-            : msg,
-        );
-      });
-    } else if (update.sessionUpdate === "tool_call_update") {
-      const mapStatus = (
-        status: string | undefined,
-      ): "running" | "complete" | "error" | undefined => {
-        if (!status) return undefined;
-        if (status === "completed") return "complete";
-        if (status === "failed") return "error";
-        return "running";
-      };
-
-      setMessages((prev) =>
-        prev.map((msg) => ({
-          ...msg,
-          parts: msg.parts.map((part) => {
-            if (part.type !== "tool_call") return part;
-            if (part.toolCall.id !== update.toolCallId) return part;
-
-            const newStatus = mapStatus(update.status);
-            const mergedContent = update.content
-              ? [...(part.toolCall.content || []), ...update.content]
-              : part.toolCall.content;
-
-            return {
-              type: "tool_call" as const,
-              toolCall: {
-                ...part.toolCall,
-                ...(newStatus && { status: newStatus }),
-                ...(update.title && { title: update.title }),
-                content: mergedContent,
-                ...(update.rawInput && { rawInput: update.rawInput }),
-                ...(update.rawOutput && { rawOutput: update.rawOutput }),
-              },
-            };
-          }),
-        })),
-      );
-    }
-  }, []);
-
+  // =============================================================================
+  // User Actions
+  // =============================================================================
   const handleSubmit = async (message: PromptInputMessage) => {
     const text = message.text.trim();
     if (!text || isLoading || !sessionReady) return;
 
-    // Add user message
-    const userMessage: ChatMessageData = {
+    // Add user message as new entry
+    const userEntry: UserMessageEntry = {
+      type: "user_message",
       id: `user-${Date.now()}`,
-      role: "user",
-      parts: [{ type: "text", text }],
+      content: text,
     };
-    setMessages((prev) => [...prev, userMessage]);
+    setEntries((prev) => [...prev, userEntry]);
     setIsLoading(true);
 
     try {
@@ -353,42 +471,106 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     // Determine new status based on option kind
     const isRejected = optionKind === "reject_once" || optionKind === "reject_always" || optionId === null;
 
-    // Update the tool call status
-    setMessages((prev) =>
-      prev.map((msg) => ({
-        ...msg,
-        parts: msg.parts.map((part) => {
-          if (part.type !== "tool_call") return part;
-          if (part.toolCall.permissionRequest?.requestId !== requestId) return part;
+    // Update the tool call status in entries
+    setEntries((prev) =>
+      prev.map((entry) => {
+        if (entry.type !== "tool_call") return entry;
+        if (entry.toolCall.permissionRequest?.requestId !== requestId) return entry;
 
-          // For standalone permission requests, mark as complete immediately when approved
-          // (since there's no real tool execution to wait for)
-          // For regular tool calls, mark as running (agent will update to complete later)
-          let newStatus: "running" | "complete" | "rejected";
-          if (isRejected) {
-            newStatus = "rejected";
-          } else if (part.toolCall.isStandalonePermission) {
-            newStatus = "complete";
-          } else {
-            newStatus = "running";
-          }
+        // For standalone permission requests, mark as complete immediately when approved
+        // For regular tool calls, mark as running (agent will update to complete later)
+        let newStatus: ToolCallStatus;
+        if (isRejected) {
+          newStatus = "rejected";
+        } else if (entry.toolCall.isStandalonePermission) {
+          newStatus = "complete";
+        } else {
+          newStatus = "running";
+        }
 
-          return {
-            type: "tool_call" as const,
-            toolCall: {
-              ...part.toolCall,
-              status: newStatus,
-              permissionRequest: undefined, // Clear permission request
-              isStandalonePermission: undefined, // Clear the flag
-            },
-          };
-        }),
-      })),
+        return {
+          type: "tool_call",
+          toolCall: {
+            ...entry.toolCall,
+            status: newStatus,
+            permissionRequest: undefined,
+            isStandalonePermission: undefined,
+          },
+        };
+      }),
     );
   }, [client]);
 
+  // =============================================================================
+  // Render Helpers
+  // =============================================================================
+
+  // Map tool status to UI state
+  const getToolState = (status: ToolCallStatus) => {
+    switch (status) {
+      case "error":
+        return "output-error" as const;
+      case "running":
+        return "input-available" as const;
+      case "waiting_for_confirmation":
+        return "waiting-for-confirmation" as const;
+      case "rejected":
+        return "rejected" as const;
+      case "complete":
+      default:
+        return "output-available" as const;
+    }
+  };
+
+  // Render a tool call entry
+  const renderToolCall = (entry: ToolCallEntry) => {
+    const tool = entry.toolCall;
+    const toolOutput = formatToolOutput(tool.content, tool.rawOutput);
+    const hasOutput =
+      tool.status !== "running" && tool.status !== "waiting_for_confirmation" && toolOutput !== null;
+
+    return (
+      <Tool
+        key={tool.id}
+        defaultOpen={hasOutput || tool.status === "waiting_for_confirmation"}
+        className={tool.status === "rejected" ? "border-dashed border-orange-500/50" : undefined}
+      >
+        <ToolHeader
+          title={tool.title}
+          type="tool-invocation"
+          state={getToolState(tool.status)}
+        />
+        <ToolContent>
+          {tool.rawInput && <ToolInput input={tool.rawInput} />}
+          {/* Show permission buttons when waiting for confirmation */}
+          {tool.status === "waiting_for_confirmation" && tool.permissionRequest && (
+            <ToolPermissionButtons
+              requestId={tool.permissionRequest.requestId}
+              options={tool.permissionRequest.options}
+              onRespond={handlePermissionResponse}
+            />
+          )}
+          {/* Show output for completed/error states */}
+          {tool.status !== "waiting_for_confirmation" && tool.status !== "rejected" && (
+            <ToolOutput
+              output={toolOutput}
+              errorText={tool.status === "error" ? "Tool execution failed" : undefined}
+            />
+          )}
+        </ToolContent>
+      </Tool>
+    );
+  };
+
+  // Check if we should show thinking indicator
+  const showThinkingIndicator = isLoading && entries.length > 0 &&
+    entries[entries.length - 1]?.type === "user_message";
+
   const chatStatus = isLoading ? "streaming" : "ready";
 
+  // =============================================================================
+  // Render
+  // =============================================================================
   return (
     <div className="flex flex-col h-full">
       {/* Messages area */}
@@ -398,88 +580,67 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
             <div className="flex items-center justify-center p-4">
               <Shimmer>Creating session...</Shimmer>
             </div>
-          ) : messages.length === 0 ? (
+          ) : entries.length === 0 ? (
             <ConversationEmptyState
               title="Start a conversation"
               description="Type a message below to chat with the ACP agent"
             />
           ) : (
             <>
-              {messages.map((message) => (
-                <Message key={message.id} from={message.role}>
-                  <MessageContent>
-                    {message.parts.map((part, index) => {
-                      if (part.type === "text") {
-                        return (
-                          <MessageResponse key={index}>{part.text}</MessageResponse>
-                        );
-                      }
-                      // part.type === "tool_call"
-                      const tool = part.toolCall;
-                      const toolOutput = formatToolOutput(tool.content, tool.rawOutput);
-                      const hasOutput =
-                        (tool.status !== "running" && tool.status !== "waiting_for_confirmation") && toolOutput !== null;
+              {entries.map((entry, index) => {
+                // Render UserMessage
+                if (entry.type === "user_message") {
+                  return (
+                    <Message key={entry.id} from="user">
+                      <MessageContent>
+                        <MessageResponse>{entry.content}</MessageResponse>
+                      </MessageContent>
+                    </Message>
+                  );
+                }
 
-                      // Map tool status to UI state
-                      const getToolState = () => {
-                        switch (tool.status) {
-                          case "error":
-                            return "output-error" as const;
-                          case "running":
-                            return "input-available" as const;
-                          case "waiting_for_confirmation":
-                            return "waiting-for-confirmation" as const;
-                          case "rejected":
-                            return "rejected" as const;
-                          case "complete":
-                          default:
-                            return "output-available" as const;
-                        }
-                      };
+                // Render AssistantMessage (with chunks)
+                if (entry.type === "assistant_message") {
+                  return (
+                    <Message key={entry.id} from="assistant">
+                      <MessageContent>
+                        {entry.chunks.map((chunk, chunkIndex) => {
+                          if (chunk.type === "thought") {
+                            // Render thought with special styling
+                            return (
+                              <div
+                                key={chunkIndex}
+                                className="text-muted-foreground italic border-l-2 border-muted pl-3 my-2"
+                              >
+                                <span className="text-xs uppercase tracking-wide">Thinking</span>
+                                <MessageResponse>{chunk.text}</MessageResponse>
+                              </div>
+                            );
+                          }
+                          // Regular message chunk
+                          return <MessageResponse key={chunkIndex}>{chunk.text}</MessageResponse>;
+                        })}
+                      </MessageContent>
+                    </Message>
+                  );
+                }
 
-                      return (
-                        <Tool
-                          key={tool.id}
-                          defaultOpen={hasOutput || tool.status === "waiting_for_confirmation"}
-                          className={tool.status === "rejected" ? "border-dashed border-orange-500/50" : undefined}
-                        >
-                          <ToolHeader
-                            title={tool.title}
-                            type="tool-invocation"
-                            state={getToolState()}
-                          />
-                          <ToolContent>
-                            {tool.rawInput && (
-                              <ToolInput input={tool.rawInput} />
-                            )}
-                            {/* Show permission buttons when waiting for confirmation */}
-                            {tool.status === "waiting_for_confirmation" && tool.permissionRequest && (
-                              <ToolPermissionButtons
-                                requestId={tool.permissionRequest.requestId}
-                                options={tool.permissionRequest.options}
-                                onRespond={handlePermissionResponse}
-                              />
-                            )}
-                            {/* Show output for completed/error states */}
-                            {tool.status !== "waiting_for_confirmation" && tool.status !== "rejected" && (
-                              <ToolOutput
-                                output={toolOutput}
-                                errorText={
-                                  tool.status === "error"
-                                    ? "Tool execution failed"
-                                    : undefined
-                                }
-                              />
-                            )}
-                          </ToolContent>
-                        </Tool>
-                      );
-                    })}
-                  </MessageContent>
-                </Message>
-              ))}
-              {/* Thinking indicator - show when loading and no agent response yet */}
-              {isLoading && !currentAgentMessageIdRef.current && (
+                // Render ToolCall (standalone entry)
+                if (entry.type === "tool_call") {
+                  return (
+                    <Message key={entry.toolCall.id} from="assistant">
+                      <MessageContent>
+                        {renderToolCall(entry)}
+                      </MessageContent>
+                    </Message>
+                  );
+                }
+
+                return null;
+              })}
+
+              {/* Thinking indicator - show when loading after user message */}
+              {showThinkingIndicator && (
                 <Message from="assistant">
                   <MessageContent>
                     <Shimmer>Thinking...</Shimmer>
@@ -496,9 +657,7 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
       <div className="border-t p-4">
         <PromptInput onSubmit={handleSubmit}>
           <PromptInputTextarea
-            placeholder={
-              sessionReady ? "Type a message..." : "Waiting for session..."
-            }
+            placeholder={sessionReady ? "Type a message..." : "Waiting for session..."}
             disabled={!sessionReady}
           />
           <PromptInputFooter>
