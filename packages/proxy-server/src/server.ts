@@ -303,6 +303,38 @@ function handleDisconnect(ws: WSContext): void {
   send(ws, "status", { connected: false });
 }
 
+// Handle cancel request from client - matches Zed's cancel() logic
+// 1. Cancel any pending permission requests
+// 2. Send session/cancel notification to agent via ACP SDK
+// The agent should respond to the original prompt with stopReason="cancelled"
+async function handleCancel(ws: WSContext): Promise<void> {
+  const state = clients.get(ws);
+  if (!state?.connection || !state.sessionId) {
+    log.warn("Cancel requested but no active session");
+    return;
+  }
+
+  log.info("Cancel requested", { sessionId: state.sessionId });
+
+  // Cancel any pending permission requests (like Zed does)
+  // This ensures permission dialogs are dismissed
+  cancelPendingPermissions(state);
+
+  try {
+    // Send cancel notification to agent via ACP SDK
+    // The agent should:
+    // 1. Stop all language model requests
+    // 2. Abort all tool call invocations in progress
+    // 3. Send any pending session/update notifications
+    // 4. Respond to the original session/prompt with stopReason="cancelled"
+    await state.connection.cancel({ sessionId: state.sessionId });
+    log.debug("Cancel notification sent to agent");
+  } catch (error) {
+    log.error("Failed to send cancel notification", { error: (error as Error).message });
+    // Don't send error to client - the prompt will complete with appropriate status
+  }
+}
+
 interface ProxyMessage {
   type: "connect" | "disconnect" | "new_session" | "prompt" | "cancel";
   payload?: { cwd?: string } | { text: string };
@@ -436,6 +468,10 @@ export async function startServer(config: ServerConfig): Promise<void> {
             case "permission_response":
               // Handle user's permission decision
               handlePermissionResponse(ws, data.payload);
+              break;
+            case "cancel":
+              // Handle cancel request - send session/cancel to agent
+              await handleCancel(ws);
               break;
             default:
               send(ws, "error", {

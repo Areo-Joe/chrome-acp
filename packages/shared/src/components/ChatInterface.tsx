@@ -40,8 +40,8 @@ import { ToolPermissionButtons } from "./ai-elements/permission-request";
 // Type Definitions - Flat Entry Structure (matching Zed's architecture)
 // =============================================================================
 
-// Tool call status
-type ToolCallStatus = "running" | "complete" | "error" | "waiting_for_confirmation" | "rejected";
+// Tool call status (matches Zed's ToolCallStatus enum)
+type ToolCallStatus = "running" | "complete" | "error" | "waiting_for_confirmation" | "rejected" | "canceled";
 
 // Tool call data
 interface ToolCallData {
@@ -431,6 +431,9 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
 
     client.setPromptCompleteHandler((stopReason) => {
       console.log("[ChatInterface] Prompt complete:", stopReason);
+      // Always set isLoading=false when prompt completes
+      // This includes stopReason="cancelled" (which is the expected response after client.cancel())
+      // Note: Tool calls are already marked as "canceled" in handleCancel before this fires
       setIsLoading(false);
     });
 
@@ -464,9 +467,41 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     }
   };
 
+  // Cancel handler - matches Zed's cancel() logic in acp_thread.rs
+  // 1. Mark all pending/running/waiting_for_confirmation tool calls as canceled
+  // 2. Send cancel notification to agent
+  // 3. Do NOT set isLoading=false here - wait for prompt_complete with stopReason="cancelled"
   const handleCancel = () => {
+    console.log("[ChatInterface] Cancel requested");
+
+    // Like Zed: iterate all entries, mark Pending/WaitingForConfirmation/InProgress tool calls as Canceled
+    setEntries((prev) =>
+      prev.map((entry) => {
+        if (entry.type !== "tool_call") return entry;
+
+        // Check if status should be canceled (matches Zed's logic)
+        const shouldCancel =
+          entry.toolCall.status === "running" ||
+          entry.toolCall.status === "waiting_for_confirmation";
+
+        if (!shouldCancel) return entry;
+
+        console.log("[ChatInterface] Marking tool call as canceled:", entry.toolCall.id);
+        return {
+          type: "tool_call",
+          toolCall: {
+            ...entry.toolCall,
+            status: "canceled" as ToolCallStatus,
+            permissionRequest: undefined, // Clear any pending permission request
+          },
+        };
+      }),
+    );
+
+    // Send cancel notification to server (which forwards to agent)
     client.cancel();
-    setIsLoading(false);
+    // Note: Do NOT set isLoading=false here!
+    // Wait for prompt_complete with stopReason="cancelled" from the agent
   };
 
   const handlePermissionResponse = useCallback((requestId: string, optionId: string | null, optionKind: PermissionOption["kind"] | null) => {
@@ -521,6 +556,8 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
         return "waiting-for-confirmation" as const;
       case "rejected":
         return "rejected" as const;
+      case "canceled":
+        return "output-error" as const; // Show canceled as error state
       case "complete":
       default:
         return "output-available" as const;
