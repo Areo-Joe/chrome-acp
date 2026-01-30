@@ -29,15 +29,18 @@ export const Tool = ({ className, ...props }: ToolProps) => (
   />
 );
 
+// Extended state type to include our custom states
+export type ExtendedToolState = ToolUIPart["state"] | "waiting-for-confirmation" | "rejected";
+
 export type ToolHeaderProps = {
   title?: string;
   type: ToolUIPart["type"];
-  state: ToolUIPart["state"];
+  state: ExtendedToolState;
   className?: string;
 };
 
-const getStatusBadge = (status: ToolUIPart["state"]) => {
-  const labels: Record<ToolUIPart["state"], string> = {
+const getStatusBadge = (status: ExtendedToolState) => {
+  const labels: Record<ExtendedToolState, string> = {
     "input-streaming": "Pending",
     "input-available": "Running",
     // @ts-expect-error state only available in AI SDK v6
@@ -46,9 +49,11 @@ const getStatusBadge = (status: ToolUIPart["state"]) => {
     "output-available": "Completed",
     "output-error": "Error",
     "output-denied": "Denied",
+    "waiting-for-confirmation": "Awaiting Approval",
+    "rejected": "Rejected",
   };
 
-  const icons: Record<ToolUIPart["state"], ReactNode> = {
+  const icons: Record<ExtendedToolState, ReactNode> = {
     "input-streaming": <CircleIcon className="size-4" />,
     "input-available": <ClockIcon className="size-4 animate-pulse" />,
     // @ts-expect-error state only available in AI SDK v6
@@ -57,6 +62,8 @@ const getStatusBadge = (status: ToolUIPart["state"]) => {
     "output-available": <CheckCircleIcon className="size-4 text-green-600" />,
     "output-error": <XCircleIcon className="size-4 text-red-600" />,
     "output-denied": <XCircleIcon className="size-4 text-orange-600" />,
+    "waiting-for-confirmation": <ClockIcon className="size-4 text-yellow-600" />,
+    "rejected": <XCircleIcon className="size-4 text-orange-600" />,
   };
 
   return (

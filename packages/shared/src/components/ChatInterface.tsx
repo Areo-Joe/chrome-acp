@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { ACPClient } from "../acp/client";
-import type { SessionUpdate, ToolCallContent } from "../acp/types";
+import type { SessionUpdate, ToolCallContent, PermissionRequestPayload, PermissionOption } from "../acp/types";
 
 // AI Elements components
 import {
@@ -29,14 +29,23 @@ import {
   ToolOutput,
 } from "./ai-elements/tool";
 import { Shimmer } from "./ai-elements/shimmer";
+import { ToolPermissionButtons } from "./ai-elements/permission-request";
 
 interface ToolCallData {
   id: string;
   title: string;
-  status: "running" | "complete" | "error";
+  status: "running" | "complete" | "error" | "waiting_for_confirmation" | "rejected";
   content?: ToolCallContent[];
   rawInput?: Record<string, unknown>;
   rawOutput?: Record<string, unknown>;
+  // Permission request data (only when status is "waiting_for_confirmation")
+  permissionRequest?: {
+    requestId: string;
+    options: PermissionOption[];
+  };
+  // True if this is a standalone permission request (not attached to a real tool call)
+  // When approved, standalone permission requests should be marked as complete immediately
+  isStandalonePermission?: boolean;
 }
 
 // Message part: either text or a tool call
@@ -96,6 +105,84 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   // Use ref for tracking current agent message ID to avoid stale closure issues
   const currentAgentMessageIdRef = useRef<string | null>(null);
 
+  // Handle permission request by updating the corresponding tool call status
+  // or creating a standalone permission request if no matching tool call exists
+  const handlePermissionRequest = useCallback((request: PermissionRequestPayload) => {
+    console.log("[ChatInterface] Permission request:", request);
+
+    setMessages((prev) => {
+      // First, check if there's a matching tool call
+      const hasMatchingToolCall = prev.some((msg) =>
+        msg.parts.some(
+          (part) =>
+            part.type === "tool_call" &&
+            part.toolCall.id === request.toolCall.toolCallId &&
+            part.toolCall.status === "running"
+        )
+      );
+
+      if (hasMatchingToolCall) {
+        // Update the existing tool call's status
+        return prev.map((msg) => ({
+          ...msg,
+          parts: msg.parts.map((part) => {
+            if (part.type !== "tool_call") return part;
+            if (part.toolCall.id !== request.toolCall.toolCallId) return part;
+            if (part.toolCall.status !== "running") return part;
+
+            return {
+              type: "tool_call" as const,
+              toolCall: {
+                ...part.toolCall,
+                status: "waiting_for_confirmation" as const,
+                permissionRequest: {
+                  requestId: request.requestId,
+                  options: request.options,
+                },
+              },
+            };
+          }),
+        }));
+      } else {
+        // No matching tool call - create a standalone permission request as a new tool call
+        console.log("[ChatInterface] No matching tool call, creating standalone permission request");
+
+        // Find or create an agent message to add the permission request to
+        const lastAgentMsgIndex = prev.findLastIndex((msg) => msg.role === "agent");
+
+        const permissionToolCall: ToolCallData = {
+          id: request.toolCall.toolCallId,
+          title: request.toolCall.title || "Permission Request",
+          status: "waiting_for_confirmation",
+          permissionRequest: {
+            requestId: request.requestId,
+            options: request.options,
+          },
+          isStandalonePermission: true, // Mark as standalone - will be completed immediately when approved
+        };
+
+        if (lastAgentMsgIndex >= 0) {
+          // Add to existing agent message
+          return prev.map((msg, index) => {
+            if (index !== lastAgentMsgIndex) return msg;
+            return {
+              ...msg,
+              parts: [...msg.parts, { type: "tool_call" as const, toolCall: permissionToolCall }],
+            };
+          });
+        } else {
+          // Create a new agent message with the permission request
+          const newAgentMessage: Message = {
+            id: `perm-msg-${request.requestId}`,
+            role: "agent",
+            parts: [{ type: "tool_call" as const, toolCall: permissionToolCall }],
+          };
+          return [...prev, newAgentMessage];
+        }
+      }
+    });
+  }, []);
+
   // Auto-create session on mount
   useEffect(() => {
     client.setSessionCreatedHandler((sessionId) => {
@@ -113,9 +200,11 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
       currentAgentMessageIdRef.current = null;
     });
 
+    client.setPermissionRequestHandler(handlePermissionRequest);
+
     // Create session
     client.createSession();
-  }, [client]);
+  }, [client, handlePermissionRequest]);
 
   const handleSessionUpdate = useCallback((update: SessionUpdate) => {
     if (update.sessionUpdate === "agent_message_chunk") {
@@ -257,6 +346,47 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     setIsLoading(false);
   };
 
+  const handlePermissionResponse = useCallback((requestId: string, optionId: string | null, optionKind: PermissionOption["kind"] | null) => {
+    console.log("[ChatInterface] Permission response:", { requestId, optionId, optionKind });
+    client.respondToPermission(requestId, optionId);
+
+    // Determine new status based on option kind
+    const isRejected = optionKind === "reject_once" || optionKind === "reject_always" || optionId === null;
+
+    // Update the tool call status
+    setMessages((prev) =>
+      prev.map((msg) => ({
+        ...msg,
+        parts: msg.parts.map((part) => {
+          if (part.type !== "tool_call") return part;
+          if (part.toolCall.permissionRequest?.requestId !== requestId) return part;
+
+          // For standalone permission requests, mark as complete immediately when approved
+          // (since there's no real tool execution to wait for)
+          // For regular tool calls, mark as running (agent will update to complete later)
+          let newStatus: "running" | "complete" | "rejected";
+          if (isRejected) {
+            newStatus = "rejected";
+          } else if (part.toolCall.isStandalonePermission) {
+            newStatus = "complete";
+          } else {
+            newStatus = "running";
+          }
+
+          return {
+            type: "tool_call" as const,
+            toolCall: {
+              ...part.toolCall,
+              status: newStatus,
+              permissionRequest: undefined, // Clear permission request
+              isStandalonePermission: undefined, // Clear the flag
+            },
+          };
+        }),
+      })),
+    );
+  }, [client]);
+
   const chatStatus = isLoading ? "streaming" : "ready";
 
   return (
@@ -288,33 +418,59 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
                       const tool = part.toolCall;
                       const toolOutput = formatToolOutput(tool.content, tool.rawOutput);
                       const hasOutput =
-                        tool.status !== "running" && toolOutput !== null;
+                        (tool.status !== "running" && tool.status !== "waiting_for_confirmation") && toolOutput !== null;
+
+                      // Map tool status to UI state
+                      const getToolState = () => {
+                        switch (tool.status) {
+                          case "error":
+                            return "output-error" as const;
+                          case "running":
+                            return "input-available" as const;
+                          case "waiting_for_confirmation":
+                            return "waiting-for-confirmation" as const;
+                          case "rejected":
+                            return "rejected" as const;
+                          case "complete":
+                          default:
+                            return "output-available" as const;
+                        }
+                      };
 
                       return (
-                        <Tool key={tool.id} defaultOpen={hasOutput}>
+                        <Tool
+                          key={tool.id}
+                          defaultOpen={hasOutput || tool.status === "waiting_for_confirmation"}
+                          className={tool.status === "rejected" ? "border-dashed border-orange-500/50" : undefined}
+                        >
                           <ToolHeader
                             title={tool.title}
                             type="tool-invocation"
-                            state={
-                              tool.status === "error"
-                                ? "output-error"
-                                : tool.status === "running"
-                                  ? "input-available"
-                                  : "output-available"
-                            }
+                            state={getToolState()}
                           />
                           <ToolContent>
                             {tool.rawInput && (
                               <ToolInput input={tool.rawInput} />
                             )}
-                            <ToolOutput
-                              output={toolOutput}
-                              errorText={
-                                tool.status === "error"
-                                  ? "Tool execution failed"
-                                  : undefined
-                              }
-                            />
+                            {/* Show permission buttons when waiting for confirmation */}
+                            {tool.status === "waiting_for_confirmation" && tool.permissionRequest && (
+                              <ToolPermissionButtons
+                                requestId={tool.permissionRequest.requestId}
+                                options={tool.permissionRequest.options}
+                                onRespond={handlePermissionResponse}
+                              />
+                            )}
+                            {/* Show output for completed/error states */}
+                            {tool.status !== "waiting_for_confirmation" && tool.status !== "rejected" && (
+                              <ToolOutput
+                                output={toolOutput}
+                                errorText={
+                                  tool.status === "error"
+                                    ? "Tool execution failed"
+                                    : undefined
+                                }
+                              />
+                            )}
                           </ToolContent>
                         </Tool>
                       );

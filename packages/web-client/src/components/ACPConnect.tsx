@@ -3,9 +3,8 @@ import { Button } from "@chrome-acp/shared/components/ui/button";
 import { Input } from "@chrome-acp/shared/components/ui/input";
 import { Label } from "@chrome-acp/shared/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@chrome-acp/shared/components/ui/card";
-import { ACPClient } from "@/acp/client";
-import type { ACPSettings, ConnectionState } from "@/acp/types";
-import { DEFAULT_SETTINGS } from "@/acp/types";
+import { ACPClient, DEFAULT_SETTINGS } from "@chrome-acp/shared/acp";
+import type { ACPSettings, ConnectionState } from "@chrome-acp/shared/acp";
 
 // Storage key for settings
 const STORAGE_KEY = "acp_settings";

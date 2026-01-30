@@ -1,8 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { ACPConnect } from "@/components/ACPConnect";
-import { ChatInterface } from "@/components/ChatInterface";
-import type { ACPClient } from "@/acp/client";
-import type { ConnectionState } from "@/acp/types";
+import { ChatInterface } from "@chrome-acp/shared/components";
+import type { ACPClient, ConnectionState } from "@chrome-acp/shared/acp";
 import { Settings } from "lucide-react";
 import "./index.css";
 

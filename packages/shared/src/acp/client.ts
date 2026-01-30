@@ -1,6 +1,7 @@
 import type {
   ACPSettings,
   ConnectionState,
+  PermissionRequestPayload,
   ProxyMessage,
   ProxyResponse,
   SessionUpdate,
@@ -13,6 +14,7 @@ export type ConnectionStateHandler = (
 export type SessionUpdateHandler = (update: SessionUpdate) => void;
 export type SessionCreatedHandler = (sessionId: string) => void;
 export type PromptCompleteHandler = (stopReason: string) => void;
+export type PermissionRequestHandler = (request: PermissionRequestPayload) => void;
 
 export class ACPClient {
   private ws: WebSocket | null = null;
@@ -24,6 +26,7 @@ export class ACPClient {
   private onSessionUpdate: SessionUpdateHandler | null = null;
   private onSessionCreated: SessionCreatedHandler | null = null;
   private onPromptComplete: PromptCompleteHandler | null = null;
+  private onPermissionRequest: PermissionRequestHandler | null = null;
 
   private connectResolve: ((value: void) => void) | null = null;
   private connectReject: ((error: Error) => void) | null = null;
@@ -50,6 +53,10 @@ export class ACPClient {
 
   setPromptCompleteHandler(handler: PromptCompleteHandler): void {
     this.onPromptComplete = handler;
+  }
+
+  setPermissionRequestHandler(handler: PermissionRequestHandler): void {
+    this.onPermissionRequest = handler;
   }
 
   private setState(state: ConnectionState, error?: string): void {
@@ -151,6 +158,7 @@ export class ACPClient {
 
       case "permission_request":
         console.log("[ACPClient] Permission request:", response.payload);
+        this.onPermissionRequest?.(response.payload);
         break;
     }
   }
@@ -175,6 +183,17 @@ export class ACPClient {
 
   cancel(): void {
     this.send({ type: "cancel" });
+  }
+
+  respondToPermission(requestId: string, optionId: string | null): void {
+    const outcome = optionId
+      ? { outcome: "selected" as const, optionId }
+      : { outcome: "cancelled" as const };
+
+    this.send({
+      type: "permission_response",
+      payload: { requestId, outcome },
+    });
   }
 
   disconnect(): void {

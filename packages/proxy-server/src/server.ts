@@ -29,11 +29,18 @@ export interface ServerConfig {
   termux?: boolean;
 }
 
+// Pending permission request
+interface PendingPermission {
+  resolve: (outcome: { outcome: "cancelled" } | { outcome: "selected"; optionId: string }) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
 // Track connected clients and their agent connections
 interface ClientState {
   process: ChildProcess | null;
   connection: acp.ClientSideConnection | null;
   sessionId: string | null;
+  pendingPermissions: Map<string, PendingPermission>;
 }
 
 // Module-level state (set when server starts)
@@ -44,6 +51,14 @@ let SERVER_PORT: number;
 
 const clients = new Map<WSContext, ClientState>();
 
+// Permission request timeout (5 minutes)
+const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000;
+
+// Generate unique request ID
+function generateRequestId(): string {
+  return `perm_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
 // Send a message to the WebSocket client
 function send(ws: WSContext, type: string, payload?: unknown): void {
   if (ws.readyState === 1) {
@@ -53,20 +68,38 @@ function send(ws: WSContext, type: string, payload?: unknown): void {
 }
 
 // Create a Client implementation that forwards events to WebSocket
-function createClient(ws: WSContext): acp.Client {
+function createClient(ws: WSContext, clientState: ClientState): acp.Client {
   return {
     async requestPermission(params) {
-      log.debug("Permission requested", { title: params.toolCall.title });
-      send(ws, "permission_request", params);
+      const requestId = generateRequestId();
+      log.debug("Permission requested", { requestId, title: params.toolCall.title });
 
-      // For now, auto-approve with the first option
-      // TODO: Wait for user response from WebSocket
-      return {
-        outcome: {
-          outcome: "selected",
-          optionId: params.options[0]?.optionId || "",
-        },
-      };
+      // Create a promise that will be resolved when user responds
+      const outcomePromise = new Promise<{ outcome: "cancelled" } | { outcome: "selected"; optionId: string }>((resolve) => {
+        // Set timeout to auto-cancel if no response
+        const timeout = setTimeout(() => {
+          log.warn("Permission request timed out", { requestId });
+          clientState.pendingPermissions.delete(requestId);
+          resolve({ outcome: "cancelled" });
+        }, PERMISSION_TIMEOUT_MS);
+
+        // Store the pending request in client's map
+        clientState.pendingPermissions.set(requestId, { resolve, timeout });
+      });
+
+      // Send permission request to client with our requestId
+      send(ws, "permission_request", {
+        requestId,
+        sessionId: params.sessionId,
+        options: params.options,
+        toolCall: params.toolCall,
+      });
+
+      // Wait for user response
+      const outcome = await outcomePromise;
+      log.debug("Permission response received", { requestId, outcome });
+
+      return { outcome };
     },
 
     async sessionUpdate(params) {
@@ -85,6 +118,36 @@ function createClient(ws: WSContext): acp.Client {
       return {};
     },
   };
+}
+
+// Handle permission response from client
+function handlePermissionResponse(ws: WSContext, payload: { requestId: string; outcome: { outcome: "cancelled" } | { outcome: "selected"; optionId: string } }): void {
+  const state = clients.get(ws);
+  if (!state) {
+    log.warn("Permission response from unknown client");
+    return;
+  }
+
+  const pending = state.pendingPermissions.get(payload.requestId);
+  if (!pending) {
+    log.warn("Permission response for unknown request", { requestId: payload.requestId });
+    return;
+  }
+
+  // Clear timeout and resolve the promise
+  clearTimeout(pending.timeout);
+  state.pendingPermissions.delete(payload.requestId);
+  pending.resolve(payload.outcome);
+}
+
+// Cancel all pending permissions for a client (called on disconnect)
+function cancelPendingPermissions(clientState: ClientState): void {
+  for (const [requestId, pending] of clientState.pendingPermissions) {
+    log.debug("Cancelling pending permission due to disconnect", { requestId });
+    clearTimeout(pending.timeout);
+    pending.resolve({ outcome: "cancelled" });
+  }
+  clientState.pendingPermissions.clear();
 }
 
 async function handleConnect(ws: WSContext): Promise<void> {
@@ -120,7 +183,7 @@ async function handleConnect(ws: WSContext): Promise<void> {
     // Create ACP connection
     const stream = acp.ndJsonStream(input, output);
     const connection = new acp.ClientSideConnection(
-      (_agent) => createClient(ws),
+      (_agent) => createClient(ws, state),
       stream,
     );
 
@@ -332,7 +395,12 @@ export async function startServer(config: ServerConfig): Promise<void> {
     upgradeWebSocket(() => ({
       onOpen(_event, ws) {
         log.info("Client connected");
-        clients.set(ws, { process: null, connection: null, sessionId: null });
+        clients.set(ws, {
+          process: null,
+          connection: null,
+          sessionId: null,
+          pendingPermissions: new Map(),
+        });
         // Register this WebSocket for browser tool calls
         setExtensionWebSocket(ws);
       },
@@ -365,6 +433,10 @@ export async function startServer(config: ServerConfig): Promise<void> {
               });
               handleBrowserToolResponse(data.callId, data.result);
               break;
+            case "permission_response":
+              // Handle user's permission decision
+              handlePermissionResponse(ws, data.payload);
+              break;
             default:
               send(ws, "error", {
                 message: `Unknown message type: ${data.type}`,
@@ -377,6 +449,11 @@ export async function startServer(config: ServerConfig): Promise<void> {
       },
       onClose(_event, ws) {
         log.info("Client disconnected");
+        const state = clients.get(ws);
+        if (state) {
+          // Cancel any pending permission requests
+          cancelPendingPermissions(state);
+        }
         handleDisconnect(ws);
         clients.delete(ws);
         // Clear extension WebSocket if this was it
