@@ -295,14 +295,24 @@ async function handlePrompt(
   }
 
   try {
-    // Log first text content for debugging
+    // Log content blocks for debugging
     const firstText = params.content.find(b => b.type === "text")?.text;
-    const imageCount = params.content.filter(b => b.type === "image").length;
+    const images = params.content.filter(b => b.type === "image");
     log.debug("Sending prompt", {
       text: firstText?.slice(0, 100),
-      imageCount,
+      imageCount: images.length,
       blockCount: params.content.length,
     });
+
+    // Log image details for debugging
+    for (const img of images) {
+      log.debug("Image block", {
+        mimeType: img.mimeType,
+        dataLength: img.data?.length,
+        dataSizeKB: img.data ? Math.round(img.data.length * 0.75 / 1024) : 0, // base64 to bytes approx
+        dataPrefix: img.data?.slice(0, 50),
+      });
+    }
 
     // Forward ContentBlock[] directly to agent (matches Zed's behavior)
     const result = await state.connection.prompt({

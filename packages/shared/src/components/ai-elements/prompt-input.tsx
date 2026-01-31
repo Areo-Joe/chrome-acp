@@ -673,15 +673,28 @@ export const PromptInput = ({
     url: string
   ): Promise<string | null> => {
     try {
+      console.log("[PromptInput] Converting blob URL to data URL...");
       const response = await fetch(url);
+      if (!response.ok) {
+        console.error("[PromptInput] Fetch failed:", response.status, response.statusText);
+        return null;
+      }
       const blob = await response.blob();
+      console.log("[PromptInput] Blob fetched, size:", blob.size, "type:", blob.type);
       return new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = () => resolve(null);
+        reader.onloadend = () => {
+          console.log("[PromptInput] FileReader complete, result length:", (reader.result as string)?.length);
+          resolve(reader.result as string);
+        };
+        reader.onerror = () => {
+          console.error("[PromptInput] FileReader error:", reader.error);
+          resolve(null);
+        };
         reader.readAsDataURL(blob);
       });
-    } catch {
+    } catch (error) {
+      console.error("[PromptInput] convertBlobUrlToDataUrl error:", error);
       return null;
     }
   };

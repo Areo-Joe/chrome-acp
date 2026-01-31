@@ -513,16 +513,30 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     for (const file of files) {
       if (file.mediaType?.startsWith("image/") && file.url) {
         try {
+          console.log("[ChatInterface] Processing image:", {
+            filename: file.filename,
+            mediaType: file.mediaType,
+            urlType: file.url.startsWith("data:") ? "data URL" : file.url.startsWith("blob:") ? "blob URL" : "other",
+            urlLength: file.url.length,
+          });
+
           // Convert URL (object URL or data URL) to base64
           let base64Data: string;
           if (file.url.startsWith("data:")) {
             // Already a data URL, extract base64 part
             const commaIndex = file.url.indexOf(",");
             base64Data = commaIndex >= 0 ? file.url.slice(commaIndex + 1) : file.url;
+            console.log("[ChatInterface] Extracted base64 from data URL, length:", base64Data.length);
           } else {
             // Object URL - fetch and convert to base64
+            console.log("[ChatInterface] Fetching blob URL...");
             const response = await fetch(file.url);
+            if (!response.ok) {
+              throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+            }
             const blob = await response.blob();
+            console.log("[ChatInterface] Blob fetched, size:", blob.size, "type:", blob.type);
+
             base64Data = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
               reader.onloadend = () => {
@@ -530,9 +544,10 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
                 const commaIndex = result.indexOf(",");
                 resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
               };
-              reader.onerror = reject;
+              reader.onerror = () => reject(new Error("FileReader error: " + reader.error?.message));
               reader.readAsDataURL(blob);
             });
+            console.log("[ChatInterface] Base64 conversion complete, length:", base64Data.length);
           }
 
           const imageContent: ImageContent = {
@@ -549,7 +564,12 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
             data: base64Data,
           });
         } catch (error) {
-          console.error("[ChatInterface] Failed to convert image:", error);
+          console.error("[ChatInterface] Failed to convert image:", {
+            filename: file.filename,
+            mediaType: file.mediaType,
+            url: file.url?.substring(0, 100),
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
     }
