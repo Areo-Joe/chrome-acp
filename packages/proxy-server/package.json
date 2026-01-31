@@ -37,8 +37,7 @@
     "@stricli/auto-complete": "^1.2.4",
     "@stricli/core": "^1.2.4",
     "hono": "^4.7.0",
-    "pino": "^10.3.0",
-    "@chrome-acp/shared": "workspace:*"
+    "pino": "^10.3.0"
   },
   "engines": {
     "node": ">=18"
