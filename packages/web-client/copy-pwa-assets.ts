@@ -3,8 +3,12 @@ import { join } from "path";
 
 const outdir = join(import.meta.dir, "../proxy-server/public");
 
-// Copy PWA assets (manifest.json, service-worker.js, logo, icons)
-const pwaAssets = ["manifest.json", "sw.js", "logo.svg", "icon-192.png", "icon-512.png"];
+// Read version from proxy-server package.json for cache versioning
+const proxyPkg = await Bun.file(join(import.meta.dir, "../proxy-server/package.json")).json();
+const version = proxyPkg.version as string;
+
+// Copy PWA assets (manifest.json, logo, icons)
+const pwaAssets = ["manifest.json", "logo.svg", "icon-192.png", "icon-512.png"];
 for (const asset of pwaAssets) {
   const src = join(import.meta.dir, "src", asset);
   const dest = join(outdir, asset);
@@ -13,6 +17,20 @@ for (const asset of pwaAssets) {
   } catch {
     // Asset may not exist yet
   }
+}
+
+// Process sw.js - inject version for cache busting
+// This ensures SW updates when proxy-server version changes
+const swSrc = join(import.meta.dir, "src", "sw.js");
+const swDest = join(outdir, "sw.js");
+try {
+  let swContent = await Bun.file(swSrc).text();
+  // Replace __VERSION__ placeholder with actual version
+  swContent = swContent.replace(/__VERSION__/g, version);
+  await Bun.write(swDest, swContent);
+  console.log(`✓ Service Worker updated with version ${version}`);
+} catch {
+  // sw.js may not exist yet
 }
 
 // Copy icons folder

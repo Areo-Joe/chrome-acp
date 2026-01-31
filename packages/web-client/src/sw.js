@@ -1,4 +1,5 @@
-const CACHE_NAME = 'acp-chat-v1';
+// VERSION_PLACEHOLDER is replaced at build time with proxy-server version
+const CACHE_NAME = 'acp-chat-v__VERSION__';
 
 // Install - cache core assets
 self.addEventListener('install', (event) => {
