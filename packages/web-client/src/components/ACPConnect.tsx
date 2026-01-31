@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@chrome-acp/shared/components/ui/button";
 import { Input } from "@chrome-acp/shared/components/ui/input";
-import { Label } from "@chrome-acp/shared/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@chrome-acp/shared/components/ui/card";
+import { StatusDot } from "@chrome-acp/shared/components/ui/connection-status";
+import { ThemeToggle } from "@chrome-acp/shared/components/ui/theme-toggle";
 import { ACPClient, DEFAULT_SETTINGS } from "@chrome-acp/shared/acp";
 import type { ACPSettings, ConnectionState } from "@chrome-acp/shared/acp";
+import { ChevronDown } from "lucide-react";
 
 // Storage key for settings
 const STORAGE_KEY = "acp_settings";
@@ -29,14 +30,17 @@ function saveSettings(settings: ACPSettings): void {
 
 interface ACPConnectProps {
   onClientReady?: (client: ACPClient | null) => void;
-  onConnectionStateChange?: (state: ConnectionState, proxyUrl: string) => void;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }
 
-export function ACPConnect({ onClientReady, onConnectionStateChange }: ACPConnectProps) {
+export function ACPConnect({ onClientReady, expanded, onExpandedChange }: ACPConnectProps) {
   const [settings, setSettings] = useState<ACPSettings>(loadSettings);
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
   const [client, setClient] = useState<ACPClient | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const hasAutoCollapsedRef = useRef(false);
 
   // Initialize client
   useEffect(() => {
@@ -64,15 +68,22 @@ export function ACPConnect({ onClientReady, onConnectionStateChange }: ACPConnec
     }
   }, [settings, client]);
 
-  // Notify parent when client is ready
+  // Notify parent when client is ready and auto-collapse on connect
   useEffect(() => {
-    onClientReady?.(connectionState === "connected" ? client : null);
-  }, [connectionState, client, onClientReady]);
+    const isConnected = connectionState === "connected";
+    onClientReady?.(isConnected ? client : null);
 
-  // Notify parent of connection state changes
-  useEffect(() => {
-    onConnectionStateChange?.(connectionState, settings.proxyUrl);
-  }, [connectionState, settings.proxyUrl, onConnectionStateChange]);
+    // Auto-collapse when connected for the first time
+    if (isConnected && !hasAutoCollapsedRef.current) {
+      hasAutoCollapsedRef.current = true;
+      onExpandedChange(false);
+    }
+
+    // Reset auto-collapse flag when disconnected
+    if (connectionState === "disconnected") {
+      hasAutoCollapsedRef.current = false;
+    }
+  }, [connectionState, client, onClientReady, onExpandedChange]);
 
   const handleConnect = useCallback(async () => {
     if (!client) return;
@@ -95,65 +106,90 @@ export function ACPConnect({ onClientReady, onConnectionStateChange }: ACPConnec
   const isConnected = connectionState === "connected";
   const isConnecting = connectionState === "connecting";
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <span>ACP Connection</span>
-          <StatusIndicator state={connectionState} />
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="proxyUrl">Proxy URL</Label>
-          <Input
-            id="proxyUrl"
-            value={settings.proxyUrl}
-            onChange={(e) => updateSetting("proxyUrl", e.target.value)}
-            placeholder="ws://localhost:9315/ws"
-            disabled={isConnected || isConnecting}
-          />
-        </div>
+  // Format URL for display
+  const displayUrl = settings.proxyUrl.replace(/^wss?:\/\//, "").replace(/\/ws$/, "");
 
-        {error && (
-          <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
-            {error}
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          {!isConnected ? (
-            <Button
-              onClick={handleConnect}
-              disabled={isConnecting}
-              className="flex-1"
-            >
-              {isConnecting ? "Connecting..." : "Connect"}
-            </Button>
-          ) : (
-            <Button onClick={handleDisconnect} variant="destructive" className="flex-1">
-              Disconnect
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function StatusIndicator({ state }: { state: ConnectionState }) {
-  const colors: Record<ConnectionState, string> = {
-    disconnected: "bg-gray-400",
-    connecting: "bg-yellow-400 animate-pulse",
-    connected: "bg-green-500",
-    error: "bg-red-500",
+  // Get status label
+  const statusLabels: Record<ConnectionState, string> = {
+    disconnected: "Disconnected",
+    connecting: "Connecting...",
+    connected: "Connected",
+    error: "Error",
   };
 
   return (
-    <span className="flex items-center gap-2 text-sm font-normal">
-      <span className={`w-2 h-2 rounded-full ${colors[state]}`} />
-      {state}
-    </span>
+    <div className="border-b bg-background/80 backdrop-blur-sm">
+      {/* Status Bar - Always visible */}
+      <button
+        onClick={() => onExpandedChange(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <StatusDot state={connectionState} />
+          <span className="text-sm font-medium">{statusLabels[connectionState]}</span>
+          {isConnected && displayUrl && (
+            <span className="text-xs text-muted-foreground">• {displayUrl}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <div onClick={(e) => e.stopPropagation()}>
+            <ThemeToggle />
+          </div>
+          <ChevronDown
+            className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${
+              expanded ? "rotate-180" : ""
+            }`}
+          />
+        </div>
+      </button>
+
+      {/* Expandable Settings Panel */}
+      <div
+        className="overflow-hidden transition-all duration-200 ease-out"
+        style={{
+          maxHeight: expanded ? contentRef.current?.scrollHeight ?? 200 : 0,
+          opacity: expanded ? 1 : 0,
+        }}
+      >
+        <div ref={contentRef} className="px-3 pb-3 pt-1 space-y-3">
+          {/* URL Input */}
+          <div className="flex gap-2">
+            <Input
+              value={settings.proxyUrl}
+              onChange={(e) => updateSetting("proxyUrl", e.target.value)}
+              placeholder="ws://localhost:9315/ws"
+              disabled={isConnected || isConnecting}
+              className="flex-1 h-9 text-sm"
+            />
+            {!isConnected ? (
+              <Button
+                onClick={handleConnect}
+                disabled={isConnecting}
+                size="sm"
+                className="h-9 px-4"
+              >
+                {isConnecting ? "..." : "Connect"}
+              </Button>
+            ) : (
+              <Button
+                onClick={handleDisconnect}
+                variant="destructive"
+                size="sm"
+                className="h-9 px-4"
+              >
+                Disconnect
+              </Button>
+            )}
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="text-xs text-destructive bg-destructive/10 px-2 py-1.5 rounded">
+              {error}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
-

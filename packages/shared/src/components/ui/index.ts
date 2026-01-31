@@ -1,4 +1,5 @@
 export * from "./badge"
+export * from "./connection-status"
 export * from "./button-group"
 export * from "./button"
 export * from "./card"
@@ -14,5 +15,6 @@ export * from "./scroll-area"
 export * from "./select"
 export * from "./separator"
 export * from "./textarea"
+export * from "./theme-toggle"
 export * from "./tooltip"
 
