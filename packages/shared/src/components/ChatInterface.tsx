@@ -1,6 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
+import imageCompression from "browser-image-compression";
 import type { ACPClient } from "../acp/client";
 import type { SessionUpdate, ToolCallContent, PermissionRequestPayload, PermissionOption, ContentBlock, ImageContent } from "../acp/types";
+
+// Image compression options
+// Claude API has a 5MB limit, so we target 2MB to be safe
+const IMAGE_COMPRESSION_OPTIONS = {
+  maxSizeMB: 2,           // Max output size in MB
+  maxWidthOrHeight: 2048, // Max dimension (scales proportionally, no cropping)
+  useWebWorker: true,     // Non-blocking compression
+  fileType: "image/jpeg" as const, // Convert to JPEG for better compression
+};
 
 // AI Elements components
 import {
@@ -520,39 +530,61 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
             urlLength: file.url.length,
           });
 
-          // Convert URL (object URL or data URL) to base64
-          let base64Data: string;
+          // Step 1: Get the image as a Blob/File for compression
+          let originalBlob: Blob;
           if (file.url.startsWith("data:")) {
-            // Already a data URL, extract base64 part
-            const commaIndex = file.url.indexOf(",");
-            base64Data = commaIndex >= 0 ? file.url.slice(commaIndex + 1) : file.url;
-            console.log("[ChatInterface] Extracted base64 from data URL, length:", base64Data.length);
+            // Convert data URL to Blob
+            const response = await fetch(file.url);
+            originalBlob = await response.blob();
           } else {
-            // Object URL - fetch and convert to base64
+            // Object URL - fetch directly
             console.log("[ChatInterface] Fetching blob URL...");
             const response = await fetch(file.url);
             if (!response.ok) {
               throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
             }
-            const blob = await response.blob();
-            console.log("[ChatInterface] Blob fetched, size:", blob.size, "type:", blob.type);
-
-            base64Data = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onloadend = () => {
-                const result = reader.result as string;
-                const commaIndex = result.indexOf(",");
-                resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
-              };
-              reader.onerror = () => reject(new Error("FileReader error: " + reader.error?.message));
-              reader.readAsDataURL(blob);
-            });
-            console.log("[ChatInterface] Base64 conversion complete, length:", base64Data.length);
+            originalBlob = await response.blob();
           }
+
+          const originalSizeKB = Math.round(originalBlob.size / 1024);
+          console.log("[ChatInterface] Original image size:", originalSizeKB, "KB");
+
+          // Step 2: Compress the image if it's larger than 2MB
+          let finalBlob: Blob;
+          let finalMimeType: string;
+
+          if (originalBlob.size > 2 * 1024 * 1024) {
+            console.log("[ChatInterface] Compressing image...");
+            const imageFile = new File([originalBlob], file.filename || "image.jpg", {
+              type: originalBlob.type,
+            });
+            finalBlob = await imageCompression(imageFile, IMAGE_COMPRESSION_OPTIONS);
+            finalMimeType = "image/jpeg"; // Compressed images are JPEG
+            const compressedSizeKB = Math.round(finalBlob.size / 1024);
+            console.log("[ChatInterface] Compressed:", originalSizeKB, "KB ->", compressedSizeKB, "KB");
+          } else {
+            // Image is already small enough, use as-is
+            finalBlob = originalBlob;
+            finalMimeType = file.mediaType;
+            console.log("[ChatInterface] Image under 2MB, no compression needed");
+          }
+
+          // Step 3: Convert to base64
+          const base64Data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const result = reader.result as string;
+              const commaIndex = result.indexOf(",");
+              resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
+            };
+            reader.onerror = () => reject(new Error("FileReader error: " + reader.error?.message));
+            reader.readAsDataURL(finalBlob);
+          });
+          console.log("[ChatInterface] Base64 conversion complete, length:", base64Data.length);
 
           const imageContent: ImageContent = {
             type: "image",
-            mimeType: file.mediaType,
+            mimeType: finalMimeType,
             data: base64Data,
           };
           contentBlocks.push(imageContent);
@@ -560,11 +592,11 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
           // Reference: Zed stores image data in UserMessage for display
           // Keep a copy for rendering in the chat history
           userImages.push({
-            mimeType: file.mediaType,
+            mimeType: finalMimeType,
             data: base64Data,
           });
         } catch (error) {
-          console.error("[ChatInterface] Failed to convert image:", {
+          console.error("[ChatInterface] Failed to process image:", {
             filename: file.filename,
             mediaType: file.mediaType,
             url: file.url?.substring(0, 100),
