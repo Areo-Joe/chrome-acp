@@ -75,11 +75,12 @@ export type BrowserToolResult =
   | BrowserScreenshotResult;
 
 // Messages sent TO the proxy server
+// Reference: Zed's MessageEditor.contents() builds Vec<acp::ContentBlock>
 export type ProxyMessage =
   | { type: "connect" }
   | { type: "disconnect" }
   | { type: "new_session"; payload?: { cwd?: string } }
-  | { type: "prompt"; payload: { text: string } }
+  | { type: "prompt"; payload: { content: ContentBlock[] } }  // Changed from { text: string } to match Zed
   | { type: "cancel" }
   | { type: "permission_response"; payload: PermissionResponsePayload }
   | { type: "browser_tool_result"; callId: string; result: BrowserToolResult | { error: string } };
@@ -99,9 +100,13 @@ export interface ProxyErrorMessage {
   payload: { message: string };
 }
 
+// Reference: Zed's session/initialize response includes promptCapabilities
 export interface ProxySessionCreatedMessage {
   type: "session_created";
-  payload: { sessionId: string };
+  payload: {
+    sessionId: string;
+    promptCapabilities?: PromptCapabilities;  // From agent's initialize response
+  };
 }
 
 export interface ProxySessionUpdateMessage {
@@ -137,7 +142,8 @@ export type ProxyResponse =
   | ProxyPermissionRequestMessage
   | ProxyBrowserToolCallMessage;
 
-// Content block types
+// Content block types (matches @agentclientprotocol/sdk ContentBlock)
+// Reference: Zed's acp::ContentBlock in agent-client-protocol crate
 export interface TextContent {
   type: "text";
   text: string;
@@ -146,10 +152,21 @@ export interface TextContent {
 export interface ImageContent {
   type: "image";
   mimeType: string;
-  data: string;
+  data: string;      // base64 encoded image data
+  uri?: string;      // optional URI for the image source
 }
 
-export type ContentBlock = TextContent | ImageContent | { type: string; text?: string };
+export interface ResourceLinkContent {
+  type: "resource_link";
+  uri: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+  size?: number;
+}
+
+export type ContentBlock = TextContent | ImageContent | ResourceLinkContent | { type: string; text?: string };
 
 // Session update types from ACP
 export interface AgentMessageChunkUpdate {
@@ -226,6 +243,15 @@ export type ConnectionState =
   | "connected"
   | "error";
 
+// PromptCapabilities from ACP protocol
+// Reference: Zed's acp::PromptCapabilities in agent-client-protocol crate
+// Used to check what content types the agent supports
+export interface PromptCapabilities {
+  audio?: boolean;           // Agent supports audio content
+  embeddedContext?: boolean; // Agent supports embedded context in prompts
+  image?: boolean;           // Agent supports image content
+}
+
 // Settings
 export interface ACPSettings {
   proxyUrl: string;
@@ -234,4 +260,3 @@ export interface ACPSettings {
 export const DEFAULT_SETTINGS: ACPSettings = {
   proxyUrl: "ws://localhost:9315/ws",
 };
-

@@ -3,7 +3,9 @@ import type {
   BrowserToolParams,
   BrowserToolResult,
   ConnectionState,
+  ContentBlock,
   PermissionRequestPayload,
+  PromptCapabilities,
   ProxyMessage,
   ProxyResponse,
   SessionUpdate,
@@ -26,6 +28,9 @@ export class ACPClient {
   private settings: ACPSettings;
   private connectionState: ConnectionState = "disconnected";
   private sessionId: string | null = null;
+  // Reference: Zed's prompt_capabilities in MessageEditor
+  // Stores capabilities from agent's initialize response
+  private _promptCapabilities: PromptCapabilities | null = null;
 
   private onConnectionStateChange: ConnectionStateHandler | null = null;
   private onSessionUpdate: SessionUpdateHandler | null = null;
@@ -80,6 +85,17 @@ export class ACPClient {
 
   getSessionId(): string | null {
     return this.sessionId;
+  }
+
+  // Reference: Zed's supports_images() in MessageEditor
+  // Returns true if the agent supports image content in prompts
+  get supportsImages(): boolean {
+    return this._promptCapabilities?.image === true;
+  }
+
+  // Reference: Zed's prompt_capabilities in MessageEditor
+  getPromptCapabilities(): PromptCapabilities | null {
+    return this._promptCapabilities;
   }
 
   async connect(): Promise<void> {
@@ -155,6 +171,9 @@ export class ACPClient {
 
       case "session_created":
         this.sessionId = response.payload.sessionId;
+        // Reference: Zed stores promptCapabilities from session/initialize response
+        this._promptCapabilities = response.payload.promptCapabilities ?? null;
+        console.log("[ACPClient] Session created, promptCapabilities:", this._promptCapabilities);
         this.onSessionCreated?.(response.payload.sessionId);
         break;
 
@@ -221,11 +240,19 @@ export class ACPClient {
     this.send({ type: "new_session", payload: { cwd } });
   }
 
-  async sendPrompt(text: string): Promise<void> {
+  // Reference: Zed's MessageEditor.contents() builds Vec<acp::ContentBlock>
+  // and sends via AcpThread.send()
+  // Accepts either a string (for backward compatibility) or ContentBlock[]
+  async sendPrompt(content: string | ContentBlock[]): Promise<void> {
     if (!this.sessionId) {
       throw new Error("No active session");
     }
-    this.send({ type: "prompt", payload: { text } });
+    // Convert string to ContentBlock[] for backward compatibility
+    const contentBlocks: ContentBlock[] = typeof content === "string"
+      ? [{ type: "text", text: content }]
+      : content;
+
+    this.send({ type: "prompt", payload: { content: contentBlocks } });
   }
 
   cancel(): void {

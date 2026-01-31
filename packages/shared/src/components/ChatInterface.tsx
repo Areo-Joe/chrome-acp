@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ACPClient } from "../acp/client";
-import type { SessionUpdate, ToolCallContent, PermissionRequestPayload, PermissionOption } from "../acp/types";
+import type { SessionUpdate, ToolCallContent, PermissionRequestPayload, PermissionOption, ContentBlock, ImageContent } from "../acp/types";
 
 // AI Elements components
 import {
@@ -13,14 +13,39 @@ import {
   Message,
   MessageContent,
   MessageResponse,
+  MessageAttachment,
+  MessageAttachments,
 } from "./ai-elements/message";
 import {
   PromptInput,
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputSubmit,
+  PromptInputHeader,
+  PromptInputAttachments,
+  PromptInputAttachment,
+  PromptInputButton,
+  usePromptInputAttachments,
   type PromptInputMessage,
 } from "./ai-elements/prompt-input";
+import { ImageIcon } from "lucide-react";
+
+// Reference: Zed's add_images_from_picker() - Button to open file dialog for images
+// Must be inside PromptInput to access attachments context
+function AddImageButton() {
+  const attachments = usePromptInputAttachments();
+  return (
+    <PromptInputButton
+      type="button"
+      variant="ghost"
+      size="sm"
+      onClick={() => attachments.openFileDialog()}
+    >
+      <ImageIcon className="size-4" />
+      <span className="sr-only">Attach image</span>
+    </PromptInputButton>
+  );
+}
 import {
   Tool,
   ToolHeader,
@@ -65,11 +90,20 @@ type AssistantChunk =
   | { type: "message"; text: string }
   | { type: "thought"; text: string };
 
+// Image data for display in user messages
+// Reference: Zed's ContentBlock::Image stores decoded image for rendering
+interface UserMessageImage {
+  mimeType: string;
+  data: string;  // base64 encoded
+}
+
 // User message entry
+// Reference: Zed's UserMessage { content: ContentBlock, chunks: Vec<acp::ContentBlock> }
 interface UserMessageEntry {
   type: "user_message";
   id: string;
   content: string;
+  images?: UserMessageImage[];  // Images attached to this message
 }
 
 // Assistant message entry - contains chunks (text + thoughts)
@@ -157,6 +191,8 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   const [entries, setEntries] = useState<ThreadEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  // Reference: Zed's supports_images() checks prompt_capabilities.image
+  const [supportsImages, setSupportsImages] = useState(false);
 
   // =============================================================================
   // Permission Request Handler
@@ -423,6 +459,10 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     client.setSessionCreatedHandler((sessionId) => {
       console.log("[ChatInterface] Session created:", sessionId);
       setSessionReady(true);
+      // Reference: Zed's supports_images() checks prompt_capabilities.image
+      // Update supportsImages from client's promptCapabilities
+      setSupportsImages(client.supportsImages);
+      console.log("[ChatInterface] supportsImages:", client.supportsImages);
     });
 
     client.setSessionUpdateHandler((update: SessionUpdate) => {
@@ -446,21 +486,90 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   // =============================================================================
   // User Actions
   // =============================================================================
+
+  // Reference: Zed's MessageEditor.contents() builds Vec<acp::ContentBlock>
+  // from text and attached images. We do the same here.
   const handleSubmit = async (message: PromptInputMessage) => {
     const text = message.text.trim();
-    if (!text || isLoading || !sessionReady) return;
+    const files = message.files || [];
 
-    // Add user message as new entry
+    // Allow sending if there's text OR images (like Zed)
+    if ((!text && files.length === 0) || isLoading || !sessionReady) return;
+
+    // Build ContentBlock[] from text and files
+    // Reference: Zed's contents() method builds text chunks and image chunks
+    const contentBlocks: ContentBlock[] = [];
+
+    // Add text content if present
+    if (text) {
+      contentBlocks.push({ type: "text", text });
+    }
+
+    // Convert image files to ImageContent blocks
+    // Reference: Zed's MentionImage stores base64 data + format
+    // Also collect images for display in the user message entry
+    const userImages: UserMessageImage[] = [];
+
+    for (const file of files) {
+      if (file.mediaType?.startsWith("image/") && file.url) {
+        try {
+          // Convert URL (object URL or data URL) to base64
+          let base64Data: string;
+          if (file.url.startsWith("data:")) {
+            // Already a data URL, extract base64 part
+            const commaIndex = file.url.indexOf(",");
+            base64Data = commaIndex >= 0 ? file.url.slice(commaIndex + 1) : file.url;
+          } else {
+            // Object URL - fetch and convert to base64
+            const response = await fetch(file.url);
+            const blob = await response.blob();
+            base64Data = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const result = reader.result as string;
+                const commaIndex = result.indexOf(",");
+                resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          }
+
+          const imageContent: ImageContent = {
+            type: "image",
+            mimeType: file.mediaType,
+            data: base64Data,
+          };
+          contentBlocks.push(imageContent);
+
+          // Reference: Zed stores image data in UserMessage for display
+          // Keep a copy for rendering in the chat history
+          userImages.push({
+            mimeType: file.mediaType,
+            data: base64Data,
+          });
+        } catch (error) {
+          console.error("[ChatInterface] Failed to convert image:", error);
+        }
+      }
+    }
+
+    if (contentBlocks.length === 0) return;
+
+    // Add user message as new entry with images
+    // Reference: Zed's UserMessage contains both content and chunks (images)
     const userEntry: UserMessageEntry = {
       type: "user_message",
       id: `user-${Date.now()}`,
       content: text,
+      images: userImages.length > 0 ? userImages : undefined,
     };
     setEntries((prev) => [...prev, userEntry]);
     setIsLoading(true);
 
     try {
-      await client.sendPrompt(text);
+      // Reference: Zed's AcpThread.send() forwards Vec<acp::ContentBlock>
+      await client.sendPrompt(contentBlocks);
     } catch (error) {
       console.error("[ChatInterface] Failed to send prompt:", error);
       setIsLoading(false);
@@ -631,11 +740,30 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
             <>
               {entries.map((entry, index) => {
                 // Render UserMessage
+                // Reference: Zed's render_image_output() displays images in user messages
                 if (entry.type === "user_message") {
                   return (
                     <Message key={entry.id} from="user">
                       <MessageContent>
-                        <MessageResponse>{entry.content}</MessageResponse>
+                        {/* Show images using MessageAttachment component */}
+                        {entry.images && entry.images.length > 0 && (
+                          <MessageAttachments>
+                            {entry.images.map((img, imgIndex) => (
+                              <MessageAttachment
+                                key={imgIndex}
+                                data={{
+                                  type: "file",
+                                  mediaType: img.mimeType,
+                                  url: `data:${img.mimeType};base64,${img.data}`,
+                                }}
+                              />
+                            ))}
+                          </MessageAttachments>
+                        )}
+                        {/* Show text content if present */}
+                        {entry.content && (
+                          <MessageResponse>{entry.content}</MessageResponse>
+                        )}
                       </MessageContent>
                     </Message>
                   );
@@ -701,13 +829,28 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
 
       {/* Input area */}
       <div className="border-t p-4">
-        <PromptInput onSubmit={handleSubmit}>
+        {/* Reference: Zed's MessageEditor conditionally shows attachment UI based on supports_images() */}
+        <PromptInput
+          onSubmit={handleSubmit}
+          accept={supportsImages ? "image/*" : undefined}
+          multiple={supportsImages}
+        >
+          {/* Show attachments header when images are supported */}
+          {supportsImages && (
+            <PromptInputHeader>
+              <PromptInputAttachments>
+                {/* children is called per-file, not with array */}
+                {(file) => <PromptInputAttachment data={file} />}
+              </PromptInputAttachments>
+            </PromptInputHeader>
+          )}
           <PromptInputTextarea
             placeholder={sessionReady ? "Type a message..." : "Waiting for session..."}
             disabled={!sessionReady}
           />
           <PromptInputFooter>
-            <div /> {/* Spacer */}
+            {/* Reference: Zed's add_images_from_picker() shows image picker button only when supported */}
+            {supportsImages ? <AddImageButton /> : <div /> /* Spacer when no image support */}
             <PromptInputSubmit
               status={chatStatus}
               disabled={!sessionReady}

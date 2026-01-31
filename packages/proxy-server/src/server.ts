@@ -35,12 +35,22 @@ interface PendingPermission {
   timeout: ReturnType<typeof setTimeout>;
 }
 
+// PromptCapabilities from ACP protocol
+// Reference: Zed's prompt_capabilities to check image support
+interface PromptCapabilities {
+  audio?: boolean;
+  embeddedContext?: boolean;
+  image?: boolean;
+}
+
 // Track connected clients and their agent connections
 interface ClientState {
   process: ChildProcess | null;
   connection: acp.ClientSideConnection | null;
   sessionId: string | null;
   pendingPermissions: Map<string, PendingPermission>;
+  // Reference: Zed stores promptCapabilities from initialize response
+  promptCapabilities: PromptCapabilities | null;
 }
 
 // Module-level state (set when server starts)
@@ -204,7 +214,14 @@ async function handleConnect(ws: WSContext): Promise<void> {
       },
     });
 
-    log.info("Agent initialized", { protocolVersion: initResult.protocolVersion });
+    // Reference: Zed stores promptCapabilities from initialize response
+    // to check image support via supports_images()
+    // Note: promptCapabilities is nested in agentCapabilities
+    state.promptCapabilities = initResult.agentCapabilities?.promptCapabilities ?? null;
+    log.info("Agent initialized", {
+      protocolVersion: initResult.protocolVersion,
+      promptCapabilities: state.promptCapabilities,
+    });
 
     send(ws, "status", {
       connected: true,
@@ -252,7 +269,12 @@ async function handleNewSession(
 
     state.sessionId = result.sessionId;
     log.info("Session created", { sessionId: result.sessionId });
-    send(ws, "session_created", result);
+    // Reference: Include promptCapabilities so client can check image support
+    // This matches Zed's behavior of checking prompt_capabilities.image
+    send(ws, "session_created", {
+      ...result,
+      promptCapabilities: state.promptCapabilities,
+    });
   } catch (error) {
     log.error("Failed to create session", { error: (error as Error).message });
     send(ws, "error", {
@@ -261,9 +283,10 @@ async function handleNewSession(
   }
 }
 
+// Reference: Zed's AcpThread.send() forwards Vec<acp::ContentBlock> to agent
 async function handlePrompt(
   ws: WSContext,
-  params: { text: string },
+  params: { content: ContentBlock[] },
 ): Promise<void> {
   const state = clients.get(ws);
   if (!state?.connection || !state.sessionId) {
@@ -272,11 +295,19 @@ async function handlePrompt(
   }
 
   try {
-    log.debug("Sending prompt", { text: params.text.slice(0, 100) });
+    // Log first text content for debugging
+    const firstText = params.content.find(b => b.type === "text")?.text;
+    const imageCount = params.content.filter(b => b.type === "image").length;
+    log.debug("Sending prompt", {
+      text: firstText?.slice(0, 100),
+      imageCount,
+      blockCount: params.content.length,
+    });
 
+    // Forward ContentBlock[] directly to agent (matches Zed's behavior)
     const result = await state.connection.prompt({
       sessionId: state.sessionId,
-      prompt: [{ type: "text", text: params.text }],
+      prompt: params.content as acp.ContentBlock[],
     });
 
     log.info("Prompt completed", { stopReason: result.stopReason });
@@ -335,9 +366,20 @@ async function handleCancel(ws: WSContext): Promise<void> {
   }
 }
 
+// ContentBlock type matching @agentclientprotocol/sdk
+// Reference: Zed's acp::ContentBlock
+interface ContentBlock {
+  type: string;
+  text?: string;
+  data?: string;
+  mimeType?: string;
+  uri?: string;
+  name?: string;
+}
+
 interface ProxyMessage {
   type: "connect" | "disconnect" | "new_session" | "prompt" | "cancel";
-  payload?: { cwd?: string } | { text: string };
+  payload?: { cwd?: string } | { content: ContentBlock[] };
 }
 
 // Launch PWA via Termux am command
@@ -432,6 +474,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
           connection: null,
           sessionId: null,
           pendingPermissions: new Map(),
+          promptCapabilities: null,
         });
         // Register this WebSocket for browser tool calls
         setExtensionWebSocket(ws);
@@ -455,7 +498,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
               );
               break;
             case "prompt":
-              await handlePrompt(ws, data.payload as { text: string });
+              await handlePrompt(ws, data.payload as { content: ContentBlock[] });
               break;
             case "browser_tool_result":
               // Handle response from extension for browser tool call
