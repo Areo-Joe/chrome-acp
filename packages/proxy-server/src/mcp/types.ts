@@ -1,5 +1,53 @@
 // MCP (Model Context Protocol) Types for Streamable HTTP Transport
 
+// ============================================================================
+// Browser Tool Types
+// ============================================================================
+// IMPORTANT: These types MUST stay in sync with @chrome-acp/shared/src/acp/types.ts
+// They define the protocol between proxy-server and browser extension.
+//
+// Why duplicated? proxy-server uses NodeNext module resolution which requires
+// .js extensions, while shared package is designed for bundlers (Bun/Vite).
+// Until we have a proper @chrome-acp/protocol package, keep these in sync manually.
+// ============================================================================
+
+export interface BrowserToolParams {
+  action: "read" | "execute" | "screenshot";
+  script?: string;
+}
+
+export interface BrowserReadResult {
+  action: "read";
+  url: string;
+  title: string;
+  dom: string;
+  viewport: {
+    width: number;
+    height: number;
+    scrollX: number;
+    scrollY: number;
+  };
+  selection: string | null;
+}
+
+export interface BrowserExecuteResult {
+  action: "execute";
+  url: string;
+  result?: unknown;
+  error?: string;
+}
+
+export interface BrowserScreenshotResult {
+  action: "screenshot";
+  url: string;
+  screenshot: string;
+}
+
+export type BrowserToolResult =
+  | BrowserReadResult
+  | BrowserExecuteResult
+  | BrowserScreenshotResult;
+
 export interface McpRequest {
   jsonrpc: "2.0";
   id: string | number;
@@ -79,41 +127,6 @@ export interface McpToolCallResult {
 export type McpToolContent =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string };
-
-// Browser Tool specific types
-export interface BrowserToolParams {
-  action: "read" | "execute" | "screenshot";
-  script?: string;
-}
-
-export interface BrowserReadResult {
-  url: string;
-  title: string;
-  dom: string;
-  viewport: {
-    width: number;
-    height: number;
-    scrollX: number;
-    scrollY: number;
-  };
-  selection: string | null;
-}
-
-export interface BrowserExecuteResult {
-  url: string;
-  result?: unknown;
-  error?: string;
-}
-
-export interface BrowserScreenshotResult {
-  url: string;
-  screenshot: string;
-}
-
-export type BrowserToolResult =
-  | (BrowserReadResult & { action: "read" })
-  | (BrowserExecuteResult & { action: "execute" })
-  | (BrowserScreenshotResult & { action: "screenshot" });
 
 // Browser Read Tool
 export const BROWSER_READ_TOOL: McpTool = {

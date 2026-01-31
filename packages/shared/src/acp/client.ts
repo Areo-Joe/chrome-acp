@@ -1,5 +1,7 @@
 import type {
   ACPSettings,
+  BrowserToolParams,
+  BrowserToolResult,
   ConnectionState,
   PermissionRequestPayload,
   ProxyMessage,
@@ -15,6 +17,9 @@ export type SessionUpdateHandler = (update: SessionUpdate) => void;
 export type SessionCreatedHandler = (sessionId: string) => void;
 export type PromptCompleteHandler = (stopReason: string) => void;
 export type PermissionRequestHandler = (request: PermissionRequestPayload) => void;
+export type BrowserToolCallHandler = (
+  params: BrowserToolParams,
+) => Promise<BrowserToolResult>;
 
 export class ACPClient {
   private ws: WebSocket | null = null;
@@ -27,6 +32,7 @@ export class ACPClient {
   private onSessionCreated: SessionCreatedHandler | null = null;
   private onPromptComplete: PromptCompleteHandler | null = null;
   private onPermissionRequest: PermissionRequestHandler | null = null;
+  private onBrowserToolCall: BrowserToolCallHandler | null = null;
 
   private connectResolve: ((value: void) => void) | null = null;
   private connectReject: ((error: Error) => void) | null = null;
@@ -57,6 +63,10 @@ export class ACPClient {
 
   setPermissionRequestHandler(handler: PermissionRequestHandler): void {
     this.onPermissionRequest = handler;
+  }
+
+  setBrowserToolCallHandler(handler: BrowserToolCallHandler): void {
+    this.onBrowserToolCall = handler;
   }
 
   private setState(state: ConnectionState, error?: string): void {
@@ -160,6 +170,43 @@ export class ACPClient {
         console.log("[ACPClient] Permission request:", response.payload);
         this.onPermissionRequest?.(response.payload);
         break;
+
+      case "browser_tool_call":
+        this.handleBrowserToolCall(response.callId, response.params);
+        break;
+    }
+  }
+
+  private async handleBrowserToolCall(
+    callId: string,
+    params: BrowserToolParams,
+  ): Promise<void> {
+    console.log("[ACPClient] Browser tool call:", callId, params);
+
+    if (!this.onBrowserToolCall) {
+      console.error("[ACPClient] No browser tool handler registered");
+      this.send({
+        type: "browser_tool_result",
+        callId,
+        result: { error: "No browser tool handler registered" },
+      });
+      return;
+    }
+
+    try {
+      const result = await this.onBrowserToolCall(params);
+      this.send({
+        type: "browser_tool_result",
+        callId,
+        result,
+      });
+    } catch (error) {
+      console.error("[ACPClient] Browser tool error:", error);
+      this.send({
+        type: "browser_tool_result",
+        callId,
+        result: { error: (error as Error).message },
+      });
     }
   }
 

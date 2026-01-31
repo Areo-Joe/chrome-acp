@@ -48,7 +48,7 @@ export function ACPConnect({ onClientReady, onConnectionStateChange }: ACPConnec
     });
 
     // Register browser tool handler
-    acpClient.setBrowserToolCallHandler(async (_callId, params) => {
+    acpClient.setBrowserToolCallHandler(async (params) => {
       console.log("[ACPConnect] Executing browser tool:", params);
       return await executeBrowserTool(params);
     });

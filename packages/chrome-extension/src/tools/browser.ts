@@ -7,7 +7,7 @@ import type {
   BrowserReadResult,
   BrowserExecuteResult,
   BrowserScreenshotResult,
-} from "../acp/types";
+} from "@chrome-acp/shared/acp";
 
 // Get active tab helper
 async function getActiveTab(): Promise<chrome.tabs.Tab> {

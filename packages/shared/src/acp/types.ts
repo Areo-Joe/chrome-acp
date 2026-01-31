@@ -30,6 +30,50 @@ export interface PermissionResponsePayload {
   outcome: { outcome: "cancelled" } | { outcome: "selected"; optionId: string };
 }
 
+// ============================================================================
+// Browser Tool Types
+// ============================================================================
+// IMPORTANT: These types MUST stay in sync with packages/proxy-server/src/mcp/types.ts
+// They define the protocol between proxy-server and browser extension.
+// ============================================================================
+
+export interface BrowserToolParams {
+  action: "read" | "execute" | "screenshot";
+  script?: string;
+}
+
+export interface BrowserReadResult {
+  action: "read";
+  url: string;
+  title: string;
+  dom: string;
+  viewport: {
+    width: number;
+    height: number;
+    scrollX: number;
+    scrollY: number;
+  };
+  selection: string | null;
+}
+
+export interface BrowserExecuteResult {
+  action: "execute";
+  url: string;
+  result?: unknown;
+  error?: string;
+}
+
+export interface BrowserScreenshotResult {
+  action: "screenshot";
+  url: string;
+  screenshot: string;
+}
+
+export type BrowserToolResult =
+  | BrowserReadResult
+  | BrowserExecuteResult
+  | BrowserScreenshotResult;
+
 // Messages sent TO the proxy server
 export type ProxyMessage =
   | { type: "connect" }
@@ -37,7 +81,8 @@ export type ProxyMessage =
   | { type: "new_session"; payload?: { cwd?: string } }
   | { type: "prompt"; payload: { text: string } }
   | { type: "cancel" }
-  | { type: "permission_response"; payload: PermissionResponsePayload };
+  | { type: "permission_response"; payload: PermissionResponsePayload }
+  | { type: "browser_tool_result"; callId: string; result: BrowserToolResult | { error: string } };
 
 // Messages received FROM the proxy server
 export interface ProxyStatusMessage {
@@ -77,13 +122,20 @@ export interface ProxyPermissionRequestMessage {
   payload: PermissionRequestPayload;
 }
 
+export interface ProxyBrowserToolCallMessage {
+  type: "browser_tool_call";
+  callId: string;
+  params: BrowserToolParams;
+}
+
 export type ProxyResponse =
   | ProxyStatusMessage
   | ProxyErrorMessage
   | ProxySessionCreatedMessage
   | ProxySessionUpdateMessage
   | ProxyPromptCompleteMessage
-  | ProxyPermissionRequestMessage;
+  | ProxyPermissionRequestMessage
+  | ProxyBrowserToolCallMessage;
 
 // Content block types
 export interface TextContent {
