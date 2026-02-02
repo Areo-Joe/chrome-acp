@@ -83,12 +83,13 @@ Open `http://localhost:9315/app` in your browser (no extension needed)
 
 ## Browser Tools
 
-The extension exposes three browser tools to agents via MCP:
+The extension exposes browser tools to agents via MCP:
 
 | Tool | Description |
 |------|-------------|
-| `browser_read` | Read current page content (returns simplified DOM) |
-| `browser_execute` | Execute JavaScript on the page |
+| `browser_tabs` | List all open tabs (returns id, url, title, active status) |
+| `browser_read` | Read content of a specific tab (requires tabId from browser_tabs) |
+| `browser_execute` | Execute JavaScript in a specific tab (requires tabId from browser_tabs) |
 
 ## Development
 

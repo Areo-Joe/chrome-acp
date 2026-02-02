@@ -38,12 +38,26 @@ export interface PermissionResponsePayload {
 // ============================================================================
 
 export interface BrowserToolParams {
-  action: "read" | "execute";
-  script?: string;
+  action: "tabs" | "read" | "execute";
+  tabId?: number;   // Required for read/execute
+  script?: string;  // Required for execute
+}
+
+export interface BrowserTabInfo {
+  id: number;
+  url: string;
+  title: string;
+  active: boolean;
+}
+
+export interface BrowserTabsResult {
+  action: "tabs";
+  tabs: BrowserTabInfo[];
 }
 
 export interface BrowserReadResult {
   action: "read";
+  tabId: number;
   url: string;
   title: string;
   dom: string;
@@ -58,12 +72,14 @@ export interface BrowserReadResult {
 
 export interface BrowserExecuteResult {
   action: "execute";
+  tabId: number;
   url: string;
   result?: unknown;
   error?: string;
 }
 
 export type BrowserToolResult =
+  | BrowserTabsResult
   | BrowserReadResult
   | BrowserExecuteResult;
 

@@ -4,26 +4,40 @@
 import type {
   BrowserToolParams,
   BrowserToolResult,
+  BrowserTabsResult,
   BrowserReadResult,
   BrowserExecuteResult,
 } from "@chrome-acp/shared/acp";
 
-// Get active tab helper
-async function getActiveTab(): Promise<chrome.tabs.Tab> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) {
-    throw new Error("No active tab found");
-  }
-  return tab;
+// Execute browser_tabs: List all open tabs
+async function executeBrowserTabs(): Promise<BrowserTabsResult> {
+  console.log("[BrowserTool] Listing tabs...");
+  const allTabs = await chrome.tabs.query({});
+
+  const tabs = allTabs
+    .filter((tab) => tab.id !== undefined)
+    .map((tab) => ({
+      id: tab.id!,
+      url: tab.url || "",
+      title: tab.title || "",
+      active: tab.active || false,
+    }));
+
+  console.log(`[BrowserTool] Found ${tabs.length} tabs`);
+  return { action: "tabs", tabs };
 }
 
-// Execute browser_read: Get DOM info
-async function executeBrowserRead(): Promise<BrowserReadResult> {
-  console.log("[BrowserTool] Executing read...");
-  const tab = await getActiveTab();
+// Execute browser_read: Get DOM info from specific tab
+async function executeBrowserRead(tabId: number): Promise<BrowserReadResult> {
+  console.log(`[BrowserTool] Reading tab ${tabId}...`);
+
+  const tab = await chrome.tabs.get(tabId);
+  if (!tab) {
+    throw new Error(`Tab ${tabId} not found`);
+  }
 
   const results = await chrome.scripting.executeScript({
-    target: { tabId: tab.id! },
+    target: { tabId },
     func: collectPageInfo,
   });
 
@@ -33,19 +47,24 @@ async function executeBrowserRead(): Promise<BrowserReadResult> {
   }
 
   console.log(`[BrowserTool] Read complete: ${pageInfo.dom.length} chars`);
-  return { action: "read", ...pageInfo };
+  return { action: "read", tabId, ...pageInfo };
 }
 
-// Execute browser_execute: Run script in page
+// Execute browser_execute: Run script in specific tab
 async function executeBrowserExecute(
+  tabId: number,
   script: string,
 ): Promise<BrowserExecuteResult> {
-  console.log("[BrowserTool] Executing script...");
-  const tab = await getActiveTab();
+  console.log(`[BrowserTool] Executing script in tab ${tabId}...`);
+
+  const tab = await chrome.tabs.get(tabId);
+  if (!tab) {
+    throw new Error(`Tab ${tabId} not found`);
+  }
 
   try {
     const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id! },
+      target: { tabId },
       world: "MAIN", // Execute in page's main world
       func: executeScriptInMainWorld,
       args: [script],
@@ -56,6 +75,7 @@ async function executeBrowserExecute(
 
     return {
       action: "execute",
+      tabId,
       url: tab.url || "",
       result: scriptResult?.result,
       error: scriptResult?.error,
@@ -64,6 +84,7 @@ async function executeBrowserExecute(
     console.error("[BrowserTool] Script execution failed:", error);
     return {
       action: "execute",
+      tabId,
       url: tab.url || "",
       error: (error as Error).message,
     };
@@ -77,13 +98,21 @@ export async function executeBrowserTool(
   console.log("[BrowserTool] Action:", params.action);
 
   switch (params.action) {
+    case "tabs":
+      return executeBrowserTabs();
     case "read":
-      return executeBrowserRead();
-    case "execute":
-      if (!params.script) {
-        throw new Error("Script is required for execute action");
+      if (params.tabId === undefined) {
+        throw new Error("tabId is required for read action");
       }
-      return executeBrowserExecute(params.script);
+      return executeBrowserRead(params.tabId);
+    case "execute":
+      if (params.tabId === undefined) {
+        throw new Error("tabId is required for execute action");
+      }
+      if (!params.script) {
+        throw new Error("script is required for execute action");
+      }
+      return executeBrowserExecute(params.tabId, params.script);
     default:
       throw new Error(`Unknown action: ${params.action}`);
   }

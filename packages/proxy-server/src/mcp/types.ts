@@ -12,12 +12,26 @@
 // ============================================================================
 
 export interface BrowserToolParams {
-  action: "read" | "execute";
-  script?: string;
+  action: "tabs" | "read" | "execute";
+  tabId?: number;   // Required for read/execute
+  script?: string;  // Required for execute
+}
+
+export interface BrowserTabInfo {
+  id: number;
+  url: string;
+  title: string;
+  active: boolean;
+}
+
+export interface BrowserTabsResult {
+  action: "tabs";
+  tabs: BrowserTabInfo[];
 }
 
 export interface BrowserReadResult {
   action: "read";
+  tabId: number;
   url: string;
   title: string;
   dom: string;
@@ -32,12 +46,14 @@ export interface BrowserReadResult {
 
 export interface BrowserExecuteResult {
   action: "execute";
+  tabId: number;
   url: string;
   result?: unknown;
   error?: string;
 }
 
 export type BrowserToolResult =
+  | BrowserTabsResult
   | BrowserReadResult
   | BrowserExecuteResult;
 
@@ -121,15 +137,36 @@ export type McpToolContent =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string };
 
+// Browser Tabs Tool
+export const BROWSER_TABS_TOOL: McpTool = {
+  name: "browser_tabs",
+  description:
+    "List all open tabs in the browser. " +
+    "Returns an array of tabs with their id, url, title, and whether it's the active tab. " +
+    "Use this tool first to get the tabId before calling browser_read or browser_execute.",
+  inputSchema: {
+    type: "object",
+    properties: {},
+  },
+};
+
 // Browser Read Tool
 export const BROWSER_READ_TOOL: McpTool = {
   name: "browser_read",
   description:
-    "Read the current web page content in the user's browser. " +
-    "Returns page URL, title, simplified DOM content, viewport size, and selected text.",
+    "Read the content of a specific browser tab. " +
+    "Returns page URL, title, simplified DOM content, viewport size, and selected text. " +
+    "IMPORTANT: You must call browser_tabs first to get the tabId.",
   inputSchema: {
     type: "object",
-    properties: {},
+    properties: {
+      tabId: {
+        type: "number",
+        description:
+          "The tab ID to read from. Get this from browser_tabs tool.",
+      },
+    },
+    required: ["tabId"],
   },
 };
 
@@ -137,12 +174,17 @@ export const BROWSER_READ_TOOL: McpTool = {
 export const BROWSER_EXECUTE_TOOL: McpTool = {
   name: "browser_execute",
   description:
-    "Execute JavaScript code in the current web page context. " +
+    "Execute JavaScript code in a specific browser tab. " +
     "The script is executed via `new Function(script)()`, so the LAST EXPRESSION or explicit `return` statement becomes the tool result. " +
-    "ALWAYS return a meaningful value to verify execution success.",
+    "IMPORTANT: You must call browser_tabs first to get the tabId.",
   inputSchema: {
     type: "object",
     properties: {
+      tabId: {
+        type: "number",
+        description:
+          "The tab ID to execute the script in. Get this from browser_tabs tool.",
+      },
       script: {
         type: "string",
         description:
@@ -173,12 +215,13 @@ export const BROWSER_EXECUTE_TOOL: McpTool = {
           "Always use dispatchEvent with { bubbles: true } for framework compatibility.",
       },
     },
-    required: ["script"],
+    required: ["tabId", "script"],
   },
 };
 
 // All browser tools
 export const BROWSER_TOOLS = [
+  BROWSER_TABS_TOOL,
   BROWSER_READ_TOOL,
   BROWSER_EXECUTE_TOOL,
 ];

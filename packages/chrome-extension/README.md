@@ -9,7 +9,7 @@ Part of the [chrome-acp](https://github.com/Areo-Joe/chrome-acp) monorepo.
 - Sidepanel chat interface for ACP agents
 - Real-time streaming responses
 - Tool call visualization
-- Browser tools for agents (read, execute)
+- Browser tools for agents (tabs, read, execute)
 
 ## Development
 
@@ -59,8 +59,9 @@ The extension provides browser capabilities to connected agents:
 
 | Tool | Description |
 |------|-------------|
-| `browser_read` | Read current page content (simplified DOM) |
-| `browser_execute` | Execute JavaScript on the page |
+| `browser_tabs` | List all open tabs (returns id, url, title, active status) |
+| `browser_read` | Read content of a specific tab (requires tabId from browser_tabs) |
+| `browser_execute` | Execute JavaScript in a specific tab (requires tabId from browser_tabs) |
 
 ## Configuration
 

@@ -9,6 +9,7 @@ import {
   type McpToolCallResult,
   type BrowserToolParams,
   type BrowserToolResult,
+  type BrowserTabsResult,
   type BrowserReadResult,
   type BrowserExecuteResult,
   MCP_METHODS,
@@ -48,14 +49,13 @@ export function handleBrowserToolResponse(
 
   pendingBrowserCalls.delete(callId);
 
-  if ("error" in result && !("url" in result)) {
+  if ("error" in result && !("action" in result)) {
     log.error("Browser tool error", { error: result.error });
     pending.reject(new Error(result.error));
   } else {
     const browserResult = result as BrowserToolResult;
     log.debug("Browser tool result", {
       action: browserResult.action,
-      url: browserResult.url,
     });
     pending.resolve(browserResult);
   }
@@ -121,11 +121,33 @@ function handleToolsList(id: string | number): McpResponse {
   return { jsonrpc: "2.0", id, result };
 }
 
+function formatTabsResult(result: BrowserTabsResult): McpToolCallResult {
+  const lines = [
+    `# Browser Tabs`,
+    ``,
+    `Found ${result.tabs.length} open tab(s):`,
+    ``,
+    ...result.tabs.map(
+      (tab) =>
+        `- **Tab ${tab.id}**${tab.active ? " (active)" : ""}: ${tab.title}\n  URL: ${tab.url}`,
+    ),
+  ];
+
+  log.debug("Tabs result", {
+    count: result.tabs.length,
+  });
+
+  return {
+    content: [{ type: "text", text: lines.join("\n") }],
+  };
+}
+
 function formatReadResult(result: BrowserReadResult): McpToolCallResult {
   const textContent = [
     `# Browser Read Result`,
     ``,
     `## Page Info`,
+    `- Tab ID: ${result.tabId}`,
     `- URL: ${result.url}`,
     `- Title: ${result.title}`,
     `- Viewport: ${result.viewport.width}x${result.viewport.height}`,
@@ -140,6 +162,7 @@ function formatReadResult(result: BrowserReadResult): McpToolCallResult {
     .join("\n");
 
   log.debug("Read result", {
+    tabId: result.tabId,
     url: result.url,
     title: result.title,
     viewport: result.viewport,
@@ -157,6 +180,7 @@ function formatExecuteResult(result: BrowserExecuteResult): McpToolCallResult {
   const textContent = [
     `# Browser Execute Result`,
     ``,
+    `- Tab ID: ${result.tabId}`,
     `- URL: ${result.url}`,
     result.result !== undefined
       ? `\n## Script Result\n\`\`\`\n${JSON.stringify(result.result, null, 2)}\n\`\`\``
@@ -167,6 +191,7 @@ function formatExecuteResult(result: BrowserExecuteResult): McpToolCallResult {
     .join("\n");
 
   log.debug("Execute result", {
+    tabId: result.tabId,
     url: result.url,
     result: result.result,
     error: result.error,
@@ -192,6 +217,7 @@ async function handleToolCall(
 
   // Map tool name to action
   const toolToAction: Record<string, BrowserToolParams["action"]> = {
+    browser_tabs: "tabs",
     browser_read: "read",
     browser_execute: "execute",
   };
@@ -210,9 +236,11 @@ async function handleToolCall(
   }
 
   try {
+    const args = params.arguments as { tabId?: number; script?: string };
     const browserParams: BrowserToolParams = {
       action,
-      script: (params.arguments as { script?: string })?.script,
+      tabId: args?.tabId,
+      script: args?.script,
     };
 
     const startTime = Date.now();
@@ -229,6 +257,9 @@ async function handleToolCall(
     let result: McpToolCallResult;
 
     switch (browserResult.action) {
+      case "tabs":
+        result = formatTabsResult(browserResult);
+        break;
       case "read":
         result = formatReadResult(browserResult);
         break;
