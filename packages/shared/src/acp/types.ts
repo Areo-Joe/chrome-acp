@@ -38,7 +38,7 @@ export interface PermissionResponsePayload {
 // ============================================================================
 
 export interface BrowserToolParams {
-  action: "read" | "execute" | "screenshot";
+  action: "read" | "execute";
   script?: string;
 }
 
@@ -63,16 +63,9 @@ export interface BrowserExecuteResult {
   error?: string;
 }
 
-export interface BrowserScreenshotResult {
-  action: "screenshot";
-  url: string;
-  screenshot: string;
-}
-
 export type BrowserToolResult =
   | BrowserReadResult
-  | BrowserExecuteResult
-  | BrowserScreenshotResult;
+  | BrowserExecuteResult;
 
 // Messages sent TO the proxy server
 // Reference: Zed's MessageEditor.contents() builds Vec<acp::ContentBlock>

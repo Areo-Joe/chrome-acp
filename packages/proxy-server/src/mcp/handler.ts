@@ -11,7 +11,6 @@ import {
   type BrowserToolResult,
   type BrowserReadResult,
   type BrowserExecuteResult,
-  type BrowserScreenshotResult,
   MCP_METHODS,
   BROWSER_TOOLS,
 } from "./types.js";
@@ -181,28 +180,6 @@ function formatExecuteResult(result: BrowserExecuteResult): McpToolCallResult {
   };
 }
 
-function formatScreenshotResult(
-  result: BrowserScreenshotResult,
-): McpToolCallResult {
-  log.debug("Screenshot result", {
-    url: result.url,
-    bytesBase64: result.screenshot.length,
-    estimatedSizeKB: Math.round(result.screenshot.length * 0.75 / 1024),
-  });
-
-  // Log full base64 data at trace level for debugging
-  log.trace("Screenshot data", {
-    url: result.url,
-    dataUrl: `data:image/png;base64,${result.screenshot}`,
-  });
-
-  return {
-    content: [
-      { type: "image", data: result.screenshot, mimeType: "image/png" },
-    ],
-  };
-}
-
 async function handleToolCall(
   id: string | number,
   params: McpToolCallParams,
@@ -217,7 +194,6 @@ async function handleToolCall(
   const toolToAction: Record<string, BrowserToolParams["action"]> = {
     browser_read: "read",
     browser_execute: "execute",
-    browser_screenshot: "screenshot",
   };
 
   const action = toolToAction[params.name];
@@ -258,9 +234,6 @@ async function handleToolCall(
         break;
       case "execute":
         result = formatExecuteResult(browserResult);
-        break;
-      case "screenshot":
-        result = formatScreenshotResult(browserResult);
         break;
       default:
         throw new Error(`Unknown action: ${(browserResult as BrowserToolResult).action}`);

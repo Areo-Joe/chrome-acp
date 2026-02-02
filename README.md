@@ -89,7 +89,6 @@ The extension exposes three browser tools to agents via MCP:
 |------|-------------|
 | `browser_read` | Read current page content (returns simplified DOM) |
 | `browser_execute` | Execute JavaScript on the page |
-| `browser_screenshot` | Capture screenshot of current page |
 
 ## Development
 

@@ -6,7 +6,6 @@ import type {
   BrowserToolResult,
   BrowserReadResult,
   BrowserExecuteResult,
-  BrowserScreenshotResult,
 } from "@chrome-acp/shared/acp";
 
 // Get active tab helper
@@ -71,26 +70,6 @@ async function executeBrowserExecute(
   }
 }
 
-// Execute browser_screenshot: Capture visible viewport
-async function executeBrowserScreenshot(): Promise<BrowserScreenshotResult> {
-  console.log("[BrowserTool] Capturing screenshot...");
-  const tab = await getActiveTab();
-
-  const dataUrl = await chrome.tabs.captureVisibleTab({
-    format: "png",
-  });
-
-  // Extract base64 data from data URL
-  const screenshot = dataUrl.replace(/^data:image\/png;base64,/, "");
-  console.log(`[BrowserTool] Screenshot captured: ${screenshot.length} bytes`);
-
-  return {
-    action: "screenshot",
-    url: tab.url || "",
-    screenshot,
-  };
-}
-
 // Main entry point - routes to appropriate action
 export async function executeBrowserTool(
   params: BrowserToolParams,
@@ -105,8 +84,6 @@ export async function executeBrowserTool(
         throw new Error("Script is required for execute action");
       }
       return executeBrowserExecute(params.script);
-    case "screenshot":
-      return executeBrowserScreenshot();
     default:
       throw new Error(`Unknown action: ${params.action}`);
   }

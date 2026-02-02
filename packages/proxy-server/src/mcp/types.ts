@@ -12,7 +12,7 @@
 // ============================================================================
 
 export interface BrowserToolParams {
-  action: "read" | "execute" | "screenshot";
+  action: "read" | "execute";
   script?: string;
 }
 
@@ -37,16 +37,9 @@ export interface BrowserExecuteResult {
   error?: string;
 }
 
-export interface BrowserScreenshotResult {
-  action: "screenshot";
-  url: string;
-  screenshot: string;
-}
-
 export type BrowserToolResult =
   | BrowserReadResult
-  | BrowserExecuteResult
-  | BrowserScreenshotResult;
+  | BrowserExecuteResult;
 
 export interface McpRequest {
   jsonrpc: "2.0";
@@ -184,22 +177,9 @@ export const BROWSER_EXECUTE_TOOL: McpTool = {
   },
 };
 
-// Browser Screenshot Tool
-export const BROWSER_SCREENSHOT_TOOL: McpTool = {
-  name: "browser_screenshot",
-  description:
-    "Capture a screenshot of the visible viewport in the user's browser. " +
-    "Returns the current URL and a base64-encoded PNG image.",
-  inputSchema: {
-    type: "object",
-    properties: {},
-  },
-};
-
 // All browser tools
 export const BROWSER_TOOLS = [
   BROWSER_READ_TOOL,
   BROWSER_EXECUTE_TOOL,
-  BROWSER_SCREENSHOT_TOOL,
 ];
 
