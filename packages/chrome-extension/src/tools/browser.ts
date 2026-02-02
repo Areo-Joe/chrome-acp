@@ -76,7 +76,7 @@ async function executeBrowserScreenshot(): Promise<BrowserScreenshotResult> {
   console.log("[BrowserTool] Capturing screenshot...");
   const tab = await getActiveTab();
 
-  const dataUrl = await chrome.tabs.captureVisibleTab(undefined, {
+  const dataUrl = await chrome.tabs.captureVisibleTab({
     format: "png",
   });
 

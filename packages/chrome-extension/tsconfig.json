@@ -23,7 +23,9 @@
 
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@chrome-acp/shared": ["../shared/src/index.ts"],
+      "@chrome-acp/shared/*": ["../shared/src/*"]
     },
 
     // Some stricter flags (disabled by default)

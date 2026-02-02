@@ -43,7 +43,6 @@ const getStatusBadge = (status: ExtendedToolState) => {
   const labels: Record<ExtendedToolState, string> = {
     "input-streaming": "Pending",
     "input-available": "Running",
-    // @ts-expect-error state only available in AI SDK v6
     "approval-requested": "Awaiting Approval",
     "approval-responded": "Responded",
     "output-available": "Completed",
@@ -56,7 +55,6 @@ const getStatusBadge = (status: ExtendedToolState) => {
   const icons: Record<ExtendedToolState, ReactNode> = {
     "input-streaming": <CircleIcon className="size-4" />,
     "input-available": <ClockIcon className="size-4 animate-pulse" />,
-    // @ts-expect-error state only available in AI SDK v6
     "approval-requested": <ClockIcon className="size-4 text-yellow-600" />,
     "approval-responded": <CheckCircleIcon className="size-4 text-blue-600" />,
     "output-available": <CheckCircleIcon className="size-4 text-green-600" />,

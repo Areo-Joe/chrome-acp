@@ -875,8 +875,9 @@ export const PromptInputTextarea = ({
 
     const files: File[] = [];
 
-    for (const item of items) {
-      if (item.kind === "file") {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item && item.kind === "file") {
         const file = item.getAsFile();
         if (file) {
           files.push(file);
@@ -1157,7 +1158,7 @@ export const PromptInputSpeechButton = ({
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          if (result.isFinal) {
+          if (result?.isFinal) {
             finalTranscript += result[0]?.transcript ?? "";
           }
         }
