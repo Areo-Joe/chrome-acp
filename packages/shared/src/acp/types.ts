@@ -92,7 +92,8 @@ export type ProxyMessage =
   | { type: "prompt"; payload: { content: ContentBlock[] } }  // Changed from { text: string } to match Zed
   | { type: "cancel" }
   | { type: "permission_response"; payload: PermissionResponsePayload }
-  | { type: "browser_tool_result"; callId: string; result: BrowserToolResult | { error: string } };
+  | { type: "browser_tool_result"; callId: string; result: BrowserToolResult | { error: string } }
+  | { type: "set_session_model"; payload: { modelId: string } };
 
 // Messages received FROM the proxy server
 export interface ProxyStatusMessage {
@@ -109,12 +110,13 @@ export interface ProxyErrorMessage {
   payload: { message: string };
 }
 
-// Reference: Zed's session/initialize response includes promptCapabilities
+// Reference: Zed's session/initialize response includes promptCapabilities and models
 export interface ProxySessionCreatedMessage {
   type: "session_created";
   payload: {
     sessionId: string;
     promptCapabilities?: PromptCapabilities;  // From agent's initialize response
+    models?: SessionModelState | null;  // Model state if agent supports model selection
   };
 }
 
@@ -142,6 +144,13 @@ export interface ProxyBrowserToolCallMessage {
   params: BrowserToolParams;
 }
 
+export interface ProxyModelChangedMessage {
+  type: "model_changed";
+  payload: {
+    modelId: string;
+  };
+}
+
 export type ProxyResponse =
   | ProxyStatusMessage
   | ProxyErrorMessage
@@ -149,7 +158,8 @@ export type ProxyResponse =
   | ProxySessionUpdateMessage
   | ProxyPromptCompleteMessage
   | ProxyPermissionRequestMessage
-  | ProxyBrowserToolCallMessage;
+  | ProxyBrowserToolCallMessage
+  | ProxyModelChangedMessage;
 
 // Content block types (matches @agentclientprotocol/sdk ContentBlock)
 // Reference: Zed's acp::ContentBlock in agent-client-protocol crate
@@ -259,6 +269,35 @@ export interface PromptCapabilities {
   audio?: boolean;           // Agent supports audio content
   embeddedContext?: boolean; // Agent supports embedded context in prompts
   image?: boolean;           // Agent supports image content
+}
+
+// ============================================================================
+// Model Selection Types (matches @agentclientprotocol/sdk)
+// Reference: Zed's AgentModelSelector trait in acp_thread/src/connection.rs
+// ============================================================================
+
+/**
+ * Information about a selectable model.
+ * Matches ACP SDK's ModelInfo type.
+ */
+export interface ModelInfo {
+  /** Unique identifier for the model */
+  modelId: string;
+  /** Human-readable name of the model */
+  name: string;
+  /** Optional description of the model */
+  description?: string | null;
+}
+
+/**
+ * The set of models and the one currently active.
+ * Matches ACP SDK's SessionModelState type.
+ */
+export interface SessionModelState {
+  /** The set of models that the Agent can use */
+  availableModels: ModelInfo[];
+  /** The current model the Agent is using */
+  currentModelId: string;
 }
 
 // Settings

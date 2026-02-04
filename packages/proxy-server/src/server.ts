@@ -43,6 +43,17 @@ interface PromptCapabilities {
   image?: boolean;
 }
 
+// SessionModelState from ACP protocol
+// Reference: Zed's AgentModelSelector reads from state.available_models
+interface SessionModelState {
+  availableModels: Array<{
+    modelId: string;
+    name: string;
+    description?: string | null;
+  }>;
+  currentModelId: string;
+}
+
 // Track connected clients and their agent connections
 interface ClientState {
   process: ChildProcess | null;
@@ -51,6 +62,8 @@ interface ClientState {
   pendingPermissions: Map<string, PendingPermission>;
   // Reference: Zed stores promptCapabilities from initialize response
   promptCapabilities: PromptCapabilities | null;
+  // Reference: Zed stores model state from NewSessionResponse.models
+  modelState: SessionModelState | null;
 }
 
 // Module-level state (set when server starts)
@@ -268,12 +281,16 @@ async function handleNewSession(
     });
 
     state.sessionId = result.sessionId;
-    log.info("Session created", { sessionId: result.sessionId });
+    // Reference: Zed stores model state from NewSessionResponse.models
+    state.modelState = result.models ?? null;
+    log.info("Session created", { sessionId: result.sessionId, hasModels: !!result.models });
     // Reference: Include promptCapabilities so client can check image support
     // This matches Zed's behavior of checking prompt_capabilities.image
+    // Also include models state for model selection support
     send(ws, "session_created", {
       ...result,
       promptCapabilities: state.promptCapabilities,
+      models: state.modelState,
     });
   } catch (error) {
     log.error("Failed to create session", { error: (error as Error).message });
@@ -376,6 +393,43 @@ async function handleCancel(ws: WSContext): Promise<void> {
   }
 }
 
+// Reference: Zed's AgentModelSelector.select_model() calls connection.set_session_model()
+async function handleSetSessionModel(
+  ws: WSContext,
+  params: { modelId: string },
+): Promise<void> {
+  const state = clients.get(ws);
+  if (!state?.connection || !state.sessionId) {
+    send(ws, "error", { message: "No active session" });
+    return;
+  }
+
+  if (!state.modelState) {
+    send(ws, "error", { message: "Model selection not supported by this agent" });
+    return;
+  }
+
+  try {
+    log.info("Setting session model", { sessionId: state.sessionId, modelId: params.modelId });
+    await state.connection.setSessionModel({
+      sessionId: state.sessionId,
+      modelId: params.modelId,
+    });
+    // Update local model state
+    state.modelState = {
+      ...state.modelState,
+      currentModelId: params.modelId,
+    };
+    send(ws, "model_changed", { modelId: params.modelId });
+    log.info("Model changed successfully", { modelId: params.modelId });
+  } catch (error) {
+    log.error("Failed to set model", { error: (error as Error).message });
+    send(ws, "error", {
+      message: `Failed to set model: ${(error as Error).message}`,
+    });
+  }
+}
+
 // ContentBlock type matching @agentclientprotocol/sdk
 // Reference: Zed's acp::ContentBlock
 interface ContentBlock {
@@ -388,8 +442,8 @@ interface ContentBlock {
 }
 
 interface ProxyMessage {
-  type: "connect" | "disconnect" | "new_session" | "prompt" | "cancel";
-  payload?: { cwd?: string } | { content: ContentBlock[] };
+  type: "connect" | "disconnect" | "new_session" | "prompt" | "cancel" | "set_session_model";
+  payload?: { cwd?: string } | { content: ContentBlock[] } | { modelId: string };
 }
 
 // Launch PWA via Termux am command
@@ -485,6 +539,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
           sessionId: null,
           pendingPermissions: new Map(),
           promptCapabilities: null,
+          modelState: null,
         });
         // Register this WebSocket for browser tool calls
         setExtensionWebSocket(ws);
@@ -525,6 +580,10 @@ export async function startServer(config: ServerConfig): Promise<void> {
             case "cancel":
               // Handle cancel request - send session/cancel to agent
               await handleCancel(ws);
+              break;
+            case "set_session_model":
+              // Handle model selection request
+              await handleSetSessionModel(ws, data.payload as { modelId: string });
               break;
             default:
               send(ws, "error", {

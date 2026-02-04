@@ -9,6 +9,8 @@ import type {
   ProxyMessage,
   ProxyResponse,
   SessionUpdate,
+  SessionModelState,
+  ModelInfo,
 } from "./types";
 
 export type ConnectionStateHandler = (
@@ -22,6 +24,7 @@ export type PermissionRequestHandler = (request: PermissionRequestPayload) => vo
 export type BrowserToolCallHandler = (
   params: BrowserToolParams,
 ) => Promise<BrowserToolResult>;
+export type ModelChangedHandler = (modelId: string) => void;
 
 export class ACPClient {
   private ws: WebSocket | null = null;
@@ -31,6 +34,9 @@ export class ACPClient {
   // Reference: Zed's prompt_capabilities in MessageEditor
   // Stores capabilities from agent's initialize response
   private _promptCapabilities: PromptCapabilities | null = null;
+  // Reference: Zed stores model state from NewSessionResponse
+  private _modelState: SessionModelState | null = null;
+  private onModelChanged: ModelChangedHandler | null = null;
 
   private onConnectionStateChange: ConnectionStateHandler | null = null;
   private onSessionUpdate: SessionUpdateHandler | null = null;
@@ -66,6 +72,10 @@ export class ACPClient {
     this.onPromptComplete = handler;
   }
 
+  setModelChangedHandler(handler: ModelChangedHandler): void {
+    this.onModelChanged = handler;
+  }
+
   setPermissionRequestHandler(handler: PermissionRequestHandler): void {
     this.onPermissionRequest = handler;
   }
@@ -96,6 +106,22 @@ export class ACPClient {
   // Reference: Zed's prompt_capabilities in MessageEditor
   getPromptCapabilities(): PromptCapabilities | null {
     return this._promptCapabilities;
+  }
+
+  /**
+   * Get the current model state (available models and current model ID).
+   * Reference: Zed's AgentModelSelector reads from state.available_models
+   */
+  get modelState(): SessionModelState | null {
+    return this._modelState;
+  }
+
+  /**
+   * Check if the agent supports model selection.
+   * Reference: Zed's model_selector() returns Option<Rc<dyn AgentModelSelector>>
+   */
+  get supportsModelSelection(): boolean {
+    return this._modelState !== null && this._modelState.availableModels.length > 0;
   }
 
   async connect(): Promise<void> {
@@ -173,7 +199,9 @@ export class ACPClient {
         this.sessionId = response.payload.sessionId;
         // Reference: Zed stores promptCapabilities from session/initialize response
         this._promptCapabilities = response.payload.promptCapabilities ?? null;
-        console.log("[ACPClient] Session created, promptCapabilities:", this._promptCapabilities);
+        // Reference: Zed stores model state from NewSessionResponse.models
+        this._modelState = response.payload.models ?? null;
+        console.log("[ACPClient] Session created, promptCapabilities:", this._promptCapabilities, "models:", this._modelState);
         this.onSessionCreated?.(response.payload.sessionId);
         break;
 
@@ -188,6 +216,17 @@ export class ACPClient {
       case "permission_request":
         console.log("[ACPClient] Permission request:", response.payload);
         this.onPermissionRequest?.(response.payload);
+        break;
+
+      case "model_changed":
+        console.log("[ACPClient] Model changed:", response.payload.modelId);
+        if (this._modelState) {
+          this._modelState = {
+            ...this._modelState,
+            currentModelId: response.payload.modelId,
+          };
+        }
+        this.onModelChanged?.(response.payload.modelId);
         break;
 
       case "browser_tool_call":
@@ -259,6 +298,17 @@ export class ACPClient {
     this.send({ type: "cancel" });
   }
 
+  /**
+   * Set the model for the current session.
+   * Reference: Zed's AgentModelSelector.select_model() calls connection.set_session_model()
+   */
+  async setSessionModel(modelId: string): Promise<void> {
+    if (!this.sessionId) {
+      throw new Error("No active session");
+    }
+    this.send({ type: "set_session_model", payload: { modelId } });
+  }
+
   respondToPermission(requestId: string, optionId: string | null): void {
     const outcome = optionId
       ? { outcome: "selected" as const, optionId }
@@ -282,6 +332,7 @@ export class ACPClient {
     }
     this.setState("disconnected");
     this.sessionId = null;
+    this._modelState = null;
   }
 }
 

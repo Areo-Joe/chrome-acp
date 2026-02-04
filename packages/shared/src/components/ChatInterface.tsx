@@ -39,6 +39,7 @@ import {
   type PromptInputMessage,
 } from "./ai-elements/prompt-input";
 import { ImageIcon } from "lucide-react";
+import { ModelSelectorPopover } from "./model-selector";
 
 // Reference: Zed's add_images_from_picker() - Button to open file dialog for images
 // Must be inside PromptInput to access attachments context
@@ -901,8 +902,13 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
             disabled={!sessionReady}
           />
           <PromptInputFooter>
-            {/* Reference: Zed's add_images_from_picker() shows image picker button only when supported */}
-            {supportsImages ? <AddImageButton /> : <div /> /* Spacer when no image support */}
+            {/* Left side: Model selector and image button */}
+            <div className="flex items-center gap-1">
+              {/* Reference: Zed's AcpModelSelectorPopover in message editor footer */}
+              <ModelSelectorPopover client={client} />
+              {/* Reference: Zed's add_images_from_picker() shows image picker button only when supported */}
+              {supportsImages && <AddImageButton />}
+            </div>
             <PromptInputSubmit
               status={chatStatus}
               disabled={!sessionReady}
