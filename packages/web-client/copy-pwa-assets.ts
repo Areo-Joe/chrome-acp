@@ -8,7 +8,7 @@ const proxyPkg = await Bun.file(join(import.meta.dir, "../proxy-server/package.j
 const version = proxyPkg.version as string;
 
 // Copy PWA assets (manifest.json, logo, icons)
-const pwaAssets = ["manifest.json", "logo.svg", "icon-192.png", "icon-512.png"];
+const pwaAssets = ["manifest.json", "icon-192.png", "icon-512.png"];
 for (const asset of pwaAssets) {
   const src = join(import.meta.dir, "src", asset);
   const dest = join(outdir, asset);
