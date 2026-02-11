@@ -36,6 +36,10 @@ export function ModelSelectorPopover({
     return null;
   }
 
+  // Check if we're on a mobile device (touch-only)
+  const isMobile = typeof window !== "undefined" &&
+    window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+
   const handleSelect = async (model: ModelInfo) => {
     try {
       await setModel(model.modelId);
@@ -68,7 +72,12 @@ export function ModelSelectorPopover({
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-72 p-0" align="end">
+      <PopoverContent
+        className="w-72 p-0"
+        align="end"
+        // Prevent auto-focus on close to avoid triggering mobile keyboard
+        onCloseAutoFocus={isMobile ? (e) => e.preventDefault() : undefined}
+      >
         <ModelSelectorPicker
           models={availableModels}
           currentModelId={currentModel?.modelId ?? null}
