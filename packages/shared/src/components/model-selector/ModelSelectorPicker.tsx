@@ -15,6 +15,8 @@ interface ModelSelectorPickerProps {
   models: ModelInfo[];
   currentModelId: string | null;
   onSelect: (model: ModelInfo) => void;
+  /** Whether to auto-focus the search input (default: true) */
+  autoFocusSearch?: boolean;
 }
 
 /**
@@ -44,6 +46,7 @@ export function ModelSelectorPicker({
   models,
   currentModelId,
   onSelect,
+  autoFocusSearch = true,
 }: ModelSelectorPickerProps) {
   const [search, setSearch] = useState("");
 
@@ -62,6 +65,7 @@ export function ModelSelectorPicker({
         placeholder="Select a model…"
         value={search}
         onValueChange={setSearch}
+        autoFocus={autoFocusSearch}
       />
       <CommandList>
         <CommandEmpty>No models found.</CommandEmpty>

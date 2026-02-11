@@ -72,16 +72,12 @@ export function ModelSelectorPopover({
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent
-        className="w-72 p-0"
-        align="end"
-        // Prevent auto-focus on close to avoid triggering mobile keyboard
-        onCloseAutoFocus={isMobile ? (e) => e.preventDefault() : undefined}
-      >
+      <PopoverContent className="w-72 p-0" align="end">
         <ModelSelectorPicker
           models={availableModels}
           currentModelId={currentModel?.modelId ?? null}
           onSelect={handleSelect}
+          autoFocusSearch={!isMobile}
         />
       </PopoverContent>
     </Popover>
