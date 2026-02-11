@@ -12,6 +12,32 @@ const IMAGE_COMPRESSION_OPTIONS = {
   fileType: "image/jpeg" as const, // Convert to JPEG for better compression
 };
 
+// Convert data URL to Blob without using fetch()
+// This is critical for Chrome extensions where fetch(dataUrl) violates CSP
+function dataUrlToBlob(dataUrl: string): Blob {
+  // Parse the data URL: data:[<mediatype>][;base64],<data>
+  const commaIndex = dataUrl.indexOf(",");
+  if (commaIndex === -1) {
+    throw new Error("Invalid data URL: missing comma separator");
+  }
+
+  const header = dataUrl.slice(0, commaIndex);
+  const base64Data = dataUrl.slice(commaIndex + 1);
+
+  // Extract MIME type from header (e.g., "data:image/png;base64")
+  const mimeMatch = header.match(/^data:([^;,]+)/);
+  const mimeType = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+
+  // Decode base64 to binary
+  const binaryString = atob(base64Data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  return new Blob([bytes], { type: mimeType });
+}
+
 // AI Elements components
 import {
   Conversation,
@@ -534,9 +560,10 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
           // Step 1: Get the image as a Blob/File for compression
           let originalBlob: Blob;
           if (file.url.startsWith("data:")) {
-            // Convert data URL to Blob
-            const response = await fetch(file.url);
-            originalBlob = await response.blob();
+            // Convert data URL to Blob without using fetch()
+            // This is critical for Chrome extensions where fetch(dataUrl) violates CSP
+            console.log("[ChatInterface] Converting data URL to Blob...");
+            originalBlob = dataUrlToBlob(file.url);
           } else {
             // Object URL - fetch directly
             console.log("[ChatInterface] Fetching blob URL...");
