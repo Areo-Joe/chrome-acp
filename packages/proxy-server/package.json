@@ -25,7 +25,9 @@
     "prepublishOnly": "bun run build"
   },
   "devDependencies": {
-    "@types/node": "^22"
+    "@types/node": "^22",
+    "@types/qrcode": "^1.5.6",
+    "@types/selfsigned": "^2.1.0"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -37,7 +39,9 @@
     "@stricli/auto-complete": "^1.2.4",
     "@stricli/core": "^1.2.4",
     "hono": "^4.7.0",
-    "pino": "^10.3.0"
+    "pino": "^10.3.0",
+    "qrcode": "^1.5.4",
+    "selfsigned": "^5.5.0"
   },
   "engines": {
     "node": ">=18"

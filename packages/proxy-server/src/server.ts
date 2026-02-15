@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { createServer as createHttpsServer } from "node:https";
 import { Writable, Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -14,6 +15,7 @@ import {
   handleBrowserToolResponse,
 } from "./mcp/handler.js";
 import { log } from "./logger.js";
+import { getOrCreateCertificate, getLanIPs } from "./cert.js";
 
 // Get the directory of this file to resolve public folder path
 const __filename = fileURLToPath(import.meta.url);
@@ -29,6 +31,7 @@ export interface ServerConfig {
   debug?: boolean;
   token?: string;
   termux?: boolean;
+  https?: boolean;
 }
 
 // Pending permission request
@@ -183,6 +186,8 @@ async function handleConnect(ws: WSContext): Promise<void> {
 
   // Kill existing process if any
   if (state.process) {
+    // Cancel any pending permission requests from previous connection
+    cancelPendingPermissions(state);
     state.process.kill();
     state.process = null;
     state.connection = null;
@@ -498,7 +503,7 @@ async function launchTermuxPwa(pwaName: string): Promise<void> {
 }
 
 export async function startServer(config: ServerConfig): Promise<void> {
-  const { port, host, command, args, cwd, token, termux } = config;
+  const { port, host, command, args, cwd, token, termux, https } = config;
 
   // Set module-level config
   AGENT_COMMAND = command;
@@ -635,21 +640,55 @@ export async function startServer(config: ServerConfig): Promise<void> {
     }),
   );
 
-  const server = serve({ fetch: app.fetch, port, hostname: host });
+  // Create server with optional HTTPS
+  let server;
+  if (https) {
+    const tlsOptions = await getOrCreateCertificate();
+    server = serve({
+      fetch: app.fetch,
+      port,
+      hostname: host,
+      createServer: createHttpsServer,
+      serverOptions: tlsOptions,
+    });
+  } else {
+    server = serve({ fetch: app.fetch, port, hostname: host });
+  }
   injectWebSocket(server);
 
+  // Protocol strings based on HTTPS mode
+  const httpProtocol = https ? "https" : "http";
+  const wsProtocol = https ? "wss" : "ws";
+
   // Log server startup info (keep console for user-facing banner)
-  const displayHost = host === "0.0.0.0" ? "localhost" : host;
-  console.log(`🚀 ACP Proxy Server running on http://${displayHost}:${port}`);
+  // Get actual LAN IP when binding to 0.0.0.0
+  let displayHost = host;
+  if (host === "0.0.0.0") {
+    const lanIPs = getLanIPs();
+    displayHost = lanIPs[0] || "localhost";
+  }
+  console.log(`🚀 ACP Proxy Server running on ${httpProtocol}://${displayHost}:${port}`);
   console.log(`   Binding: ${host}:${port}`);
+  if (https) {
+    console.log(`   🔒 HTTPS enabled (self-signed certificate)`);
+  }
   console.log(``);
 
-  // Show token info like MCP Inspector
+  // Show token info and QR code for easy mobile connection
   if (AUTH_TOKEN) {
+    const wsUrl = `${wsProtocol}://${displayHost}:${port}/ws`;
+    const qrData = JSON.stringify({ url: wsUrl, token: AUTH_TOKEN });
+
+    // Generate and print QR code
+    const QRCode = await import("qrcode");
+    const qrString = await QRCode.toString(qrData, { type: "terminal", small: true });
+    console.log(`📱 Scan to connect:\n`);
+    console.log(qrString);
+
     console.log(`🔑 Auth token: ${AUTH_TOKEN}`);
     console.log(``);
-    console.log(`🔗 Open with token pre-filled:`);
-    console.log(`   http://${displayHost}:${port}/app?token=${AUTH_TOKEN}`);
+    console.log(`🔗 Or open with token pre-filled:`);
+    console.log(`   ${httpProtocol}://${displayHost}:${port}/app?token=${AUTH_TOKEN}`);
   } else {
     console.log(`⚠️  Authentication disabled (--no-auth)`);
   }
@@ -663,8 +702,9 @@ export async function startServer(config: ServerConfig): Promise<void> {
   log.info("Server started", {
     port,
     host,
-    wsEndpoint: `ws://${displayHost}:${port}/ws`,
-    mcpEndpoint: `http://${displayHost}:${port}/mcp`,
+    https,
+    wsEndpoint: `${wsProtocol}://${displayHost}:${port}/ws`,
+    mcpEndpoint: `${httpProtocol}://${displayHost}:${port}/mcp`,
     agent: AGENT_COMMAND,
     agentArgs: AGENT_ARGS,
     cwd: AGENT_CWD,

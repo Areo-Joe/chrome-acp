@@ -40,6 +40,11 @@ export const command = buildCommand({
         brief: "Auto-launch PWA via Termux (finds and opens the ACP WebAPK)",
         default: false,
       },
+      https: {
+        kind: "boolean",
+        brief: "Enable HTTPS with auto-generated self-signed certificate (required for camera on mobile)",
+        default: false,
+      },
     },
     positional: {
       kind: "array",
@@ -53,7 +58,7 @@ export const command = buildCommand({
   },
   func: async function (
     this: LocalContext,
-    flags: { port: number; host: string; debug: boolean; "no-auth": boolean; termux: boolean },
+    flags: { port: number; host: string; debug: boolean; "no-auth": boolean; termux: boolean; https: boolean },
     ...args: readonly string[]
   ) {
     const port = flags.port;
@@ -61,6 +66,7 @@ export const command = buildCommand({
     const debug = flags.debug;
     const noAuth = flags["no-auth"];
     const termux = flags.termux;
+    const https = flags.https;
     const [command, ...agentArgs] = args;
     const cwd = process.cwd();
 
@@ -85,6 +91,6 @@ export const command = buildCommand({
 
     // Import and run the server
     const { startServer } = await import("../server.js");
-    await startServer({ port, host, command: command!, args: [...agentArgs], cwd, debug, token, termux });
+    await startServer({ port, host, command: command!, args: [...agentArgs], cwd, debug, token, termux, https });
   },
 });

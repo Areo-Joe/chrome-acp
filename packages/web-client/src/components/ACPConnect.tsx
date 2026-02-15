@@ -16,6 +16,7 @@ export function ACPConnect({ onClientReady, expanded, onExpandedChange }: ACPCon
       onExpandedChange={onExpandedChange}
       showTokenInput
       inferFromUrl
+      showScanButton
     />
   );
 }
