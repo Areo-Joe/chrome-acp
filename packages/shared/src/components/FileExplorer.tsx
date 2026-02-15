@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
 import { Button } from "./ui/button";
-import { CodeBlock, CodeBlockCopyButton } from "./ai-elements/code-block";
+import { CodeBlock } from "./ai-elements/code-block";
 import type { BundledLanguage } from "shiki";
 
 import {
@@ -358,9 +358,7 @@ export function FileExplorer({ client }: FileExplorerProps) {
                   language={language}
                   showLineNumbers
                   className="border-0 rounded-none h-full [&>div]:h-full [&>div>div]:h-full [&_pre]:h-full"
-                >
-                  <CodeBlockCopyButton />
-                </CodeBlock>
+                />
               ) : (
                 <pre className="p-4 text-sm font-mono whitespace-pre-wrap break-all">{selectedFile.content}</pre>
               )}
