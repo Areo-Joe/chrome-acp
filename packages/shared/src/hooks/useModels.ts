@@ -20,6 +20,10 @@ export interface UseModelsResult {
 /**
  * Hook to manage model selection state.
  * Reference: Zed's AcpModelSelector reads from state.available_models and state.current_model_id
+ *
+ * Uses event-driven updates instead of polling:
+ * - setModelStateChangedHandler: called on session create/disconnect
+ * - setModelChangedHandler: called when model selection changes
  */
 export function useModels(client: ACPClient): UseModelsResult {
   const [modelState, setModelState] = useState<SessionModelState | null>(
@@ -27,9 +31,15 @@ export function useModels(client: ACPClient): UseModelsResult {
   );
   const [isLoading, setIsLoading] = useState(false);
 
-  // Subscribe to model changes
+  // Subscribe to model state changes (session created/destroyed)
+  // This replaces the previous 500ms polling approach
   useEffect(() => {
-    // Update state when model changes (from server or locally)
+    // Handler for when model state changes (session created or disconnected)
+    const handleModelStateChanged = (state: SessionModelState | null) => {
+      setModelState(state);
+    };
+
+    // Handler for when current model changes within a session
     const handleModelChanged = (modelId: string) => {
       setModelState((prev) => {
         if (!prev) return null;
@@ -41,30 +51,16 @@ export function useModels(client: ACPClient): UseModelsResult {
       setIsLoading(false);
     };
 
+    // Register handlers - setModelStateChangedHandler immediately calls with current state
+    client.setModelStateChangedHandler(handleModelStateChanged);
     client.setModelChangedHandler(handleModelChanged);
 
-    // Sync initial state
-    setModelState(client.modelState);
-
     return () => {
-      // Clear handler on unmount
+      // Clear handlers on unmount
+      client.setModelStateChangedHandler(() => {});
       client.setModelChangedHandler(() => {});
     };
   }, [client]);
-
-  // Sync model state when session is created
-  useEffect(() => {
-    const checkModelState = () => {
-      const newState = client.modelState;
-      if (newState !== modelState) {
-        setModelState(newState);
-      }
-    };
-
-    // Check periodically for session creation
-    const interval = setInterval(checkModelState, 500);
-    return () => clearInterval(interval);
-  }, [client, modelState]);
 
   const availableModels = useMemo(
     () => modelState?.availableModels ?? [],

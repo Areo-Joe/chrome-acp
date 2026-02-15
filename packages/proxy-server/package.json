@@ -38,6 +38,7 @@
     "@hono/node-ws": "^1.0.5",
     "@stricli/auto-complete": "^1.2.4",
     "@stricli/core": "^1.2.4",
+    "chokidar": "^5.0.0",
     "hono": "^4.7.0",
     "pino": "^10.3.0",
     "qrcode": "^1.5.4",

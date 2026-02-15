@@ -93,7 +93,10 @@ export type ProxyMessage =
   | { type: "cancel" }
   | { type: "permission_response"; payload: PermissionResponsePayload }
   | { type: "browser_tool_result"; callId: string; result: BrowserToolResult | { error: string } }
-  | { type: "set_session_model"; payload: { modelId: string } };
+  | { type: "set_session_model"; payload: { modelId: string } }
+  // File explorer messages
+  | { type: "list_dir"; payload: { path: string } }
+  | { type: "read_file"; payload: { path: string } };
 
 // Messages received FROM the proxy server
 export interface ProxyStatusMessage {
@@ -151,6 +154,52 @@ export interface ProxyModelChangedMessage {
   };
 }
 
+// ============================================================================
+// File Explorer Types
+// ============================================================================
+
+export interface FileItem {
+  name: string;
+  path: string; // relative path from agent CWD
+  type: "file" | "dir";
+  size?: number;
+  mtime?: number;
+}
+
+export interface FileContent {
+  path: string;
+  content: string; // text or base64 for images
+  size: number;
+  truncated: boolean;
+  binary: boolean;
+  mimeType?: string;
+}
+
+export interface FileChange {
+  event: "add" | "addDir" | "change" | "unlink" | "unlinkDir";
+  path: string; // relative path
+}
+
+export interface ProxyDirListingMessage {
+  type: "dir_listing";
+  payload: {
+    path: string;
+    items: FileItem[];
+  };
+}
+
+export interface ProxyFileContentMessage {
+  type: "file_content";
+  payload: FileContent;
+}
+
+export interface ProxyFileChangesMessage {
+  type: "file_changes";
+  payload: {
+    changes: FileChange[];
+  };
+}
+
 export type ProxyResponse =
   | ProxyStatusMessage
   | ProxyErrorMessage
@@ -159,7 +208,10 @@ export type ProxyResponse =
   | ProxyPromptCompleteMessage
   | ProxyPermissionRequestMessage
   | ProxyBrowserToolCallMessage
-  | ProxyModelChangedMessage;
+  | ProxyModelChangedMessage
+  | ProxyDirListingMessage
+  | ProxyFileContentMessage
+  | ProxyFileChangesMessage;
 
 // Content block types (matches @agentclientprotocol/sdk ContentBlock)
 // Reference: Zed's acp::ContentBlock in agent-client-protocol crate

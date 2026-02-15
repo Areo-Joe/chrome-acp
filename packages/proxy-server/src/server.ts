@@ -16,6 +16,12 @@ import {
 } from "./mcp/handler.js";
 import { log } from "./logger.js";
 import { getOrCreateCertificate, getLanIPs } from "./cert.js";
+import {
+  listDir,
+  readFile,
+  startWatcher,
+  type FileChange,
+} from "./files.js";
 
 // Get the directory of this file to resolve public folder path
 const __filename = fileURLToPath(import.meta.url);
@@ -69,6 +75,8 @@ interface ClientState {
   promptCapabilities: PromptCapabilities | null;
   // Reference: Zed stores model state from NewSessionResponse.models
   modelState: SessionModelState | null;
+  // File watcher unsubscribe function
+  unsubscribeWatcher: (() => void) | null;
 }
 
 // Module-level state (set when server starts)
@@ -439,6 +447,29 @@ async function handleSetSessionModel(
   }
 }
 
+// ============================================================================
+// File Explorer Handlers
+// ============================================================================
+
+function handleListDir(ws: WSContext, payload: { path: string }): void {
+  const items = listDir(AGENT_CWD, payload.path);
+  if (items === null) {
+    log.debug(`list_dir failed: ${payload.path || "(root)"}`);
+    send(ws, "error", { message: `list_dir failed: ${payload.path || "(root)"}` });
+    return;
+  }
+  send(ws, "dir_listing", { path: payload.path, items });
+}
+
+function handleReadFile(ws: WSContext, payload: { path: string }): void {
+  const content = readFile(AGENT_CWD, payload.path);
+  if (content === null) {
+    send(ws, "error", { message: "Access denied or file not found" });
+    return;
+  }
+  send(ws, "file_content", content);
+}
+
 // ContentBlock type matching @agentclientprotocol/sdk
 // Reference: Zed's acp::ContentBlock
 interface ContentBlock {
@@ -562,6 +593,10 @@ export async function startServer(config: ServerConfig): Promise<void> {
       return {
         onOpen(_event, ws) {
           log.info("Client connected");
+          // Start file watcher and broadcast changes to this client
+          const unsubscribeWatcher = startWatcher(AGENT_CWD, (changes) => {
+            send(ws, "file_changes", { changes });
+          });
           clients.set(ws, {
             process: null,
             connection: null,
@@ -569,6 +604,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
             pendingPermissions: new Map(),
             promptCapabilities: null,
             modelState: null,
+            unsubscribeWatcher,
           });
           // Register this WebSocket for browser tool calls
           setExtensionWebSocket(ws);
@@ -614,6 +650,12 @@ export async function startServer(config: ServerConfig): Promise<void> {
               // Handle model selection request
               await handleSetSessionModel(ws, data.payload as { modelId: string });
               break;
+            case "list_dir":
+              handleListDir(ws, data.payload as { path: string });
+              break;
+            case "read_file":
+              handleReadFile(ws, data.payload as { path: string });
+              break;
             default:
               send(ws, "error", {
                 message: `Unknown message type: ${data.type}`,
@@ -630,6 +672,8 @@ export async function startServer(config: ServerConfig): Promise<void> {
         if (state) {
           // Cancel any pending permission requests
           cancelPendingPermissions(state);
+          // Unsubscribe from file watcher
+          state.unsubscribeWatcher?.();
         }
         handleDisconnect(ws);
         clients.delete(ws);

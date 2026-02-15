@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ACPConnect } from "@/components/ACPConnect";
-import { ChatInterface } from "@chrome-acp/shared/components";
+import { ACPMain } from "@chrome-acp/shared/components";
 import { ThemeProvider } from "@chrome-acp/shared/lib";
 import type { ACPClient } from "@chrome-acp/shared/acp";
 import "./index.css";
@@ -20,11 +20,11 @@ export function App() {
         />
 
         {/* Main Content */}
-        <main className="flex-1 overflow-hidden p-4">
+        <main className="flex-1 overflow-hidden">
           {client ? (
-            <ChatInterface client={client} />
+            <ACPMain client={client} />
           ) : (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
+            <div className="flex items-center justify-center h-full text-muted-foreground p-4">
               <div className="text-center">
                 <p className="text-lg mb-2">No agent connected</p>
                 <p className="text-sm">Click the status bar above to configure connection</p>
