@@ -91,7 +91,7 @@ export function ACPMain({ client }: ACPMainProps) {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <TabsContent value="chat" forceMount className="h-full m-0 max-w-2xl mx-auto">
+        <TabsContent value="chat" forceMount className="w-full h-full m-0 max-w-2xl mx-auto">
           <ChatInterface client={client} />
         </TabsContent>
 
