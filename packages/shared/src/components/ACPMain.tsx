@@ -87,15 +87,15 @@ export function ACPMain({ client }: ACPMainProps) {
       </TabsList>
 
       <div
-        className="flex-1 min-h-0 overflow-hidden"
+        className="flex-1 flex flex-col min-h-0 overflow-hidden"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <TabsContent value="chat" className="h-full m-0">
+        <TabsContent value="chat" className="h-full m-0 max-w-2xl mx-auto">
           <ChatInterface client={client} />
         </TabsContent>
 
-        <TabsContent value="files" className="h-full m-0">
+        <TabsContent value="files" className="flex flex-col h-full m-0">
           <FileExplorer client={client} />
         </TabsContent>
       </div>
