@@ -15,8 +15,10 @@ interface ModelSelectorPickerProps {
   models: ModelInfo[];
   currentModelId: string | null;
   onSelect: (model: ModelInfo) => void;
-  /** Whether to auto-focus the search input (default: true) */
-  autoFocusSearch?: boolean;
+  /** Whether to show the search input (default: true) */
+  showSearch?: boolean;
+  /** Whether we're on a mobile device (disables auto-selection) */
+  isMobile?: boolean;
 }
 
 /**
@@ -46,9 +48,13 @@ export function ModelSelectorPicker({
   models,
   currentModelId,
   onSelect,
-  autoFocusSearch = true,
+  showSearch = true,
+  isMobile = false,
 }: ModelSelectorPickerProps) {
   const [search, setSearch] = useState("");
+  // On mobile, don't auto-select first item (no keyboard navigation needed)
+  // Use a non-existent value to prevent any item from being selected
+  const [selectedValue, setSelectedValue] = useState(isMobile ? "__none__" : undefined);
 
   // Filter models using fuzzy search
   const filteredModels = useMemo(() => {
@@ -60,13 +66,14 @@ export function ModelSelectorPicker({
   }, [models, search]);
 
   return (
-    <Command shouldFilter={false}>
-      <CommandInput
-        placeholder="Select a model…"
-        value={search}
-        onValueChange={setSearch}
-        autoFocus={autoFocusSearch}
-      />
+    <Command shouldFilter={false} value={selectedValue} onValueChange={setSelectedValue}>
+      {showSearch && (
+        <CommandInput
+          placeholder="Select a model…"
+          value={search}
+          onValueChange={setSearch}
+        />
+      )}
       <CommandList>
         <CommandEmpty>No models found.</CommandEmpty>
         <CommandGroup>

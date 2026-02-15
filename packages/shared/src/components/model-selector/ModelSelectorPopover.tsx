@@ -77,7 +77,8 @@ export function ModelSelectorPopover({
           models={availableModels}
           currentModelId={currentModel?.modelId ?? null}
           onSelect={handleSelect}
-          autoFocusSearch={!isMobile}
+          showSearch={!isMobile}
+          isMobile={isMobile}
         />
       </PopoverContent>
     </Popover>
