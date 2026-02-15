@@ -91,11 +91,11 @@ export function ACPMain({ client }: ACPMainProps) {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <TabsContent value="chat" className="h-full m-0 max-w-2xl mx-auto">
+        <TabsContent value="chat" forceMount className="h-full m-0 max-w-2xl mx-auto">
           <ChatInterface client={client} />
         </TabsContent>
 
-        <TabsContent value="files" className="flex flex-col h-full m-0">
+        <TabsContent value="files" forceMount className="flex flex-col h-full m-0">
           <FileExplorer client={client} />
         </TabsContent>
       </div>
