@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
 import { Button } from "./ui/button";
+import { CodeBlock, CodeBlockCopyButton } from "./ai-elements/code-block";
+import type { BundledLanguage } from "shiki";
 
 import {
   ChevronRight,
@@ -20,6 +22,113 @@ import type {
   FileContent,
   FileChange,
 } from "../acp/types";
+
+// Map file extensions to shiki language identifiers
+const EXT_TO_LANGUAGE: Record<string, BundledLanguage> = {
+  ts: "typescript",
+  tsx: "tsx",
+  js: "javascript",
+  jsx: "jsx",
+  mjs: "javascript",
+  cjs: "javascript",
+  json: "json",
+  jsonc: "jsonc",
+  md: "markdown",
+  mdx: "mdx",
+  html: "html",
+  htm: "html",
+  css: "css",
+  scss: "scss",
+  sass: "sass",
+  less: "less",
+  py: "python",
+  rb: "ruby",
+  rs: "rust",
+  go: "go",
+  java: "java",
+  kt: "kotlin",
+  kts: "kotlin",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  cc: "cpp",
+  cxx: "cpp",
+  hpp: "cpp",
+  hxx: "cpp",
+  cs: "csharp",
+  swift: "swift",
+  php: "php",
+  sql: "sql",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  fish: "fish",
+  ps1: "powershell",
+  psm1: "powershell",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  xml: "xml",
+  svg: "xml",
+  vue: "vue",
+  svelte: "svelte",
+  astro: "astro",
+  graphql: "graphql",
+  gql: "graphql",
+  dockerfile: "dockerfile",
+  makefile: "makefile",
+  cmake: "cmake",
+  lua: "lua",
+  vim: "viml",
+  ex: "elixir",
+  exs: "elixir",
+  erl: "erlang",
+  hrl: "erlang",
+  clj: "clojure",
+  cljs: "clojure",
+  scala: "scala",
+  hs: "haskell",
+  ml: "ocaml",
+  mli: "ocaml",
+  r: "r",
+  jl: "julia",
+  nim: "nim",
+  zig: "zig",
+  d: "d",
+  dart: "dart",
+  v: "v",
+  tf: "terraform",
+  hcl: "hcl",
+  nix: "nix",
+  asm: "asm",
+  wasm: "wasm",
+  ini: "ini",
+  env: "dotenv",
+  gitignore: "gitignore",
+  editorconfig: "ini",
+  prettierrc: "json",
+  eslintrc: "json",
+};
+
+function getLanguageFromPath(path: string): BundledLanguage | null {
+  const filename = path.split("/").pop() || "";
+  const lowerFilename = filename.toLowerCase();
+
+  // Special filenames
+  if (lowerFilename === "dockerfile") return "dockerfile";
+  if (lowerFilename === "makefile" || lowerFilename === "gnumakefile") return "makefile";
+  if (lowerFilename === "cmakelists.txt") return "cmake";
+  if (lowerFilename === ".gitignore") return "gitignore";
+  if (lowerFilename === ".env" || lowerFilename.startsWith(".env.")) return "dotenv";
+
+  // Extension-based lookup
+  const ext = filename.split(".").pop()?.toLowerCase();
+  if (ext && ext in EXT_TO_LANGUAGE) {
+    return EXT_TO_LANGUAGE[ext];
+  }
+
+  return null;
+}
 
 interface FileExplorerProps {
   client: ACPClient;
@@ -219,46 +328,59 @@ export function FileExplorer({ client }: FileExplorerProps) {
   };
 
   // Render preview panel (shared between mobile and desktop)
-  const renderPreviewPanel = () => (
-    <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-      {selectedFile ? (
-        <>
-          {/* Preview Header */}
-          <div className="flex items-center justify-between p-2 border-b bg-muted/30 shrink-0">
-            <span className="text-sm font-medium truncate">{selectedFile.path}</span>
-            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setSelectedFile(null)}>
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          {/* Preview Content */}
-          <div className="flex-1 min-h-0 overflow-auto">
-            {selectedFile.binary ? (
-              selectedFile.mimeType?.startsWith("image/") ? (
-                <div className="p-4 flex justify-center">
-                  <img src={`data:${selectedFile.mimeType};base64,${selectedFile.content}`} alt={selectedFile.path} className="max-w-full" />
-                </div>
+  const renderPreviewPanel = () => {
+    const language = selectedFile ? getLanguageFromPath(selectedFile.path) : null;
+
+    return (
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
+        {selectedFile ? (
+          <>
+            {/* Preview Header */}
+            <div className="flex items-center justify-between p-2 border-b bg-muted/30 shrink-0">
+              <span className="text-sm font-medium truncate">{selectedFile.path}</span>
+              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setSelectedFile(null)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {/* Preview Content */}
+            <div className="flex-1 min-h-0 overflow-auto">
+              {selectedFile.binary ? (
+                selectedFile.mimeType?.startsWith("image/") ? (
+                  <div className="p-4 flex justify-center">
+                    <img src={`data:${selectedFile.mimeType};base64,${selectedFile.content}`} alt={selectedFile.path} className="max-w-full" />
+                  </div>
+                ) : (
+                  <div className="p-4 text-center text-muted-foreground">Binary file ({formatSize(selectedFile.size)})</div>
+                )
+              ) : language ? (
+                <CodeBlock
+                  code={selectedFile.content}
+                  language={language}
+                  showLineNumbers
+                  className="border-0 rounded-none h-full [&>div]:h-full [&>div>div]:h-full [&_pre]:h-full"
+                >
+                  <CodeBlockCopyButton />
+                </CodeBlock>
               ) : (
-                <div className="p-4 text-center text-muted-foreground">Binary file ({formatSize(selectedFile.size)})</div>
-              )
+                <pre className="p-4 text-sm font-mono whitespace-pre-wrap break-all">{selectedFile.content}</pre>
+              )}
+              {selectedFile.truncated && (
+                <div className="px-4 pb-4 text-sm text-muted-foreground italic">File truncated (too large)</div>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            {previewLoading ? (
+              <RefreshCw className="h-5 w-5 animate-spin" />
             ) : (
-              <pre className="p-4 text-sm font-mono whitespace-pre-wrap break-all">{selectedFile.content}</pre>
-            )}
-            {selectedFile.truncated && (
-              <div className="px-4 pb-4 text-sm text-muted-foreground italic">File truncated (too large)</div>
+              <span className="text-sm">Select a file to preview</span>
             )}
           </div>
-        </>
-      ) : (
-        <div className="flex-1 flex items-center justify-center text-muted-foreground">
-          {previewLoading ? (
-            <RefreshCw className="h-5 w-5 animate-spin" />
-          ) : (
-            <span className="text-sm">Select a file to preview</span>
-          )}
-        </div>
-      )}
-    </div>
-  );
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
@@ -272,7 +394,7 @@ export function FileExplorer({ client }: FileExplorerProps) {
       )}
 
       {/* Mobile Layout: stacked with collapsible file tree */}
-      <div className="md:hidden flex-1 flex flex-col overflow-hidden">
+      <div className="md:hidden flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Mobile: Clickable header bar */}
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -294,19 +416,14 @@ export function FileExplorer({ client }: FileExplorerProps) {
         </button>
 
         {/* Mobile: File Tree with animated collapse */}
-        <div
-          className={cn(
-            "overflow-hidden transition-all duration-200 ease-out border-b",
-            sidebarOpen ? "max-h-48 opacity-100" : "max-h-0 opacity-0"
-          )}
-        >
-          <ScrollArea className="max-h-48">
+        {sidebarOpen && (
+          <ScrollArea className="h-48 border-b">
             <div className="p-1 min-w-max">
               {rootItems.map((item) => renderTreeNode(item))}
             </div>
             <ScrollBar orientation="horizontal" />
           </ScrollArea>
-        </div>
+        )}
 
         {/* Mobile: Preview Panel */}
         {renderPreviewPanel()}
@@ -316,7 +433,7 @@ export function FileExplorer({ client }: FileExplorerProps) {
       <div className="hidden md:flex flex-1 min-h-0">
         {/* Desktop: File Tree Sidebar */}
         <div className={cn(
-          "flex flex-col border-r bg-muted/30 transition-all duration-200",
+          "flex flex-col border-r bg-muted/30 transition-all duration-200 min-h-0",
           sidebarOpen ? "w-72" : "w-0"
         )}>
           {sidebarOpen && (

@@ -87,7 +87,7 @@ export function ACPMain({ client }: ACPMainProps) {
       </TabsList>
 
       <div
-        className="flex-1 overflow-hidden"
+        className="flex-1 min-h-0 overflow-hidden"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
