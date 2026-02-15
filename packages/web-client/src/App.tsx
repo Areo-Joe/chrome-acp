@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { ACPConnect } from "@/components/ACPConnect";
-import { ChatInterface } from "@chrome-acp/shared/components";
+import { ACPConnect, ChatInterface } from "@chrome-acp/shared/components";
 import { ThemeProvider } from "@chrome-acp/shared/lib";
 import type { ACPClient } from "@chrome-acp/shared/acp";
 import "./index.css";

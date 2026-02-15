@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Button } from "@chrome-acp/shared/components/ui/button";
-import { Input } from "@chrome-acp/shared/components/ui/input";
-import { StatusDot } from "@chrome-acp/shared/components/ui/connection-status";
-import { ThemeToggle } from "@chrome-acp/shared/components/ui/theme-toggle";
-import { ACPClient, DEFAULT_SETTINGS } from "@chrome-acp/shared/acp";
-import type { ACPSettings, ConnectionState } from "@chrome-acp/shared/acp";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { StatusDot } from "./ui/connection-status";
+import { ThemeToggle } from "./ui/theme-toggle";
+import { ACPClient, DEFAULT_SETTINGS } from "../acp";
+import type { ACPSettings, ConnectionState } from "../acp";
 import { ChevronDown } from "lucide-react";
 
 // Storage key for settings
@@ -193,3 +193,4 @@ export function ACPConnect({ onClientReady, expanded, onExpandedChange }: ACPCon
     </div>
   );
 }
+

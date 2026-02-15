@@ -8,10 +8,11 @@
   ],
   "scripts": {
     "dev": "bun run --filter @chrome-acp/extension dev",
-    "build": "bun run build:web && bun run build:extension && bun run build:proxy",
+    "build": "bun run build:web && bun run build:extension && bun run build:proxy && bun run build:cross",
     "build:extension": "bun run --filter @chrome-acp/extension build",
     "build:proxy": "bun run --filter @chrome-acp/proxy-server build",
-    "build:web": "bun run --filter @chrome-acp/web-client build"
+    "build:web": "bun run --filter @chrome-acp/web-client build",
+    "build:cross": "bun run --filter @chrome-acp/cross-client build"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
