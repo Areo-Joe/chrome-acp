@@ -303,6 +303,8 @@ export interface SessionModelState {
 // Settings
 export interface ACPSettings {
   proxyUrl: string;
+  /** Auth token for remote access (passed as ?token=xxx query param) */
+  token?: string;
 }
 
 export const DEFAULT_SETTINGS: ACPSettings = {

@@ -136,7 +136,14 @@ export class ACPClient {
       this.connectReject = reject;
 
       try {
-        this.ws = new WebSocket(this.settings.proxyUrl);
+        // Build WebSocket URL with token if provided
+        let wsUrl = this.settings.proxyUrl;
+        if (this.settings.token) {
+          const url = new URL(wsUrl);
+          url.searchParams.set("token", this.settings.token);
+          wsUrl = url.toString();
+        }
+        this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
           console.log("[ACPClient] WebSocket connected, sending connect command");
@@ -160,9 +167,20 @@ export class ACPClient {
           this.connectReject = null;
         };
 
-        this.ws.onclose = () => {
-          console.log("[ACPClient] WebSocket closed");
-          this.setState("disconnected");
+        this.ws.onclose = (event) => {
+          console.log("[ACPClient] WebSocket closed", event.code, event.reason);
+
+          // Check if closed due to auth failure (code 4001) or other error during connect
+          if (this.connectReject) {
+            const errorMessage = event.reason || `Connection closed (code: ${event.code})`;
+            this.setState("error", errorMessage);
+            this.connectReject(new Error(errorMessage));
+            this.connectResolve = null;
+            this.connectReject = null;
+          } else {
+            this.setState("disconnected");
+          }
+
           this.ws = null;
           this.sessionId = null;
         };

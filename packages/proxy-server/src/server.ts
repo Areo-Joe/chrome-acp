@@ -22,10 +22,12 @@ const PUBLIC_DIR = join(__dirname, "..", "public");
 
 export interface ServerConfig {
   port: number;
+  host: string;
   command: string;
   args: string[];
   cwd: string;
   debug?: boolean;
+  token?: string;
   termux?: boolean;
 }
 
@@ -71,6 +73,8 @@ let AGENT_COMMAND: string;
 let AGENT_ARGS: string[];
 let AGENT_CWD: string;
 let SERVER_PORT: number;
+let SERVER_HOST: string;
+let AUTH_TOKEN: string | undefined;
 
 const clients = new Map<WSContext, ClientState>();
 
@@ -494,13 +498,15 @@ async function launchTermuxPwa(pwaName: string): Promise<void> {
 }
 
 export async function startServer(config: ServerConfig): Promise<void> {
-  const { port, command, args, cwd, termux } = config;
+  const { port, host, command, args, cwd, token, termux } = config;
 
   // Set module-level config
   AGENT_COMMAND = command;
   AGENT_ARGS = args;
   AGENT_CWD = cwd;
   SERVER_PORT = port;
+  SERVER_HOST = host;
+  AUTH_TOKEN = token;
 
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -527,23 +533,41 @@ export async function startServer(config: ServerConfig): Promise<void> {
   // Redirect /app to /app/ for clean URLs
   app.get("/app", (c) => c.redirect("/app/"));
 
-  // WebSocket endpoint
+  // WebSocket endpoint with token validation
   app.get(
     "/ws",
-    upgradeWebSocket(() => ({
-      onOpen(_event, ws) {
-        log.info("Client connected");
-        clients.set(ws, {
-          process: null,
-          connection: null,
-          sessionId: null,
-          pendingPermissions: new Map(),
-          promptCapabilities: null,
-          modelState: null,
-        });
-        // Register this WebSocket for browser tool calls
-        setExtensionWebSocket(ws);
-      },
+    upgradeWebSocket((c) => {
+      // Validate token before upgrade if auth is enabled
+      if (AUTH_TOKEN) {
+        const url = new URL(c.req.url);
+        const providedToken = url.searchParams.get("token");
+        if (providedToken !== AUTH_TOKEN) {
+          log.warn("WebSocket connection rejected: invalid token");
+          // Return empty handlers - connection will be rejected
+          return {
+            onOpen(_event, ws) {
+              ws.close(4001, "Unauthorized: Invalid token");
+            },
+            onMessage() {},
+            onClose() {},
+          };
+        }
+      }
+
+      return {
+        onOpen(_event, ws) {
+          log.info("Client connected");
+          clients.set(ws, {
+            process: null,
+            connection: null,
+            sessionId: null,
+            pendingPermissions: new Map(),
+            promptCapabilities: null,
+            modelState: null,
+          });
+          // Register this WebSocket for browser tool calls
+          setExtensionWebSocket(ws);
+        },
       async onMessage(event, ws) {
         try {
           const data = JSON.parse(event.data.toString());
@@ -607,17 +631,28 @@ export async function startServer(config: ServerConfig): Promise<void> {
         // Clear extension WebSocket if this was it
         setExtensionWebSocket(null);
       },
-    })),
+    };
+    }),
   );
 
-  const server = serve({ fetch: app.fetch, port });
+  const server = serve({ fetch: app.fetch, port, hostname: host });
   injectWebSocket(server);
 
   // Log server startup info (keep console for user-facing banner)
-  console.log(`🚀 ACP Proxy Server running on http://localhost:${port}`);
-  console.log(`   Chat UI: http://localhost:${port}/app`);
-  console.log(`   WebSocket: ws://localhost:${port}/ws`);
-  console.log(`   MCP: http://localhost:${port}/mcp`);
+  const displayHost = host === "0.0.0.0" ? "localhost" : host;
+  console.log(`🚀 ACP Proxy Server running on http://${displayHost}:${port}`);
+  console.log(`   Binding: ${host}:${port}`);
+  console.log(``);
+
+  // Show token info like MCP Inspector
+  if (AUTH_TOKEN) {
+    console.log(`🔑 Auth token: ${AUTH_TOKEN}`);
+    console.log(``);
+    console.log(`🔗 Open with token pre-filled:`);
+    console.log(`   http://${displayHost}:${port}/app?token=${AUTH_TOKEN}`);
+  } else {
+    console.log(`⚠️  Authentication disabled (--no-auth)`);
+  }
   console.log(``);
   console.log(`📦 Agent: ${AGENT_COMMAND} ${AGENT_ARGS.join(" ")}`);
   console.log(`   Working directory: ${AGENT_CWD}`);
@@ -627,11 +662,13 @@ export async function startServer(config: ServerConfig): Promise<void> {
   // Also log to file when debug is enabled
   log.info("Server started", {
     port,
-    wsEndpoint: `ws://localhost:${port}/ws`,
-    mcpEndpoint: `http://localhost:${port}/mcp`,
+    host,
+    wsEndpoint: `ws://${displayHost}:${port}/ws`,
+    mcpEndpoint: `http://${displayHost}:${port}/mcp`,
     agent: AGENT_COMMAND,
     agentArgs: AGENT_ARGS,
     cwd: AGENT_CWD,
+    authEnabled: !!AUTH_TOKEN,
   });
 
   // Launch PWA via Termux if --termux flag is set
