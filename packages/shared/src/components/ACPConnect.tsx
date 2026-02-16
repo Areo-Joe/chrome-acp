@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "./ui/button";
 import { StatusDot } from "./ui/connection-status";
 import { ThemeToggle } from "./ui/theme-toggle";
@@ -272,8 +273,8 @@ export function ACPConnect({
         }}
       >
         <div ref={contentRef} className={`px-3 pb-3 pt-1 space-y-3 ${isShaking ? "animate-shake" : ""}`}>
-          {/* QR Scanner View - Full screen overlay */}
-          {isScanning && (
+          {/* QR Scanner View - Portal to body to escape backdrop-blur containing block */}
+          {isScanning && createPortal(
             <div className="fixed inset-0 z-50 bg-black flex flex-col">
               <video
                 ref={videoRef}
@@ -290,7 +291,8 @@ export function ACPConnect({
               <div className="absolute bottom-8 left-0 right-0 text-center text-sm text-white/80">
                 Point camera at QR code
               </div>
-            </div>
+            </div>,
+            document.body
           )}
 
           {/* Connection Settings */}
