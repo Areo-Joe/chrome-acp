@@ -8,7 +8,7 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "./ui/input-group";
-import { ACPClient, DEFAULT_SETTINGS } from "../acp";
+import { ACPClient, DEFAULT_SETTINGS, DisconnectRequestedError } from "../acp";
 import type { ACPSettings, ConnectionState, BrowserToolParams, BrowserToolResult } from "../acp";
 import { ChevronDown, FolderOpen, Globe, KeyRound, ScanLine, X } from "lucide-react";
 import { useQRScanner, type QRCodeData } from "../hooks";
@@ -148,6 +148,10 @@ export function ACPConnect({
       if (pendingAutoConnectRef.current) {
         pendingAutoConnectRef.current = false;
         client.connect().catch((e) => {
+          // Ignore disconnect requested - user cancelled intentionally
+          if (e instanceof DisconnectRequestedError) {
+            return;
+          }
           setError((e as Error).message);
           setIsShaking(true);
           setTimeout(() => setIsShaking(false), 500);
@@ -184,6 +188,10 @@ export function ACPConnect({
     try {
       await client.connect();
     } catch (e) {
+      // Ignore disconnect requested - user cancelled intentionally
+      if (e instanceof DisconnectRequestedError) {
+        return;
+      }
       const errorMessage = (e as Error).message;
       setError(errorMessage);
       // Trigger shake animation
@@ -210,6 +218,13 @@ export function ACPConnect({
 
   const isConnected = connectionState === "connected";
   const isConnecting = connectionState === "connecting";
+
+  const handleInputKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !isConnected && !isConnecting) {
+      e.preventDefault();
+      handleConnect();
+    }
+  }, [isConnected, isConnecting, handleConnect]);
 
   // Format URL for display
   const displayUrl = settings.proxyUrl.replace(/^wss?:\/\//, "").replace(/\/ws$/, "");
@@ -280,15 +295,7 @@ export function ACPConnect({
 
           {/* Connection Settings */}
           {!isScanning && (
-            <form
-              className="space-y-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!isConnected && !isConnecting) {
-                  handleConnect();
-                }
-              }}
-            >
+            <div className="space-y-3">
               {/* Server URL */}
               <div className="space-y-1.5">
                 <Label htmlFor="proxy-url">Server</Label>
@@ -313,6 +320,7 @@ export function ACPConnect({
                       id="proxy-url"
                       value={settings.proxyUrl}
                       onChange={(e) => updateSetting("proxyUrl", e.target.value)}
+                      onKeyDown={handleInputKeyDown}
                       placeholder={placeholder}
                       disabled={isConnected || isConnecting}
                       aria-invalid={!!error}
@@ -320,10 +328,11 @@ export function ACPConnect({
                   </InputGroup>
                   {!isConnected ? (
                     <Button
-                      type="submit"
+                      onClick={handleConnect}
                       disabled={isConnecting}
                       size="sm"
                       className="h-9 px-4"
+                      type="button"
                     >
                       {isConnecting ? "..." : "Connect"}
                     </Button>
@@ -356,6 +365,7 @@ export function ACPConnect({
                       id="auth-token"
                       value={settings.token || ""}
                       onChange={(e) => updateSetting("token", e.target.value || undefined)}
+                      onKeyDown={handleInputKeyDown}
                       placeholder="For remote access"
                       disabled={isConnected || isConnecting}
                       type="password"
@@ -380,6 +390,7 @@ export function ACPConnect({
                     id="working-dir"
                     value={settings.cwd || ""}
                     onChange={(e) => updateSetting("cwd", e.target.value || undefined)}
+                    onKeyDown={handleInputKeyDown}
                     placeholder="/path/to/project"
                     disabled={isConnected || isConnecting}
                     aria-invalid={!!error}
@@ -387,7 +398,7 @@ export function ACPConnect({
                   />
                 </InputGroup>
               </div>
-            </form>
+            </div>
           )}
 
           {/* Error Message */}

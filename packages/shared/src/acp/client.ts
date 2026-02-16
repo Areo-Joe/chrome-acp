@@ -16,6 +16,17 @@ import type {
   FileChange,
 } from "./types";
 
+/**
+ * Error thrown when disconnect() is called while a connection is in progress.
+ * Callers can use `instanceof` to distinguish this from real connection errors.
+ */
+export class DisconnectRequestedError extends Error {
+  constructor() {
+    super("Disconnect requested");
+    this.name = "DisconnectRequestedError";
+  }
+}
+
 export type ConnectionStateHandler = (
   state: ConnectionState,
   error?: string,
@@ -182,14 +193,23 @@ export class ACPClient {
           url.searchParams.set("token", this.settings.token);
           wsUrl = url.toString();
         }
-        this.ws = new WebSocket(wsUrl);
+        const ws = new WebSocket(wsUrl);
+        this.ws = ws;
 
-        this.ws.onopen = () => {
+        ws.onopen = () => {
+          // Guard against race condition: check if this WebSocket is still current
+          if (this.ws !== ws) {
+            console.log("[ACPClient] WebSocket opened but already disconnected/replaced, closing stale socket");
+            ws.close();
+            return;
+          }
           console.log("[ACPClient] WebSocket connected, sending connect command");
           this.send({ type: "connect" });
         };
 
-        this.ws.onmessage = (event) => {
+        ws.onmessage = (event) => {
+          // Ignore messages from stale sockets
+          if (this.ws !== ws) return;
           try {
             const response: ProxyResponse = JSON.parse(event.data);
             this.handleResponse(response);
@@ -198,7 +218,9 @@ export class ACPClient {
           }
         };
 
-        this.ws.onerror = () => {
+        ws.onerror = () => {
+          // Ignore errors from stale sockets
+          if (this.ws !== ws) return;
           console.error("[ACPClient] WebSocket error");
           this.setState("error", "WebSocket connection error");
           this.connectReject?.(new Error("WebSocket connection error"));
@@ -206,7 +228,9 @@ export class ACPClient {
           this.connectReject = null;
         };
 
-        this.ws.onclose = (event) => {
+        ws.onclose = (event) => {
+          // Ignore close events from stale sockets (replaced by a new connection)
+          if (this.ws !== ws) return;
           console.log("[ACPClient] WebSocket closed", event.code, event.reason);
 
           // Check if closed due to auth failure (code 4001) or other error during connect
@@ -489,6 +513,14 @@ export class ACPClient {
   }
 
   disconnect(): void {
+    // Reject any pending connect promise with a distinguishable error
+    // This ensures the promise settles and callers can catch/ignore it
+    if (this.connectReject) {
+      this.connectReject(new DisconnectRequestedError());
+    }
+    this.connectResolve = null;
+    this.connectReject = null;
+
     if (this.ws) {
       try {
         this.send({ type: "disconnect" });
