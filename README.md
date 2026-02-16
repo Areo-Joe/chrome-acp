@@ -1,110 +1,47 @@
 # Chrome ACP
 
-A Chrome extension and web client for chatting with [ACP](https://agentclientprotocol.com) agents.
+A Chrome extension to chat with AI agents. Give them the power to see and interact with your browser.
 
-## Features
-
-### Chat Interface
-- **Streaming responses** - Real-time message streaming from agents
-- **Image attachments** - Paste or upload images (auto-compressed to max 2MB)
-- **Thinking display** - Collapsible reasoning/thinking sections
-- **Cancel requests** - Stop in-progress agent requests
-- **Permission handling** - Approve/reject tool calls before execution
-- **Tab state persistence** - Switch between Chat/Files without losing state
-
-### File Explorer
-- **Tree-based browsing** - Lazy-loaded directory navigation
-- **Syntax highlighting** - 50+ languages via [shiki](https://shiki.style)
-- **Image preview** - View images directly in the preview panel
-- **Real-time watching** - Auto-refresh when files change on disk
-- **Path protection** - Prevents directory traversal attacks
-
-### Model Selection
-- **Dynamic switching** - Change models when supported by the agent
-- **Mobile-optimized** - Touch-friendly picker UI
-
-### Mobile Support
-- **QR code scanning** - Scan to connect from mobile devices
-- **Swipe gestures** - Swipe left/right to switch Chat/Files tabs
-
-## Architecture
-
-```
-Chrome Extension ◄──┐
-                    ├──WebSocket──► Proxy Server ◄──stdin/stdout──► ACP Agent
-Web Client (PWA) ◄──┘
-```
-
-Chrome extensions can't spawn subprocesses, so a local proxy server bridges the connection. The web client provides an alternative browser-based UI.
-
-## Packages
-
-This is a Bun monorepo with four packages:
-
-| Package | Description |
-|---------|-------------|
-| [`packages/chrome-extension`](./packages/chrome-extension) | Chrome extension with sidepanel chat UI |
-| [`packages/web-client`](./packages/web-client) | PWA web client, served at `http://localhost:{port}/app` |
-| [`packages/shared`](./packages/shared) | Shared UI components and utilities (`@chrome-acp/shared`) |
-| [`packages/proxy-server`](./packages/proxy-server) | WebSocket proxy server (npm: `@chrome-acp/proxy-server`) |
+Built on [ACP](https://agentclientprotocol.com).
 
 ## Quick Start
 
-### 1. Install dependencies
+To use Chrome ACP, you need:
+- `@chrome-acp/proxy-server` — The proxy that bridges browser ↔ agent
+- An ACP-compatible agent (e.g. Claude Code + its ACP adapter)
 
 ```bash
-bun install
+# Install
+npm install -g @chrome-acp/proxy-server @anthropic-ai/claude-code @zed-industries/claude-code-acp
+
+# Start
+acp-proxy --no-auth claude-code-acp
 ```
 
-### 2. Start proxy server
+Then open http://localhost:9315 in your browser.
 
-```bash
-cd packages/proxy-server
-bun src/cli/bin.ts [options] <agent-command> [-- agent-args]
+### Use the Chrome Extension
+
+For full browser control (reading tabs, executing scripts), use the extension:
+
+1. Download `chrome-extension.zip` from [Releases](https://github.com/Areo-Joe/chrome-acp/releases)
+2. Unzip and load in `chrome://extensions` (enable Developer mode → Load unpacked)
+3. Click the extension icon → Connect to your running proxy
+
+## Features
+
+- **Works with any ACP-compatible agent** — Claude Code, OpenCode, Gemini CLI, and more
+- **Runs anywhere with Node.js** — Local machine, server, even Termux on Android
+- **Operates as you** — Agents interact with pages using your real browser session (spoiler: crawler!)
+
+## Architecture
+
+```mermaid
+graph LR
+    A[Chrome Extension] <-->|WebSocket| C[Proxy Server]
+    B[Web Client] <-->|WebSocket| C
+    C <-->|stdin/stdout| D[ACP Agent]
 ```
-
-**Examples:**
-
-```bash
-# Basic
-bun src/cli/bin.ts /path/to/agent
-
-# Custom port
-bun src/cli/bin.ts --port 8080 /path/to/agent
-
-# Agent with arguments
-bun src/cli/bin.ts /path/to/agent config.json
-
-# Agent with flags (use -- to separate)
-bun src/cli/bin.ts /path/to/agent -- --model gpt-4 --verbose
-```
-
-`--` separates proxy server flags from agent flags. Arguments after `--` are passed directly to the agent.
-
-The agent must speak [ACP protocol](https://agentclientprotocol.com) over stdin/stdout.
-
-### 3. Build extension
-
-```bash
-bun run build
-```
-
-### 4. Load extension
-
-1. Open `chrome://extensions`
-2. Enable "Developer mode"
-3. Click "Load unpacked"
-4. Select `packages/chrome-extension` directory
-
-### 5. Start chatting
-
-**Option A: Chrome Extension**
-
-Click extension icon → Open sidepanel → Connect → Chat
-
-**Option B: Web Client**
-
-Open `http://localhost:9315/app` in your browser (no extension needed)
 
 ## CLI Options
 
@@ -113,57 +50,29 @@ Open `http://localhost:9315/app` in your browser (no extension needed)
 | `--port` | `9315` | Server port |
 | `--host` | `localhost` | Host to bind (use `0.0.0.0` for network access) |
 | `--https` | `false` | Enable HTTPS with self-signed certificate (for LAN only) |
-| `--no-auth` | `false` | ⚠️ Disable authentication (dangerous for remote access) |
+| `--no-auth` | `false` | Disable authentication (safe for localhost, dangerous for remote) |
 | `--termux` | `false` | Auto-launch PWA via Termux on Android |
 | `--debug` | `false` | Enable debug logging to file |
 
 ## Remote Access
 
-### LAN Access with HTTPS
-
 For accessing from other devices on your network (e.g., mobile):
 
 ```bash
-bun src/cli/bin.ts --https --host 0.0.0.0 /path/to/agent
+acp-proxy --https --host 0.0.0.0 <agent-command>
 ```
 
-The server will print URLs with embedded auth tokens:
-```
-🔗 Local:   https://localhost:9315/app?token=abc123...
-🔗 Network: https://192.168.1.100:9315/app?token=abc123...
-📱 Scan QR code to connect from mobile
-```
+The server prints URLs with embedded auth tokens and a QR code for mobile connection.
 
 > **Note:** HTTPS is required for camera access (QR scanning) on mobile devices.
 
-### Authentication
-
-By default, a random token is generated on each server start.
-
-```bash
-# Use auto-generated token (printed to terminal)
-bun src/cli/bin.ts --host 0.0.0.0 /path/to/agent
-
-# Use custom token via environment variable
-ACP_AUTH_TOKEN=mytoken bun src/cli/bin.ts --host 0.0.0.0 /path/to/agent
-
-# Disable authentication (dangerous!)
-bun src/cli/bin.ts --no-auth /path/to/agent
-```
-
-### QR Code Connection
-
-When running with `--host 0.0.0.0`, the server displays a QR code in the terminal. Scan it with the web client's camera to auto-fill the connection URL and token.
-
 ### Termux (Android)
 
-Run agents directly on your Android device:
-
 ```bash
-bun src/cli/bin.ts --termux /path/to/agent
+acp-proxy --termux <agent-command>
 ```
 
-This automatically launches the PWA after the server starts.
+Auto-launches the PWA after server starts.
 
 ## Browser Tools
 
@@ -182,6 +91,65 @@ The extension exposes browser tools to agents via MCP:
 
 > **Note:** Browser tools require the Chrome extension. They are not available in the web client.
 
+## Supported Agents
+
+<details>
+<summary><b>Claude Code</b> — Anthropic's agentic coding tool</summary>
+
+```bash
+npm install -g @chrome-acp/proxy-server @anthropic-ai/claude-code @zed-industries/claude-code-acp
+acp-proxy --no-auth claude-code-acp
+```
+</details>
+
+<details>
+<summary><b>Codex CLI</b> — OpenAI's coding agent</summary>
+
+```bash
+npm install -g @chrome-acp/proxy-server @openai/codex @zed-industries/codex-acp
+acp-proxy --no-auth codex-acp
+```
+</details>
+
+<details>
+<summary><b>OpenCode</b> — Open-source terminal AI assistant</summary>
+
+```bash
+npm install -g @chrome-acp/proxy-server
+curl -fsSL https://opencode.ai/install | bash
+acp-proxy --no-auth opencode acp
+```
+</details>
+
+<details>
+<summary><b>Gemini CLI</b> — Google's AI agent (free tier available)</summary>
+
+```bash
+npm install -g @chrome-acp/proxy-server @google/gemini-cli
+acp-proxy --no-auth gemini -- --experimental-acp
+```
+</details>
+
+<details>
+<summary><b>Qwen Code</b> — Free coding agent using Qwen models</summary>
+
+```bash
+npm install -g @chrome-acp/proxy-server @qwen-code/qwen-code@latest
+acp-proxy --no-auth qwen -- --acp
+```
+</details>
+
+<details>
+<summary><b>Augment Code</b> — AI coding agent by Augment</summary>
+
+```bash
+npm install -g @chrome-acp/proxy-server @augmentcode/auggie
+acp-proxy --no-auth auggie -- --acp
+```
+</details>
+
+Any [ACP-compatible agent](https://agentclientprotocol.com/get-started/agents) works with Chrome ACP.
+
 ## Development
 
 ```bash
@@ -199,6 +167,17 @@ bun run dev
 # Release new version
 just release <version>
 ```
+
+## Packages
+
+This is a Bun monorepo with four packages:
+
+| Package | Description |
+|---------|-------------|
+| [`packages/chrome-extension`](./packages/chrome-extension) | Chrome extension with sidepanel chat UI |
+| [`packages/web-client`](./packages/web-client) | PWA web client served by proxy server |
+| [`packages/shared`](./packages/shared) | Shared UI components and utilities (`@chrome-acp/shared`) |
+| [`packages/proxy-server`](./packages/proxy-server) | WebSocket proxy server (npm: `@chrome-acp/proxy-server`) |
 
 ## License
 
