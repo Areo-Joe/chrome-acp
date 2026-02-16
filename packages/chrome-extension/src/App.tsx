@@ -11,7 +11,7 @@ export function App() {
 
   return (
     <ThemeProvider>
-      <div className="flex flex-col h-screen w-full max-w-2xl mx-auto">
+      <div className="flex flex-col h-dvh w-full max-w-2xl mx-auto">
         {/* Unified Connection Bar */}
         <ACPConnect
           onClientReady={setClient}
