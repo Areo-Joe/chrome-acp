@@ -239,7 +239,8 @@ export function ACPConnect({
   };
 
   return (
-    <div className="border-b bg-background/80 backdrop-blur-sm">
+    <div className="bg-background/80 backdrop-blur-sm">
+      <div className="max-w-md mx-auto border-b">
       {/* Status Bar - Always visible */}
       <button
         onClick={() => onExpandedChange(!expanded)}
@@ -410,6 +411,7 @@ export function ACPConnect({
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
