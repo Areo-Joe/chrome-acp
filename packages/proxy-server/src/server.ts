@@ -731,43 +731,68 @@ export async function startServer(config: ServerConfig): Promise<void> {
   const httpProtocol = https ? "https" : "http";
   const wsProtocol = https ? "wss" : "ws";
 
-  // Log server startup info (keep console for user-facing banner)
   // Get actual LAN IP when binding to 0.0.0.0
   let displayHost = host;
   if (host === "0.0.0.0") {
     const lanIPs = getLanIPs();
     displayHost = lanIPs[0] || "localhost";
   }
-  console.log(`🚀 ACP Proxy Server running on ${httpProtocol}://${displayHost}:${port}`);
-  console.log(`   Binding: ${host}:${port}`);
-  if (https) {
-    console.log(`   🔒 HTTPS enabled (self-signed certificate)`);
+
+  // Build URLs
+  const localWsUrl = `${wsProtocol}://localhost:${port}/ws`;
+  const networkWsUrl = `${wsProtocol}://${displayHost}:${port}/ws`;
+  const localAppUrl = `${httpProtocol}://localhost:${port}/app`;
+  const networkAppUrl = `${httpProtocol}://${displayHost}:${port}/app`;
+  const tokenSuffix = AUTH_TOKEN ? `?token=${AUTH_TOKEN}` : "";
+
+  // Print startup banner
+  console.log();
+  console.log(`  🚀 ACP Proxy Server${https ? " (HTTPS)" : ""}`);
+  console.log();
+
+  // One-click URLs (open in browser)
+  console.log(`  Open in browser:`);
+  console.log(`    ➜ Local:   ${localAppUrl}${tokenSuffix}`);
+  if (host === "0.0.0.0") {
+    console.log(`    ➜ Network: ${networkAppUrl}${tokenSuffix}`);
   }
-  console.log(``);
+  console.log();
 
-  // Show token info and QR code for easy mobile connection
+  // Manual connection info (for form input)
+  console.log(`  Manual connection:`);
+  if (host === "0.0.0.0") {
+    console.log(`    URL:   ${networkWsUrl}`);
+  } else {
+    console.log(`    URL:   ${localWsUrl}`);
+  }
   if (AUTH_TOKEN) {
-    const wsUrl = `${wsProtocol}://${displayHost}:${port}/ws`;
-    const qrData = JSON.stringify({ url: wsUrl, token: AUTH_TOKEN });
+    console.log(`    Token: ${AUTH_TOKEN}`);
+  }
+  console.log();
 
-    // Generate and print QR code
+  // Show QR code for mobile connection
+  if (AUTH_TOKEN) {
+    const qrData = JSON.stringify({ url: networkWsUrl, token: AUTH_TOKEN });
+
     const QRCode = await import("qrcode");
     const qrString = await QRCode.toString(qrData, { type: "terminal", small: true });
-    console.log(`📱 Scan to connect:\n`);
+    console.log(`  📱 Scan QR to connect on mobile:`);
+    console.log();
     console.log(qrString);
-
-    console.log(`🔑 Auth token: ${AUTH_TOKEN}`);
-    console.log(``);
-    console.log(`🔗 Or open with token pre-filled:`);
-    console.log(`   ${httpProtocol}://${displayHost}:${port}/app?token=${AUTH_TOKEN}`);
   } else {
-    console.log(`⚠️  Authentication disabled (--no-auth)`);
+    console.log(`  ⚠️  Authentication disabled (--no-auth)`);
+    console.log();
   }
-  console.log(``);
-  console.log(`📦 Agent: ${AGENT_COMMAND} ${AGENT_ARGS.join(" ")}`);
-  console.log(`   Working directory: ${AGENT_CWD}`);
-  console.log(``);
-  console.log(`🌐 Browser tool available via MCP`);
+
+  // Agent info
+  const agentDisplay = AGENT_ARGS.length > 0
+    ? `${AGENT_COMMAND} ${AGENT_ARGS.join(" ")}`
+    : AGENT_COMMAND;
+  console.log(`  📦 Agent: ${agentDisplay}`);
+  console.log(`     CWD:   ${AGENT_CWD}`);
+  console.log();
+  console.log(`  Press Ctrl+C to stop`);
+  console.log();
 
   // Also log to file when debug is enabled
   log.info("Server started", {
