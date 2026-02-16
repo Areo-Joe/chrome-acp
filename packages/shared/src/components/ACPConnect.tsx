@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 import { StatusDot } from "./ui/connection-status";
 import { ThemeToggle } from "./ui/theme-toggle";
+import { Label } from "./ui/label";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "./ui/input-group";
 import { ACPClient, DEFAULT_SETTINGS } from "../acp";
 import type { ACPSettings, ConnectionState, BrowserToolParams, BrowserToolResult } from "../acp";
-import { ChevronDown, FolderOpen, Lock, ScanLine, X } from "lucide-react";
+import { ChevronDown, FolderOpen, Globe, KeyRound, ScanLine, X } from "lucide-react";
 import { useQRScanner, type QRCodeData } from "../hooks";
-
-// Storage key for settings
-const STORAGE_KEY = "acp_settings";
 
 // Get token from URL query param (for pre-filled URLs from server)
 function getTokenFromUrl(): string | undefined {
@@ -37,39 +39,24 @@ function inferProxyUrlFromPage(): string | undefined {
   }
 }
 
-// Load settings from localStorage, with optional URL overrides
-function loadSettings(inferFromUrl: boolean): ACPSettings {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    const settings = stored
-      ? { ...DEFAULT_SETTINGS, ...JSON.parse(stored) }
-      : { ...DEFAULT_SETTINGS };
+// Get initial settings from defaults, with optional URL overrides
+function getInitialSettings(inferFromUrl: boolean): ACPSettings {
+  const settings = { ...DEFAULT_SETTINGS };
 
-    // Override from URL if enabled (for pre-filled links from server)
-    if (inferFromUrl) {
-      const urlToken = getTokenFromUrl();
-      const inferredUrl = inferProxyUrlFromPage();
+  // Override from URL if enabled (for pre-filled links from server)
+  if (inferFromUrl) {
+    const urlToken = getTokenFromUrl();
+    const inferredUrl = inferProxyUrlFromPage();
 
-      if (urlToken) {
-        settings.token = urlToken;
-      }
-      if (inferredUrl) {
-        settings.proxyUrl = inferredUrl;
-      }
+    if (urlToken) {
+      settings.token = urlToken;
     }
-
-    return settings;
-  } catch (e) {
-    console.error("Failed to load settings:", e);
+    if (inferredUrl) {
+      settings.proxyUrl = inferredUrl;
+    }
   }
-  return DEFAULT_SETTINGS;
-}
 
-// Save settings to localStorage
-// Note: cwd is intentionally excluded - it's session-specific and shouldn't persist
-function saveSettings(settings: ACPSettings): void {
-  const { cwd: _cwd, ...persistedSettings } = settings;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(persistedSettings));
+  return settings;
 }
 
 export interface ACPConnectProps {
@@ -98,7 +85,7 @@ export function ACPConnect({
   placeholder = "Proxy server URL",
   showScanButton = false,
 }: ACPConnectProps) {
-  const [settings, setSettings] = useState<ACPSettings>(() => loadSettings(inferFromUrl));
+  const [settings, setSettings] = useState<ACPSettings>(() => getInitialSettings(inferFromUrl));
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState(false);
@@ -156,7 +143,6 @@ export function ACPConnect({
   useEffect(() => {
     if (client) {
       client.updateSettings(settings);
-      saveSettings(settings);
 
       // Auto-connect after QR scan (when pendingAutoConnectRef is set)
       if (pendingAutoConnectRef.current) {
@@ -292,81 +278,116 @@ export function ACPConnect({
             </div>
           )}
 
-          {/* URL Input */}
+          {/* Connection Settings */}
           {!isScanning && (
-            <div className="flex gap-2">
-              {showScanButton && !isConnected && !isConnecting && (
-                <Button
-                  onClick={handleStartScanning}
-                  variant="outline"
-                  size="sm"
-                  className="h-9 px-3"
-                  title="Scan QR code"
-                >
-                  <ScanLine className="h-4 w-4" />
-                </Button>
-              )}
-              <Input
-                value={settings.proxyUrl}
-                onChange={(e) => updateSetting("proxyUrl", e.target.value)}
-                placeholder={placeholder}
-                disabled={isConnected || isConnecting}
-                aria-invalid={!!error}
-                className="flex-1 h-9 text-sm"
-              />
-              {!isConnected ? (
-                <Button
-                  onClick={handleConnect}
-                  disabled={isConnecting}
-                  size="sm"
-                  className="h-9 px-4"
-                >
-                  {isConnecting ? "..." : "Connect"}
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleDisconnect}
-                  variant="destructive"
-                  size="sm"
-                  className="h-9 px-4"
-                >
-                  Disconnect
-                </Button>
-              )}
-            </div>
-          )}
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!isConnected && !isConnecting) {
+                  handleConnect();
+                }
+              }}
+            >
+              {/* Server URL */}
+              <div className="space-y-1.5">
+                <Label htmlFor="proxy-url">Server</Label>
+                <div className="flex gap-2">
+                  {showScanButton && !isConnected && !isConnecting && (
+                    <Button
+                      onClick={handleStartScanning}
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-3"
+                      title="Scan QR code"
+                      type="button"
+                    >
+                      <ScanLine className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <InputGroup className="flex-1" data-disabled={isConnected || isConnecting}>
+                    <InputGroupAddon>
+                      <Globe />
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      id="proxy-url"
+                      value={settings.proxyUrl}
+                      onChange={(e) => updateSetting("proxyUrl", e.target.value)}
+                      placeholder={placeholder}
+                      disabled={isConnected || isConnecting}
+                      aria-invalid={!!error}
+                    />
+                  </InputGroup>
+                  {!isConnected ? (
+                    <Button
+                      type="submit"
+                      disabled={isConnecting}
+                      size="sm"
+                      className="h-9 px-4"
+                    >
+                      {isConnecting ? "..." : "Connect"}
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleDisconnect}
+                      variant="destructive"
+                      size="sm"
+                      className="h-9 px-4"
+                      type="button"
+                    >
+                      Disconnect
+                    </Button>
+                  )}
+                </div>
+              </div>
 
-          {/* Token Input (for remote access) - only shown if enabled and not scanning */}
-          {showTokenInput && !isScanning && (
-            <div className="flex gap-2 items-center">
-              <Input
-                value={settings.token || ""}
-                onChange={(e) => updateSetting("token", e.target.value || undefined)}
-                placeholder="Auth token (for remote access)"
-                disabled={isConnected || isConnecting}
-                type="password"
-                aria-invalid={!!error}
-                className="flex-1 h-9 text-sm font-mono"
-              />
-              <span className="text-xs text-muted-foreground whitespace-nowrap">
-                {settings.token ? <Lock className="h-3.5 w-3.5" /> : "Optional"}
-              </span>
-            </div>
-          )}
+              {/* Auth Token - only shown if enabled */}
+              {showTokenInput && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="auth-token">
+                    Auth Token
+                    <span className="text-muted-foreground font-normal ml-1.5">optional</span>
+                  </Label>
+                  <InputGroup data-disabled={isConnected || isConnecting}>
+                    <InputGroupAddon>
+                      <KeyRound />
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      id="auth-token"
+                      value={settings.token || ""}
+                      onChange={(e) => updateSetting("token", e.target.value || undefined)}
+                      placeholder="For remote access"
+                      disabled={isConnected || isConnecting}
+                      type="password"
+                      aria-invalid={!!error}
+                      className="font-mono"
+                    />
+                  </InputGroup>
+                </div>
+              )}
 
-          {/* Working Directory Input - only shown when not scanning */}
-          {!isScanning && (
-            <div className="flex gap-2 items-center">
-              <FolderOpen className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-              <Input
-                value={settings.cwd || ""}
-                onChange={(e) => updateSetting("cwd", e.target.value || undefined)}
-                placeholder="Working directory (optional)"
-                disabled={isConnected || isConnecting}
-                aria-invalid={!!error}
-                className="flex-1 h-9 text-sm font-mono"
-              />
-            </div>
+              {/* Working Directory */}
+              <div className="space-y-1.5">
+                <Label htmlFor="working-dir">
+                  Working Directory
+                  <span className="text-muted-foreground font-normal ml-1.5">optional</span>
+                </Label>
+                <InputGroup data-disabled={isConnected || isConnecting}>
+                  <InputGroupAddon>
+                    <FolderOpen />
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    id="working-dir"
+                    value={settings.cwd || ""}
+                    onChange={(e) => updateSetting("cwd", e.target.value || undefined)}
+                    placeholder="/path/to/project"
+                    disabled={isConnected || isConnecting}
+                    aria-invalid={!!error}
+                    className="font-mono"
+                  />
+                </InputGroup>
+              </div>
+            </form>
           )}
 
           {/* Error Message */}
