@@ -247,6 +247,29 @@ export function FileExplorer({ client }: FileExplorerProps) {
     loadDirectory("");
   }, [loadDirectory]);
 
+  // Subscribe to server-pushed directory listings (e.g., after session cwd change)
+  useEffect(() => {
+    client.setDirListingPushHandler((path, items) => {
+      console.log("[FileExplorer] Server pushed dir_listing:", path);
+      if (path === "") {
+        // Root directory changed - reset the tree state and update root items
+        setTreeState(new Map());
+        setRootItems(items);
+        setSelectedFile(null);
+      } else {
+        // Subdirectory changed - update tree state
+        setTreeState((prev) => {
+          const newState = new Map(prev);
+          newState.set(path, { expanded: true, children: items, loading: false });
+          return newState;
+        });
+      }
+    });
+    return () => {
+      client.setDirListingPushHandler(null);
+    };
+  }, [client]);
+
   // Toggle directory expansion
   const toggleDir = useCallback((item: FileItem) => {
     const state = treeState.get(item.path);

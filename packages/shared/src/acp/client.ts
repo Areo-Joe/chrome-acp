@@ -30,6 +30,8 @@ export type BrowserToolCallHandler = (
 export type ModelChangedHandler = (modelId: string) => void;
 export type ModelStateChangedHandler = (state: SessionModelState | null) => void;
 export type FileChangesHandler = (changes: FileChange[]) => void;
+// Handler for server-pushed directory listings (e.g., after session cwd change)
+export type DirListingPushHandler = (path: string, items: FileItem[]) => void;
 
 export class ACPClient {
   private ws: WebSocket | null = null;
@@ -51,6 +53,7 @@ export class ACPClient {
   private onPermissionRequest: PermissionRequestHandler | null = null;
   private onBrowserToolCall: BrowserToolCallHandler | null = null;
   private fileChangesHandlers: Set<FileChangesHandler> = new Set();
+  private onDirListingPush: DirListingPushHandler | null = null;
 
   // Pending file operations - keyed by unique requestId to handle concurrent requests
   private requestIdCounter = 0;
@@ -108,6 +111,16 @@ export class ACPClient {
 
   setBrowserToolCallHandler(handler: BrowserToolCallHandler): void {
     this.onBrowserToolCall = handler;
+  }
+
+  /**
+   * Set handler for server-pushed directory listings.
+   * Called when server sends a dir_listing without a corresponding request
+   * (e.g., after session cwd change).
+   * Pass null to clear the handler.
+   */
+  setDirListingPushHandler(handler: DirListingPushHandler | null): void {
+    this.onDirListingPush = handler;
   }
 
   private setState(state: ConnectionState, error?: string): void {
@@ -282,12 +295,16 @@ export class ACPClient {
       case "dir_listing": {
         const requestId = this.dirListingRequestIds.get(response.payload.path);
         if (requestId !== undefined) {
+          // Response to a client request
           const pending = this.pendingDirListing.get(requestId);
           if (pending) {
             pending.resolve(response.payload.items);
             this.pendingDirListing.delete(requestId);
           }
           this.dirListingRequestIds.delete(response.payload.path);
+        } else {
+          // Server-pushed listing (e.g., after session cwd change)
+          this.onDirListingPush?.(response.payload.path, response.payload.items);
         }
         break;
       }
@@ -354,7 +371,9 @@ export class ACPClient {
   }
 
   async createSession(cwd?: string): Promise<void> {
-    this.send({ type: "new_session", payload: { cwd } });
+    // Use provided cwd, or fall back to settings.cwd
+    const sessionCwd = cwd ?? this.settings.cwd;
+    this.send({ type: "new_session", payload: { cwd: sessionCwd } });
   }
 
   // Reference: Zed's MessageEditor.contents() builds Vec<acp::ContentBlock>

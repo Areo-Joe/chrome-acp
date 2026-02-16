@@ -5,7 +5,7 @@ import { StatusDot } from "./ui/connection-status";
 import { ThemeToggle } from "./ui/theme-toggle";
 import { ACPClient, DEFAULT_SETTINGS } from "../acp";
 import type { ACPSettings, ConnectionState, BrowserToolParams, BrowserToolResult } from "../acp";
-import { ChevronDown, Lock, ScanLine, X } from "lucide-react";
+import { ChevronDown, FolderOpen, Lock, ScanLine, X } from "lucide-react";
 import { useQRScanner, type QRCodeData } from "../hooks";
 
 // Storage key for settings
@@ -66,8 +66,10 @@ function loadSettings(inferFromUrl: boolean): ACPSettings {
 }
 
 // Save settings to localStorage
+// Note: cwd is intentionally excluded - it's session-specific and shouldn't persist
 function saveSettings(settings: ACPSettings): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  const { cwd: _cwd, ...persistedSettings } = settings;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(persistedSettings));
 }
 
 export interface ACPConnectProps {
@@ -349,6 +351,21 @@ export function ACPConnect({
               <span className="text-xs text-muted-foreground whitespace-nowrap">
                 {settings.token ? <Lock className="h-3.5 w-3.5" /> : "Optional"}
               </span>
+            </div>
+          )}
+
+          {/* Working Directory Input - only shown when not scanning */}
+          {!isScanning && (
+            <div className="flex gap-2 items-center">
+              <FolderOpen className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <Input
+                value={settings.cwd || ""}
+                onChange={(e) => updateSetting("cwd", e.target.value || undefined)}
+                placeholder="Working directory (optional)"
+                disabled={isConnected || isConnecting}
+                aria-invalid={!!error}
+                className="flex-1 h-9 text-sm font-mono"
+              />
             </div>
           )}
 

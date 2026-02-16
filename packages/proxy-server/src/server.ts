@@ -77,6 +77,8 @@ interface ClientState {
   modelState: SessionModelState | null;
   // File watcher unsubscribe function
   unsubscribeWatcher: (() => void) | null;
+  // Working directory for the current session (used by file explorer)
+  sessionCwd: string | null;
 }
 
 // Module-level state (set when server starts)
@@ -103,6 +105,12 @@ function send(ws: WSContext, type: string, payload?: unknown): void {
     // WebSocket.OPEN
     ws.send(JSON.stringify({ type, payload }));
   }
+}
+
+// Get the working directory for a client's session
+function getClientCwd(ws: WSContext): string {
+  const state = clients.get(ws);
+  return state?.sessionCwd || AGENT_CWD;
 }
 
 // Create a Client implementation that forwards events to WebSocket
@@ -285,8 +293,9 @@ async function handleNewSession(
   }
 
   try {
+    const sessionCwd = params.cwd || AGENT_CWD;
     const result = await state.connection.newSession({
-      cwd: params.cwd || AGENT_CWD,
+      cwd: sessionCwd,
       mcpServers: [
         {
           type: "http",
@@ -298,9 +307,26 @@ async function handleNewSession(
     });
 
     state.sessionId = result.sessionId;
+    state.sessionCwd = sessionCwd;
     // Reference: Zed stores model state from NewSessionResponse.models
     state.modelState = result.models ?? null;
-    log.info("Session created", { sessionId: result.sessionId, hasModels: !!result.models });
+    log.info("Session created", { sessionId: result.sessionId, cwd: sessionCwd, hasModels: !!result.models });
+
+    // Restart file watcher with the new session cwd
+    if (state.unsubscribeWatcher) {
+      state.unsubscribeWatcher();
+    }
+    state.unsubscribeWatcher = startWatcher(sessionCwd, (changes) => {
+      send(ws, "file_changes", { changes });
+    });
+
+    // Send fresh root directory listing for the new session cwd
+    // This ensures the file explorer shows the correct files immediately
+    const rootItems = listDir(sessionCwd, "");
+    if (rootItems !== null) {
+      send(ws, "dir_listing", { path: "", items: rootItems });
+    }
+
     // Reference: Include promptCapabilities so client can check image support
     // This matches Zed's behavior of checking prompt_capabilities.image
     // Also include models state for model selection support
@@ -452,7 +478,8 @@ async function handleSetSessionModel(
 // ============================================================================
 
 function handleListDir(ws: WSContext, payload: { path: string }): void {
-  const items = listDir(AGENT_CWD, payload.path);
+  const cwd = getClientCwd(ws);
+  const items = listDir(cwd, payload.path);
   if (items === null) {
     log.debug(`list_dir failed: ${payload.path || "(root)"}`);
     send(ws, "error", { message: `list_dir failed: ${payload.path || "(root)"}` });
@@ -462,7 +489,8 @@ function handleListDir(ws: WSContext, payload: { path: string }): void {
 }
 
 function handleReadFile(ws: WSContext, payload: { path: string }): void {
-  const content = readFile(AGENT_CWD, payload.path);
+  const cwd = getClientCwd(ws);
+  const content = readFile(cwd, payload.path);
   if (content === null) {
     send(ws, "error", { message: "Access denied or file not found" });
     return;
@@ -593,10 +621,8 @@ export async function startServer(config: ServerConfig): Promise<void> {
       return {
         onOpen(_event, ws) {
           log.info("Client connected");
-          // Start file watcher and broadcast changes to this client
-          const unsubscribeWatcher = startWatcher(AGENT_CWD, (changes) => {
-            send(ws, "file_changes", { changes });
-          });
+          // File watcher is started when session is created (with correct cwd)
+          // Not started here to avoid showing wrong directory before session is established
           clients.set(ws, {
             process: null,
             connection: null,
@@ -604,7 +630,8 @@ export async function startServer(config: ServerConfig): Promise<void> {
             pendingPermissions: new Map(),
             promptCapabilities: null,
             modelState: null,
-            unsubscribeWatcher,
+            unsubscribeWatcher: null,
+            sessionCwd: null,
           });
           // Register this WebSocket for browser tool calls
           setExtensionWebSocket(ws);

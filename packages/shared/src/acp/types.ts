@@ -357,6 +357,8 @@ export interface ACPSettings {
   proxyUrl: string;
   /** Auth token for remote access (passed as ?token=xxx query param) */
   token?: string;
+  /** Working directory for the agent session */
+  cwd?: string;
 }
 
 export const DEFAULT_SETTINGS: ACPSettings = {
