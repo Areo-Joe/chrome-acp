@@ -171,7 +171,7 @@ export function HomeLayout() {
               Get Started
             </a>
             <a
-              href="https://github.com/anthropics/anthropic-quickstarts/tree/main/chrome-acp"
+              href="https://github.com/Areo-Joe/chrome-acp"
               className="btn-secondary"
               target="_blank"
               rel="noopener noreferrer"
