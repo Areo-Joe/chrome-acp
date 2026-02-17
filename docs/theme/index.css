@@ -4,26 +4,51 @@
  * Reference: https://zed.dev - Tailwind classes analyzed from their site
  */
 
-/* Google Fonts: Inter for UI, JetBrains Mono for code */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* Google Fonts: Zed docs uses IA Writer Quattro S (body) + Lora (titles) */
+/* IA Writer Quattro S is not on Google Fonts, using iA Writer Quattro alternative via CDN */
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&display=swap');
 
-/* Typography - Modern, clean fonts */
-:where(:root) {
-  --rp-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --rp-font-family-mono: 'JetBrains Mono', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;
+/* Typography - Zed docs style: reading-focused, book-like quality */
+/* Override rspress default font variables */
+:root {
+  --rp-font-family-base: 'iA Writer Quattro S', 'iA Writer Quattro', sans-serif;
+  --rp-font-family-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+/* Load iA Writer Quattro S font */
+@font-face {
+  font-family: 'iA Writer Quattro S';
+  src: url('https://cdn.jsdelivr.net/gh/nickolasburr/ia-fonts@master/fonts/iAWriterQuattroS-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'iA Writer Quattro S';
+  src: url('https://cdn.jsdelivr.net/gh/nickolasburr/ia-fonts@master/fonts/iAWriterQuattroS-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
 }
 
 html, body {
-  font-family: var(--rp-font-family-base);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; /* Inter stylistic sets */
+  text-rendering: geometricPrecision !important;
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.005);
+}
+
+/* Titles use Lora serif font - like Zed docs */
+h1, h2, h3, h4, h5, h6,
+.rp-home-hero__name,
+.rp-home-hero__text {
+  font-family: 'Lora', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-weight: 500;
 }
 
 code, pre, kbd, samp {
   font-family: var(--rp-font-family-mono);
-  font-feature-settings: 'liga' 1, 'calt' 1; /* Enable ligatures */
 }
 
 /* Brand colors - Zed uses accent-blue (#3b82f6) with careful opacity control */
