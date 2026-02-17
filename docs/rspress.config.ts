@@ -7,7 +7,14 @@ export default defineConfig({
   description: 'A Chrome extension to chat with AI agents. Give them the power to see and interact with your browser.',
   icon: '/favicon.png',
   logo: '/logo.png',
+  // Enable llms.txt generation for AI/LLM consumption
+  llms: true,
   themeConfig: {
+    lastUpdated: true,
+    editLink: {
+      docRepoBaseUrl: 'https://github.com/Areo-Joe/chrome-acp/edit/main/docs/docs',
+      text: 'Edit this page on GitHub',
+    },
     socialLinks: [
       {
         icon: 'github',
@@ -16,7 +23,7 @@ export default defineConfig({
       },
     ],
     footer: {
-      message: '© 2025 Chrome ACP',
+      message: '© 2026 Chrome ACP',
     },
   },
   markdown: {

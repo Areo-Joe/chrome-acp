@@ -1,0 +1,389 @@
+/**
+ * Zed-inspired theme for rspress
+ * Design principles: Sharp, minimal, modern. Black/white/gray primary. Blue accent.
+ * Reference: https://zed.dev - Tailwind classes analyzed from their site
+ */
+
+/* Google Fonts: Inter for UI, JetBrains Mono for code */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* Typography - Modern, clean fonts */
+:where(:root) {
+  --rp-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --rp-font-family-mono: 'JetBrains Mono', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;
+}
+
+html, body {
+  font-family: var(--rp-font-family-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; /* Inter stylistic sets */
+}
+
+code, pre, kbd, samp {
+  font-family: var(--rp-font-family-mono);
+  font-feature-settings: 'liga' 1, 'calt' 1; /* Enable ligatures */
+}
+
+/* Brand colors - Zed uses accent-blue (#3b82f6) with careful opacity control */
+:where(:root) {
+  --rp-c-brand: #3b82f6;
+  --rp-c-brand-light: #60a5fa;
+  --rp-c-brand-lighter: #93c5fd;
+  --rp-c-brand-dark: #2563eb;
+  --rp-c-brand-darker: #1d4ed8;
+  --rp-c-brand-tint: rgba(59, 130, 246, 0.1);
+}
+
+/* Sharp corners - Zed uses rounded-sm (0.125rem) or rounded-xs */
+:where(:root) {
+  --rp-radius: 0.125rem;
+  --rp-radius-small: 0.0625rem;
+  --rp-radius-large: 0.25rem;
+}
+
+/* Light Mode - Clean white with proper contrast (Zed: bg-white/60, border-offgray-100) */
+:where(html:not(.rp-dark)) {
+  --rp-c-bg: #ffffff;
+  --rp-c-bg-soft: #fafafa;
+  --rp-c-bg-mute: #f5f5f5;
+  --rp-c-bg-alt: #ffffff;
+
+  /* Zed light: border-offgray-100, border-gray-300/70 */
+  --rp-c-divider: rgba(0, 0, 0, 0.12);
+  --rp-c-divider-light: rgba(0, 0, 0, 0.08);
+
+  --rp-c-text-0: #0a0a0a;
+  --rp-c-text-1: #171717;
+  --rp-c-text-2: #525252;
+  --rp-c-text-3: #a3a3a3;
+  --rp-c-text-4: #d4d4d4;
+
+  --rp-c-text-code: #1e40af;
+  --rp-c-text-code-bg: rgba(59, 130, 246, 0.06);
+  --rp-c-text-code-border: rgba(59, 130, 246, 0.12);
+
+  --rp-c-link: var(--rp-c-brand-dark);
+
+  /* Code block - Zed: bg-white/60 with subtle border */
+  --rp-code-title-bg: #fafafa;
+  --rp-code-block-color: #1f2937;
+  --rp-code-block-bg: #fafafa;
+  --rp-code-block-border: 1px solid rgba(0, 0, 0, 0.1);
+
+  /* Home */
+  --rp-home-hero-title-color: #0a0a0a;
+  /* NOTE: This is also used for .rp-button--brand background! */
+  --rp-home-hero-title-bg: var(--rp-c-brand);
+  --rp-home-background-bg: #ffffff;
+  --rp-home-feature-bg: #fafafa;
+}
+
+/* Dark Mode - Pure black like Zed (Zed dark: bg-black, border-gray-600/40, border-blue-300/20) */
+:where(html.rp-dark) {
+  --rp-c-bg: #000000;
+  --rp-c-bg-soft: #0a0a0a;
+  --rp-c-bg-mute: #141414;
+  --rp-c-bg-alt: #000000;
+
+  /* Zed dark: border-gray-600/40 (~0.4 opacity), border-white/10 */
+  --rp-c-divider: rgba(255, 255, 255, 0.18);
+  --rp-c-divider-light: rgba(255, 255, 255, 0.12);
+
+  --rp-c-text-0: #ffffff;
+  --rp-c-text-1: #fafafa;
+  --rp-c-text-2: #a1a1aa;
+  --rp-c-text-3: #52525b;
+  --rp-c-text-4: #27272a;
+
+  /* Zed: text-blue-300, decoration-blue-300/20 */
+  --rp-c-text-code: #93c5fd;
+  --rp-c-text-code-bg: rgba(59, 130, 246, 0.12);
+  --rp-c-text-code-border: rgba(59, 130, 246, 0.2);
+
+  --rp-c-link: var(--rp-c-brand-light);
+
+  /* Code block - Zed uses visible borders */
+  --rp-code-title-bg: #0a0a0a;
+  --rp-code-block-color: #e5e7eb;
+  --rp-code-block-bg: #0a0a0a;
+  --rp-code-block-border: 1px solid rgba(255, 255, 255, 0.15);
+
+  /* Home - Zed: bg-offgray-800/5 */
+  --rp-home-hero-title-color: #ffffff;
+  /* NOTE: This is also used for .rp-button--brand background! */
+  --rp-home-hero-title-bg: var(--rp-c-brand);
+  --rp-home-background-bg: #000000;
+  --rp-home-feature-bg: rgba(255, 255, 255, 0.05);
+}
+
+/* Shiki - GitHub Dark High Contrast style for dark mode */
+:where(html.rp-dark) {
+  --shiki-foreground: #f0f3f6;
+  --shiki-background: transparent;
+  --shiki-token-constant: #91cbff;
+  --shiki-token-string: #addcff;
+  --shiki-token-comment: #768390;
+  --shiki-token-keyword: #ff9492;
+  --shiki-token-parameter: #f0b72f;
+  --shiki-token-function: #dcbdfb;
+  --shiki-token-string-expression: #addcff;
+  --shiki-token-punctuation: #f0f3f6;
+  --shiki-token-link: #addcff;
+  --shiki-token-deleted: #ff9492;
+  --shiki-token-inserted: #26cd4d;
+}
+
+/* Shiki - Clean light mode */
+:where(html:not(.rp-dark)) {
+  --shiki-foreground: #1f2937;
+  --shiki-background: transparent;
+  --shiki-token-constant: #1d4ed8;
+  --shiki-token-string: #059669;
+  --shiki-token-comment: #9ca3af;
+  --shiki-token-keyword: #dc2626;
+  --shiki-token-parameter: #d97706;
+  --shiki-token-function: #7c3aed;
+  --shiki-token-string-expression: #059669;
+  --shiki-token-punctuation: #374151;
+  --shiki-token-link: #059669;
+  --shiki-token-deleted: #dc2626;
+  --shiki-token-inserted: #059669;
+}
+
+/* Gray scale */
+:where(:root) {
+  --rp-c-gray: #71717a;
+  --rp-c-gray-light-1: #a1a1aa;
+  --rp-c-gray-light-2: #d4d4d8;
+  --rp-c-gray-light-3: #e4e4e7;
+  --rp-c-gray-light-4: #f4f4f5;
+  --rp-c-gray-light-5: #fafafa;
+}
+
+/* Subtle shadows - Zed uses inset shadows: [box-shadow:hsl(218,_13%,_50%,_0.05)_0_-2px_0_0_inset] */
+:where(:root) {
+  --rp-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --rp-shadow-2: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --rp-shadow-3: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --rp-shadow-4: 0 8px 24px rgba(0, 0, 0, 0.1);
+  --rp-shadow-5: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+/* Force dark mode as default */
+html {
+  color-scheme: dark;
+}
+
+/* ============================================
+   Zed-style Component Overrides
+   Based on: https://zed.dev Tailwind analysis
+   ============================================ */
+
+/* Links - Zed light: decoration-accent-blue/20, dark: decoration-blue-300/20 */
+/* Light mode links */
+html:not(.rp-dark) a {
+  text-decoration-color: rgba(37, 99, 235, 0.25);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 0.15s ease, color 0.15s ease;
+}
+
+html:not(.rp-dark) a:hover {
+  text-decoration-color: rgba(37, 99, 235, 0.8);
+}
+
+/* Dark mode links */
+html.rp-dark a {
+  text-decoration-color: rgba(147, 197, 253, 0.2);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 0.15s ease, color 0.15s ease;
+}
+
+html.rp-dark a:hover {
+  text-decoration-color: rgba(147, 197, 253, 0.8);
+}
+
+/* Buttons and interactive elements */
+.rp-button,
+button,
+.rp-nav-item,
+.rp-sidebar-item {
+  transition: border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease;
+}
+
+/* Sidebar items hover - Zed: hover:bg-offgray-100 (light) / hover:bg-white/5 (dark) */
+html:not(.rp-dark) .rp-sidebar-item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+html.rp-dark .rp-sidebar-item:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Code blocks - sharper corners, visible borders */
+pre,
+code {
+  border-radius: var(--rp-radius);
+}
+
+/* Inline code - Zed light: bg-offgray-100, dark: bg-white/10 */
+html:not(.rp-dark) :not(pre) > code {
+  background-color: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+html.rp-dark :not(pre) > code {
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Tables - Zed-style borders */
+table {
+  border-collapse: collapse;
+}
+
+html:not(.rp-dark) th,
+html:not(.rp-dark) td {
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+html.rp-dark th,
+html.rp-dark td {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Blockquote - Zed: border-l-2 border-offgray-200 (light) / border-white/20 (dark) */
+html:not(.rp-dark) blockquote {
+  border-left: 2px solid rgba(0, 0, 0, 0.12);
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+html.rp-dark blockquote {
+  border-left: 2px solid rgba(255, 255, 255, 0.2);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Nav and header - Zed: border-offgray-100 (light) / border-white/10 (dark) */
+html:not(.rp-dark) .rp-nav,
+html:not(.rp-dark) .rp-doc-layout-header {
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+html.rp-dark .rp-nav,
+html.rp-dark .rp-doc-layout-header {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Sidebar border - same treatment */
+html:not(.rp-dark) .rp-sidebar {
+  border-right-color: rgba(0, 0, 0, 0.08);
+}
+
+html.rp-dark .rp-sidebar {
+  border-right-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Cards/Features - rspress uses .rp-home-feature__card (with double underscore) */
+/* Zed: border-offgray-100 (light) / border-white/10 (dark), hover:border-blue, rounded-sm */
+.rp-home-feature__card {
+  border-radius: 0.25rem !important; /* Override the default 2rem */
+}
+
+html:not(.rp-dark) .rp-home-feature__card {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.02);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+html:not(.rp-dark) .rp-home-feature__card:hover {
+  border-color: rgba(37, 99, 235, 0.5);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
+}
+
+html.rp-dark .rp-home-feature__card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+html.rp-dark .rp-home-feature__card:hover {
+  border-color: rgba(147, 197, 253, 0.5);
+  box-shadow: 0 2px 8px rgba(147, 197, 253, 0.08);
+}
+
+/* Feature icon - sharper corners */
+.rp-home-feature__icon {
+  border-radius: 0.25rem !important;
+}
+
+/* TOC (Table of Contents) - Zed-style active indicator */
+html:not(.rp-dark) .rp-toc-item--active .rp-toc-item__text {
+  color: var(--rp-c-brand-dark);
+}
+
+html:not(.rp-dark) .rp-toc-item--active:before {
+  background-color: var(--rp-c-brand-dark);
+}
+
+html.rp-dark .rp-toc-item--active .rp-toc-item__text {
+  color: var(--rp-c-brand-light);
+}
+
+html.rp-dark .rp-toc-item--active:before {
+  background-color: var(--rp-c-brand-light);
+}
+
+/* Search button - rspress uses .rp-search-button */
+html:not(.rp-dark) .rp-search-button {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+html:not(.rp-dark) .rp-search-button:hover {
+  border-color: var(--rp-c-brand);
+}
+
+html.rp-dark .rp-search-button {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+html.rp-dark .rp-search-button:hover {
+  border-color: var(--rp-c-brand-light);
+}
+
+/* Search panel input */
+html:not(.rp-dark) .rp-search-panel__input-form {
+  border: 1px solid var(--rp-c-brand);
+}
+
+html.rp-dark .rp-search-panel__input-form {
+  border: 1px solid var(--rp-c-brand-light);
+}
+
+/* Search panel modal - sharper corners */
+.rp-search-panel__modal {
+  border-radius: 0.25rem !important;
+}
+
+/* Buttons - Zed: hover:bg-offgray-100 (light) / hover:bg-white/5 (dark) */
+/* Only apply to alt buttons, not brand buttons which have their own bg */
+html:not(.rp-dark) .rp-button--alt:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+html.rp-dark .rp-button--alt:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Callout containers - sharper corners, Zed-style */
+.rp-callout {
+  border-radius: 0.25rem !important;
+}
+
+/* Override callout title bar to be sharper */
+.rp-callout__title:before {
+  border-radius: 0 0.125rem 0.125rem 0 !important;
+}
+
