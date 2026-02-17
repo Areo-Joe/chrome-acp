@@ -33,12 +33,12 @@
     },
     "packages/proxy-server": {
       "name": "@chrome-acp/proxy-server",
-      "version": "1.0.26",
+      "version": "1.0.32",
       "bin": {
         "acp-proxy": "dist/cli/bin.js",
       },
       "dependencies": {
-        "@agentclientprotocol/sdk": "^0.5.1",
+        "@agentclientprotocol/sdk": "^0.14.1",
         "@hono/node-server": "^1.13.8",
         "@hono/node-ws": "^1.0.5",
         "@stricli/auto-complete": "^1.2.4",
@@ -124,7 +124,7 @@
     },
   },
   "packages": {
-    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.5.1", "", { "dependencies": { "zod": "^3.0.0" } }, "sha512-9bq2TgjhLBSUSC5jE04MEe+Hqw8YePzKghhYZ9QcjOyonY3q2oJfX6GoSO83hURpEnsqEPIrex6VZN3+61fBJg=="],
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.14.1", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-b6r3PS3Nly+Wyw9U+0nOr47bV8tfS476EgyEMhoKvJCZLbgqoDFN7DJwkxL88RR0aiOqOYV1ZnESHqb+RmdH8w=="],
 
     "@ai-sdk/gateway": ["@ai-sdk/gateway@3.0.31", "", { "dependencies": { "@ai-sdk/provider": "3.0.6", "@ai-sdk/provider-utils": "4.0.12", "@vercel/oidc": "3.1.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-WActnxPeW46XcfZWWEcJ1FytpjCtKQEo25WZVa2xZSf+u2FgSNVt/dXIvlSZetPnXo6T2P/GhFAPBULMN6siRA=="],
 

@@ -454,7 +454,7 @@ async function handleSetSessionModel(
 
   try {
     log.info("Setting session model", { sessionId: state.sessionId, modelId: params.modelId });
-    await state.connection.setSessionModel({
+    await state.connection.unstable_setSessionModel({
       sessionId: state.sessionId,
       modelId: params.modelId,
     });

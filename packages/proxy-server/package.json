@@ -33,7 +33,7 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.5.1",
+    "@agentclientprotocol/sdk": "^0.14.1",
     "@hono/node-server": "^1.13.8",
     "@hono/node-ws": "^1.0.5",
     "@stricli/auto-complete": "^1.2.4",
