@@ -41,9 +41,10 @@ html, body {
 
 /* Titles use Lora serif font - like Zed docs */
 h1, h2, h3, h4, h5, h6,
-.rp-home-hero__name,
-.rp-home-hero__text {
-  font-family: 'Lora', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+.rp-home-hero__title,
+.rp-home-hero__title-brand,
+.rp-home-hero__subtitle {
+  font-family: 'Lora', 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
   font-weight: 500;
 }
 
@@ -311,6 +312,22 @@ html.rp-dark .rp-sidebar {
 
 /* Cards/Features - rspress uses .rp-home-feature__card (with double underscore) */
 /* Zed: border-offgray-100 (light) / border-white/10 (dark), hover:border-blue, rounded-sm */
+
+/* Force 2x2 grid layout for features */
+.rp-home-feature {
+  max-width: 56rem; /* Narrower for 2x2 */
+}
+
+.rp-home-feature__item {
+  width: calc(50% - var(--rp-home-feature-gap, 15px)) !important;
+}
+
+@media (max-width: 640px) {
+  .rp-home-feature__item {
+    width: 100% !important; /* Stack on mobile */
+  }
+}
+
 .rp-home-feature__card {
   border-radius: 0.25rem !important; /* Override the default 2rem */
 }
