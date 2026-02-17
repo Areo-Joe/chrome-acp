@@ -60,6 +60,6 @@ For full browser control (reading tabs, executing scripts), install the Chrome e
 ## What's Next?
 
 - Learn about [Browser Tools](/chrome-acp/guides/browser-tools/) the extension provides
-- See all [Supported Agents](/chrome-acp/guides/agents/)
+- See all [Supported Agents](/chrome-acp/guides/supported-agents/)
 - Configure [Remote Access](/chrome-acp/guides/remote-access/) for mobile devices
 

@@ -109,5 +109,5 @@ You should see the available CLI options.
 ## Next Steps
 
 - Follow the [Quick Start](/chrome-acp/getting-started/quick-start/) guide
-- Learn about [CLI Options](/chrome-acp/reference/cli/)
+- Learn about [CLI Options](/chrome-acp/reference/cli-reference/)
 
