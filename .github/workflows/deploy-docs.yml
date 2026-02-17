@@ -28,10 +28,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Install, build, and upload site
-        uses: withastro/action@v5
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: cd docs && bun install
+
+      - name: Build docs
+        run: cd docs && bun run build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          path: ./docs
+          path: docs/doc_build
 
   deploy:
     needs: build

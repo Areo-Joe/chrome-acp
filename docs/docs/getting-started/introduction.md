@@ -1,8 +1,6 @@
 ---
 title: Introduction
 description: What is Chrome ACP and why you need it.
-sidebar:
-  order: 1
 ---
 
 Chrome ACP is a Chrome extension that lets you chat with AI agents and give them the power to see and interact with your browser.
@@ -55,5 +53,5 @@ This architecture is necessary because Chrome extensions run in a sandbox and ca
 
 ## Next Steps
 
-Ready to get started? Head to the [Quick Start](/chrome-acp/getting-started/quick-start/) guide.
+Ready to get started? Head to the [Quick Start](/getting-started/quick-start/) guide.
 

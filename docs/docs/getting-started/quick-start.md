@@ -1,8 +1,6 @@
 ---
 title: Quick Start
 description: Get up and running with Chrome ACP in minutes.
-sidebar:
-  order: 2
 ---
 
 Get Chrome ACP running in just a few minutes.
@@ -59,7 +57,7 @@ For full browser control (reading tabs, executing scripts), install the Chrome e
 
 ## What's Next?
 
-- Learn about [Browser Tools](/chrome-acp/guides/browser-tools/) the extension provides
-- See all [Supported Agents](/chrome-acp/guides/supported-agents/)
-- Configure [Remote Access](/chrome-acp/guides/remote-access/) for mobile devices
+- Learn about [Browser Tools](/guides/browser-tools/) the extension provides
+- See all [Supported Agents](/guides/supported-agents/)
+- Configure [Remote Access](/guides/remote-access/) for mobile devices
 

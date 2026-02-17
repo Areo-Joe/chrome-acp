@@ -1,8 +1,6 @@
 ---
 title: Installation
 description: Detailed installation instructions for Chrome ACP.
-sidebar:
-  order: 3
 ---
 
 This guide covers detailed installation options for Chrome ACP.
@@ -108,6 +106,6 @@ You should see the available CLI options.
 
 ## Next Steps
 
-- Follow the [Quick Start](/chrome-acp/getting-started/quick-start/) guide
-- Learn about [CLI Options](/chrome-acp/reference/cli-reference/)
+- Follow the [Quick Start](/getting-started/quick-start/) guide
+- Learn about [CLI Options](/reference/cli-reference/)
 

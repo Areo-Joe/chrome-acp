@@ -1,8 +1,6 @@
 ---
 title: CLI Reference
 description: Command-line options for the acp-proxy server.
-sidebar:
-  order: 1
 ---
 
 Complete reference for the `acp-proxy` command.

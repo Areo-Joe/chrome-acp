@@ -1,8 +1,6 @@
 ---
 title: Architecture
 description: Technical architecture of Chrome ACP.
-sidebar:
-  order: 2
 ---
 
 This page describes the technical architecture of Chrome ACP in detail.

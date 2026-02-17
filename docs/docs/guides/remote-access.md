@@ -1,8 +1,6 @@
 ---
 title: Remote Access
 description: Access Chrome ACP from other devices on your network.
-sidebar:
-  order: 3
 ---
 
 Chrome ACP can be accessed from other devices on your local network, such as mobile phones, tablets, or other computers.

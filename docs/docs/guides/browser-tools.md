@@ -1,8 +1,6 @@
 ---
 title: Browser Tools
 description: Tools the Chrome extension exposes to AI agents.
-sidebar:
-  order: 2
 ---
 
 The Chrome extension exposes browser tools to agents via [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) using Streamable HTTP transport.
@@ -42,7 +40,7 @@ Lists all open browser tabs. Call this first to get tab IDs.
   "tabs": [
     {
       "id": 123456789,
-      "url": "https://github.com/Areo-Joe/chrome-acp",
+      "url": "https://github.com/AreO-Joe/chrome-acp",
       "title": "GitHub - chrome-acp",
       "active": true
     },

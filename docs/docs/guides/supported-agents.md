@@ -1,8 +1,6 @@
 ---
 title: Supported Agents
 description: AI agents that work with Chrome ACP.
-sidebar:
-  order: 1
 ---
 
 Chrome ACP works with any [ACP-compatible agent](https://agentclientprotocol.com/get-started/agents). Here are setup instructions for popular agents.
@@ -181,7 +179,7 @@ To use browser tools, your agent must support MCP and connect to:
 http://localhost:9315/mcp
 ```
 
-See [Architecture](/chrome-acp/reference/architecture/) for MCP protocol details.
+See [Architecture](/reference/architecture/) for MCP protocol details.
 
 ---
 
