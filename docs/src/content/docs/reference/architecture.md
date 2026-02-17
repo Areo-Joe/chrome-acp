@@ -11,11 +11,10 @@ This page describes the technical architecture of Chrome ACP in detail.
 
 Chrome ACP consists of four main components:
 
-```
-┌─────────────────────┐     WebSocket     ┌──────────────────┐     stdin/stdout     ┌───────────┐
-│   Chrome Extension  │ ◄───────────────► │   Proxy Server   │ ◄─────────────────► │ ACP Agent │
-│    or Web Client    │                   │                  │                      │           │
-└─────────────────────┘                   └──────────────────┘                      └───────────┘
+```mermaid
+graph LR
+    A[Chrome Extension<br/>or Web Client] <-->|WebSocket| B[Proxy Server]
+    B <-->|stdin/stdout| C[ACP Agent]
 ```
 
 ## Why a Proxy Server?

@@ -39,11 +39,10 @@ Agents interact with web pages using your real browser session. This means:
 
 ## How It Works
 
-```
-┌─────────────────┐     WebSocket     ┌──────────────┐     stdin/stdout     ┌───────────┐
-│ Chrome Extension│ ◄──────────────► │ Proxy Server │ ◄──────────────────► │ ACP Agent │
-│   or Web Client │                   │              │                       │           │
-└─────────────────┘                   └──────────────┘                       └───────────┘
+```mermaid
+graph LR
+    A[Chrome Extension<br/>or Web Client] <-->|WebSocket| B[Proxy Server]
+    B <-->|stdin/stdout| C[ACP Agent]
 ```
 
 The **Proxy Server** acts as a bridge between the browser and the AI agent:

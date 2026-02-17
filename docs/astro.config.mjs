@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import mermaid from 'astro-mermaid';
 
 // https://astro.build/config
 export default defineConfig({
@@ -8,6 +9,7 @@ export default defineConfig({
 	base: '/chrome-acp',
 	trailingSlash: 'always',
 	integrations: [
+		mermaid({ autoTheme: true }), // Must come BEFORE starlight
 		starlight({
 			title: 'Chrome ACP',
 			description: 'A Chrome extension to chat with AI agents. Give them the power to see and interact with your browser.',
