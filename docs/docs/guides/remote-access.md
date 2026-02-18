@@ -184,6 +184,7 @@ For auto-launch to work:
 | `--host` | `localhost` | Bind address |
 | `--port` | `9315` | Server port |
 | `--https` | `false` | Enable HTTPS |
+| `--public-url` | - | Public WebSocket URL for QR code |
 | `--no-auth` | `false` | Disable authentication |
 
 ### Common Configurations
@@ -235,4 +236,46 @@ If you need public access:
 2. Set up proper TLS certificates (Let's Encrypt)
 3. Add additional authentication (basic auth, OAuth)
 4. Consider VPN access instead
+
+---
+
+## Server Deployment
+
+When deploying on a server with a domain name, the auto-detected LAN IP won't work for the QR code. Use `--public-url` to specify the actual WebSocket URL:
+
+```bash
+acp-proxy --host 0.0.0.0 --public-url wss://example.com/ws claude-code-acp
+```
+
+This makes the QR code contain `wss://example.com/ws` instead of the local network IP.
+
+### Example: nginx Reverse Proxy
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name example.com;
+
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location /ws {
+        proxy_pass http://localhost:9315/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+
+    location / {
+        proxy_pass http://localhost:9315;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+Then run:
+```bash
+acp-proxy --host 0.0.0.0 --public-url wss://example.com/ws claude-code-acp
+```
 

@@ -45,6 +45,12 @@ export const command = buildCommand({
         brief: "Enable HTTPS with auto-generated self-signed certificate (required for camera on mobile)",
         default: false,
       },
+      "public-url": {
+        kind: "parsed",
+        parse: String,
+        brief: "Public WebSocket URL for QR code (e.g., wss://example.com/ws)",
+        optional: true,
+      },
     },
     positional: {
       kind: "array",
@@ -58,7 +64,7 @@ export const command = buildCommand({
   },
   func: async function (
     this: LocalContext,
-    flags: { port: number; host: string; debug: boolean; "no-auth": boolean; termux: boolean; https: boolean },
+    flags: { port: number; host: string; debug: boolean; "no-auth": boolean; termux: boolean; https: boolean; "public-url"?: string },
     ...args: readonly string[]
   ) {
     const port = flags.port;
@@ -67,6 +73,7 @@ export const command = buildCommand({
     const noAuth = flags["no-auth"];
     const termux = flags.termux;
     const https = flags.https;
+    const publicUrl = flags["public-url"];
     const [command, ...agentArgs] = args;
     const cwd = process.cwd();
 
@@ -91,6 +98,6 @@ export const command = buildCommand({
 
     // Import and run the server
     const { startServer } = await import("../server.js");
-    await startServer({ port, host, command: command!, args: [...agentArgs], cwd, debug, token, termux, https });
+    await startServer({ port, host, command: command!, args: [...agentArgs], cwd, debug, token, termux, https, publicUrl });
   },
 });

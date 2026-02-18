@@ -38,6 +38,7 @@ export interface ServerConfig {
   token?: string;
   termux?: boolean;
   https?: boolean;
+  publicUrl?: string;
 }
 
 // Pending permission request
@@ -562,7 +563,7 @@ async function launchTermuxPwa(pwaName: string): Promise<void> {
 }
 
 export async function startServer(config: ServerConfig): Promise<void> {
-  const { port, host, command, args, cwd, token, termux, https } = config;
+  const { port, host, command, args, cwd, token, termux, https, publicUrl } = config;
 
   // Set module-level config
   AGENT_COMMAND = command;
@@ -772,11 +773,16 @@ export async function startServer(config: ServerConfig): Promise<void> {
 
   // Show QR code for mobile connection
   if (AUTH_TOKEN) {
-    const qrData = JSON.stringify({ url: networkWsUrl, token: AUTH_TOKEN });
+    // Use publicUrl if provided, otherwise fall back to networkWsUrl
+    const qrUrl = publicUrl || networkWsUrl;
+    const qrData = JSON.stringify({ url: qrUrl, token: AUTH_TOKEN });
 
     const QRCode = await import("qrcode");
     const qrString = await QRCode.toString(qrData, { type: "terminal", small: true });
     console.log(`  📱 Scan QR to connect on mobile:`);
+    if (publicUrl) {
+      console.log(`    (using --public-url: ${publicUrl})`);
+    }
     console.log();
     console.log(qrString);
   } else {
@@ -799,6 +805,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
     port,
     host,
     https,
+    publicUrl,
     wsEndpoint: `${wsProtocol}://${displayHost}:${port}/ws`,
     mcpEndpoint: `${httpProtocol}://${displayHost}:${port}/mcp`,
     agent: AGENT_COMMAND,

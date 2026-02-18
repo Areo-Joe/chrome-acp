@@ -50,6 +50,7 @@ graph LR
 | `--port` | `9315` | Server port |
 | `--host` | `localhost` | Host to bind (use `0.0.0.0` for network access) |
 | `--https` | `false` | Enable HTTPS with self-signed certificate (for LAN only) |
+| `--public-url` | - | Public WebSocket URL for QR code (e.g., `wss://example.com/ws`) |
 | `--no-auth` | `false` | Disable authentication (safe for localhost, dangerous for remote) |
 | `--termux` | `false` | Auto-launch PWA via Termux on Android |
 | `--debug` | `false` | Enable debug logging to file |

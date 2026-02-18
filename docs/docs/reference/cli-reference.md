@@ -22,6 +22,7 @@ acp-proxy [options] <agent-command> [-- <agent-args>]
 | `--port` | `9315` | Server port |
 | `--host` | `localhost` | Host to bind |
 | `--https` | `false` | Enable HTTPS with self-signed certificate |
+| `--public-url` | - | Public WebSocket URL for QR code (e.g., `wss://example.com/ws`) |
 | `--no-auth` | `false` | Disable authentication |
 | `--termux` | `false` | Auto-launch PWA via Termux API |
 | `--debug` | `false` | Enable debug logging to file |
@@ -96,6 +97,16 @@ acp-proxy --https --host 0.0.0.0 claude-code-acp
 Output includes:
 - URLs with embedded auth token
 - QR code for mobile connection
+
+### Server Deployment with Public URL
+
+When deploying behind a reverse proxy with a domain name:
+
+```bash
+acp-proxy --host 0.0.0.0 --public-url wss://example.com/ws claude-code-acp
+```
+
+The `--public-url` overrides the QR code URL, so mobile devices can connect via your domain instead of the local IP.
 
 ### Agent with Arguments
 
