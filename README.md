@@ -24,7 +24,7 @@ Then open http://localhost:9315 in your browser.
 
 For full browser control (reading tabs, executing scripts), use the extension:
 
-1. Download `chrome-extension.zip` from [Releases](https://github.com/Areo-Joe/chrome-acp/releases)
+1. Download `chrome-acp.zip` from [Releases](https://github.com/Areo-Joe/chrome-acp/releases)
 2. Unzip and load in `chrome://extensions` (enable Developer mode → Load unpacked)
 3. Click the extension icon → Connect to your running proxy
 
