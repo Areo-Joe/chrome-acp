@@ -7,6 +7,9 @@ import type {
   BrowserTabsResult,
   BrowserReadResult,
   BrowserExecuteResult,
+  PageContextHandler,
+  PageContextTab,
+  PageContextResult,
 } from "@chrome-acp/shared/acp";
 
 // Execute browser_tabs: List all open tabs
@@ -220,3 +223,40 @@ function executeScriptInMainWorld(script: string): { result?: unknown; error?: s
     return { error: (error as Error).message };
   }
 }
+
+// Page context handler for attaching page content to chat messages
+export const pageContextHandler: PageContextHandler = {
+  async listTabs(): Promise<PageContextTab[]> {
+    const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const currentTabId = currentTab?.id;
+    const allTabs = await chrome.tabs.query({ currentWindow: true });
+    return allTabs
+      .filter((tab) => tab.id !== undefined)
+      .map((tab) => ({
+        id: tab.id!,
+        url: tab.url || "",
+        title: tab.title || "",
+        active: tab.id === currentTabId,
+        index: tab.index,
+      }));
+  },
+
+  async readTab(tabId: number): Promise<PageContextResult> {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: collectPageInfo,
+    });
+    const pageInfo = results[0]?.result;
+    if (!pageInfo) throw new Error("Failed to read page content");
+    return {
+      url: pageInfo.url,
+      title: pageInfo.title,
+      markdown: pageInfo.dom,
+    };
+  },
+
+  onTabActivated(callback: () => void) {
+    chrome.tabs.onActivated.addListener(callback);
+    return () => chrome.tabs.onActivated.removeListener(callback);
+  },
+};

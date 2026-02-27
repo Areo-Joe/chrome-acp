@@ -3,6 +3,7 @@ import { ACPConnect } from "@/components/ACPConnect";
 import { ACPMain } from "@chrome-acp/shared/components";
 import { ThemeProvider } from "@chrome-acp/shared/lib";
 import type { ACPClient } from "@chrome-acp/shared/acp";
+import { pageContextHandler } from "@/tools/browser";
 import "./index.css";
 
 export function App() {
@@ -22,7 +23,7 @@ export function App() {
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
           {client ? (
-            <ACPMain client={client} />
+            <ACPMain client={client} pageContextHandler={pageContextHandler} />
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground p-4">
               <div className="text-center">

@@ -83,6 +83,31 @@ export type BrowserToolResult =
   | BrowserReadResult
   | BrowserExecuteResult;
 
+// ============================================================================
+// Page Context Types (for attaching page content to chat messages)
+// ============================================================================
+
+export interface PageContextTab {
+  id: number;
+  url: string;
+  title: string;
+  active: boolean;
+  index: number;
+}
+
+export interface PageContextResult {
+  url: string;
+  title: string;
+  markdown: string;
+}
+
+export interface PageContextHandler {
+  listTabs: () => Promise<PageContextTab[]>;
+  readTab: (tabId: number) => Promise<PageContextResult>;
+  /** Subscribe to tab activation changes. Returns unsubscribe function. */
+  onTabActivated?: (callback: () => void) => () => void;
+}
+
 // Messages sent TO the proxy server
 // Reference: Zed's MessageEditor.contents() builds Vec<acp::ContentBlock>
 export type ProxyMessage =
