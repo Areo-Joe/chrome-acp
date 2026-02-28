@@ -839,31 +839,10 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   // =============================================================================
   // Render
   // =============================================================================
+  const hasMessages = entries.length > 0;
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header with new thread button - Reference: Zed's new_thread_menu in agent_panel.rs */}
-      <div className="flex items-center justify-between px-4 py-2 border-b shrink-0">
-        <span className="text-sm font-medium text-muted-foreground">
-          {sessionReady ? "Agent Chat" : "Connecting..."}
-        </span>
-        {/* Reference: Zed's IconButton::new("new_thread_menu_btn", IconName::Plus) */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={handleNewSession}
-              disabled={isLoading}
-            >
-              <Plus className="h-4 w-4" />
-              <span className="sr-only">New Thread</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>New Thread</TooltipContent>
-        </Tooltip>
-      </div>
-
       {/* Messages area */}
       <Conversation className="flex-1">
         <ConversationContent>
@@ -1004,11 +983,32 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
               {/* Reference: Zed's add_images_from_picker() shows image picker button only when supported */}
               {supportsImages && <AddImageButton />}
             </div>
-            <PromptInputSubmit
-              status={chatStatus}
-              disabled={!sessionReady}
-              onClick={isLoading ? handleCancel : undefined}
-            />
+            {/* Right side: New thread button (when has messages) and submit */}
+            <div className="flex items-center gap-1">
+              {/* New Thread button - only show when there are messages */}
+              {/* Reference: Zed's new_thread_menu in agent_panel.rs */}
+              {hasMessages && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handleNewSession}
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span className="sr-only">New Thread</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>New Thread</TooltipContent>
+                </Tooltip>
+              )}
+              <PromptInputSubmit
+                status={chatStatus}
+                disabled={!sessionReady}
+                onClick={isLoading ? handleCancel : undefined}
+              />
+            </div>
           </PromptInputFooter>
         </PromptInput>
       </div>
