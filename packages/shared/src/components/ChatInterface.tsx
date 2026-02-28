@@ -65,8 +65,14 @@ import {
   usePromptInputAttachments,
   type PromptInputMessage,
 } from "./ai-elements/prompt-input";
-import { ImageIcon } from "lucide-react";
+import { ImageIcon, Plus } from "lucide-react";
 import { ModelSelectorPopover } from "./model-selector";
+import { Button } from "./ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "./ui/tooltip";
 
 // Reference: Zed's add_images_from_picker() - Button to open file dialog for images
 // Must be inside PromptInput to access attachments context
@@ -525,6 +531,30 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   // User Actions
   // =============================================================================
 
+  // Reference: Zed's ConnectionView.reset() + set_server_state() + _external_thread()
+  // Creates a new session by clearing current state and calling new_session
+  // This is the core of Zed's NewThread action
+  const handleNewSession = useCallback(() => {
+    console.log("[ChatInterface] Creating new session...");
+
+    // Reference: Zed's set_server_state() calls close_all_sessions() before setting new state
+    // Cancel any ongoing request before creating new session
+    if (isLoading) {
+      client.cancel();
+    }
+
+    // 1. Clear all entries (like Zed's set_server_state which creates new view)
+    setEntries([]);
+
+    // 2. Reset loading and session state
+    setIsLoading(false);
+    setSessionReady(false);
+
+    // 3. Create new session (like Zed's initial_state -> connection.new_session())
+    // The session_created handler will set sessionReady=true when ready
+    client.createSession();
+  }, [client, isLoading]);
+
   // Reference: Zed's MessageEditor.contents() builds Vec<acp::ContentBlock>
   // from text and attached images. We do the same here.
   const handleSubmit = async (message: PromptInputMessage) => {
@@ -811,6 +841,29 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   // =============================================================================
   return (
     <div className="flex flex-col h-full">
+      {/* Header with new thread button - Reference: Zed's new_thread_menu in agent_panel.rs */}
+      <div className="flex items-center justify-between px-4 py-2 border-b shrink-0">
+        <span className="text-sm font-medium text-muted-foreground">
+          {sessionReady ? "Agent Chat" : "Connecting..."}
+        </span>
+        {/* Reference: Zed's IconButton::new("new_thread_menu_btn", IconName::Plus) */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleNewSession}
+              disabled={isLoading}
+            >
+              <Plus className="h-4 w-4" />
+              <span className="sr-only">New Thread</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>New Thread</TooltipContent>
+        </Tooltip>
+      </div>
+
       {/* Messages area */}
       <Conversation className="flex-1">
         <ConversationContent>
