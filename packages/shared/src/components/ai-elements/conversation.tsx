@@ -2,7 +2,7 @@
 
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
-import { ArrowDownIcon } from "lucide-react";
+import { ArrowDownIcon, UserIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 import { useCallback } from "react";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
@@ -70,32 +70,112 @@ export const ConversationEmptyState = ({
 
 export type ConversationScrollButtonProps = ComponentProps<typeof Button>;
 
+/**
+ * Button to scroll to the bottom of the conversation.
+ * Can be used standalone or within ConversationScrollButtons container.
+ * When used standalone, it handles its own visibility based on isAtBottom.
+ * When used in ConversationScrollButtons, the container manages visibility.
+ */
 export const ConversationScrollButton = ({
   className,
   ...props
 }: ConversationScrollButtonProps) => {
-  const { isAtBottom, scrollToBottom } = useStickToBottomContext();
+  const { scrollToBottom } = useStickToBottomContext();
 
   const handleScrollToBottom = useCallback(() => {
     scrollToBottom();
   }, [scrollToBottom]);
 
   return (
-    !isAtBottom && (
-      <Button
-        className={cn(
-          "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full",
-          className
-        )}
-        onClick={handleScrollToBottom}
-        size="icon"
-        type="button"
-        variant="outline"
-        {...props}
-      >
-        <ArrowDownIcon className="size-4" />
-      </Button>
-    )
+    <Button
+      className={cn(
+        "rounded-full",
+        className
+      )}
+      onClick={handleScrollToBottom}
+      size="icon"
+      type="button"
+      variant="outline"
+      title="Scroll to bottom"
+      {...props}
+    >
+      <ArrowDownIcon className="size-4" />
+    </Button>
+  );
+};
+
+/**
+ * Data attribute used to mark the last user message element.
+ * ChatInterface adds this attribute to the last user message for scroll targeting.
+ */
+export const LAST_USER_MESSAGE_ATTR = "data-last-user-message";
+
+export type ConversationScrollToLastUserMessageButtonProps = ComponentProps<typeof Button>;
+
+/**
+ * Button to scroll to the last user message in the conversation.
+ * Reference: Issue #3 - Provide a feature to locate the last human message
+ */
+export const ConversationScrollToLastUserMessageButton = ({
+  className,
+  ...props
+}: ConversationScrollToLastUserMessageButtonProps) => {
+  const handleScrollToLastUserMessage = useCallback(() => {
+    // Find the last user message element by data attribute
+    const lastUserMessage = document.querySelector(`[${LAST_USER_MESSAGE_ATTR}="true"]`);
+    if (lastUserMessage) {
+      lastUserMessage.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, []);
+
+  return (
+    <Button
+      className={cn(
+        "rounded-full",
+        className
+      )}
+      onClick={handleScrollToLastUserMessage}
+      size="icon"
+      type="button"
+      variant="outline"
+      title="Scroll to last user message"
+      {...props}
+    >
+      <UserIcon className="size-4" />
+    </Button>
+  );
+};
+
+export type ConversationScrollButtonsProps = ComponentProps<"div"> & {
+  /** Whether there are user messages to scroll to */
+  hasUserMessages?: boolean;
+};
+
+/**
+ * Container for scroll navigation buttons.
+ * Renders scroll-to-last-user-message and scroll-to-bottom buttons side by side.
+ * Reference: Issue #3 - Provide a feature to locate the last human message
+ */
+export const ConversationScrollButtons = ({
+  className,
+  hasUserMessages = false,
+  ...props
+}: ConversationScrollButtonsProps) => {
+  const { isAtBottom } = useStickToBottomContext();
+
+  if (isAtBottom) return null;
+
+  return (
+    <div
+      className={cn(
+        "absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2",
+        className
+      )}
+      {...props}
+    >
+      {hasUserMessages && <ConversationScrollToLastUserMessageButton />}
+      <ConversationScrollButton />
+    </div>
   );
 };
 

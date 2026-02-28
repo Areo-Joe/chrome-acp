@@ -43,7 +43,8 @@ import {
   Conversation,
   ConversationContent,
   ConversationEmptyState,
-  ConversationScrollButton,
+  ConversationScrollButtons,
+  LAST_USER_MESSAGE_ATTR,
 } from "./ai-elements/conversation";
 import {
   Message,
@@ -799,6 +800,12 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
 
   const chatStatus = isLoading ? "streaming" : "ready";
 
+  // Find the index of the last user message for scroll-to-last-user-message feature
+  // Reference: Issue #3 - Provide a feature to locate the last human message
+  const lastUserMessageIndex = entries.reduce((lastIndex, entry, index) => {
+    return entry.type === "user_message" ? index : lastIndex;
+  }, -1);
+
   // =============================================================================
   // Render
   // =============================================================================
@@ -822,8 +829,15 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
                 // Render UserMessage
                 // Reference: Zed's render_image_output() displays images in user messages
                 if (entry.type === "user_message") {
+                  // Mark the last user message with data attribute for scroll-to feature
+                  // Reference: Issue #3 - Provide a feature to locate the last human message
+                  const isLastUserMessage = index === lastUserMessageIndex;
                   return (
-                    <Message key={entry.id} from="user">
+                    <Message
+                      key={entry.id}
+                      from="user"
+                      {...(isLastUserMessage && { [LAST_USER_MESSAGE_ATTR]: "true" })}
+                    >
                       <MessageContent>
                         {/* Show images using MessageAttachment component */}
                         {entry.images && entry.images.length > 0 && (
@@ -904,7 +918,8 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
             </>
           )}
         </ConversationContent>
-        <ConversationScrollButton />
+        {/* Scroll navigation buttons */}
+        <ConversationScrollButtons hasUserMessages={lastUserMessageIndex >= 0} />
       </Conversation>
 
       {/* Input area */}
