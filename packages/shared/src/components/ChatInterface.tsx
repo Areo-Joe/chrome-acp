@@ -68,6 +68,11 @@ import {
 import { ImageIcon, Plus, ChevronDownIcon, CheckCircleIcon } from "lucide-react";
 import { ModelSelectorPopover } from "./model-selector";
 import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import { Checkbox } from "./ui/checkbox";
+import { Label } from "./ui/label";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "./ui/collapsible";
+import { ScrollArea } from "./ui/scroll-area";
 import {
   Tooltip,
   TooltipContent,
@@ -126,12 +131,12 @@ function PageContextBar({
   }, [handler, refreshTabs]);
 
   // Refresh tabs when expanding
-  const handleToggleExpand = async () => {
-    if (!expanded) {
+  const handleToggleExpand = async (open: boolean) => {
+    if (open) {
       const result = await handler.listTabs();
       setTabs(result.sort((a, b) => a.index - b.index));
     }
-    setExpanded(!expanded);
+    setExpanded(open);
   };
 
   if (loading) return null;
@@ -144,46 +149,86 @@ function PageContextBar({
     : [...sentTabs, ...(activeTab && !sentTabIds.has(activeTab.id) ? [activeTab] : [])];
 
   return (
-    <div className="border-b px-3 py-1.5 flex flex-col gap-1">
+    <Collapsible open={expanded} onOpenChange={handleToggleExpand} className="border-b px-3 py-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground font-medium">Page context</span>
-        <button
-          type="button"
-          className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5"
-          onClick={handleToggleExpand}
-        >
-          {expanded ? "Collapse" : `All tabs (${tabs.length})`}
-          <ChevronDownIcon className={`size-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
-        </button>
+        <Label className="text-xs text-muted-foreground font-medium">Page context</Label>
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-auto py-0 px-1 text-xs text-muted-foreground hover:text-foreground">
+            {expanded ? "Collapse" : `All tabs (${tabs.length})`}
+            <ChevronDownIcon className={`ml-0.5 size-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
+          </Button>
+        </CollapsibleTrigger>
       </div>
-      <div className={`flex flex-col gap-0.5 ${expanded ? "max-h-40 overflow-y-auto" : ""}`}>
-        {displayTabs.map((tab) => {
-          const isSent = sentTabIds.has(tab.id);
-          const isSelected = selectedTabIds.has(tab.id);
-          return (
-            <label
+      
+      {/* Default view: sent tabs + current active tab */}
+      {!expanded && (
+        <div className="flex flex-col gap-0.5 mt-1">
+          {displayTabs.map((tab) => (
+            <TabItem
               key={tab.id}
-              className={`flex items-center gap-2 text-xs py-0.5 rounded cursor-pointer hover:bg-accent/50 px-1 ${isSent ? "opacity-60" : ""}`}
-            >
-              {isSent ? (
-                <CheckCircleIcon className="size-3.5 shrink-0 text-green-500" />
-              ) : (
-                <input
-                  type="checkbox"
-                  className="size-3.5 shrink-0 accent-primary"
-                  checked={isSelected}
-                  onChange={() => onToggle(tab.id)}
-                />
-              )}
-              <span className="truncate flex-1">{tab.title || tab.url}</span>
-              {tab.active && !expanded && (
-                <span className="text-[10px] text-muted-foreground">current</span>
-              )}
-            </label>
-          );
-        })}
-      </div>
-    </div>
+              tab={tab}
+              isSent={sentTabIds.has(tab.id)}
+              isSelected={selectedTabIds.has(tab.id)}
+              showCurrentBadge={tab.active}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
+      )}
+      
+      {/* Expanded view: all tabs in ScrollArea */}
+      <CollapsibleContent>
+        <ScrollArea className="max-h-40 mt-1">
+          <div className="flex flex-col gap-0.5">
+            {displayTabs.map((tab) => (
+              <TabItem
+                key={tab.id}
+                tab={tab}
+                isSent={sentTabIds.has(tab.id)}
+                isSelected={selectedTabIds.has(tab.id)}
+                showCurrentBadge={false}
+                onToggle={onToggle}
+              />
+            ))}
+          </div>
+        </ScrollArea>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+// Individual tab item component using Shadcn UI components
+function TabItem({
+  tab,
+  isSent,
+  isSelected,
+  showCurrentBadge,
+  onToggle,
+}: {
+  tab: PageContextTab;
+  isSent: boolean;
+  isSelected: boolean;
+  showCurrentBadge: boolean;
+  onToggle: (tabId: number) => void;
+}) {
+  return (
+    <Label
+      className={`flex items-center gap-2 text-xs py-0.5 rounded cursor-pointer hover:bg-accent/50 px-1 ${isSent ? "opacity-60 cursor-default" : ""}`}
+    >
+      {isSent ? (
+        <CheckCircleIcon className="size-4 shrink-0 text-green-500" />
+      ) : (
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => onToggle(tab.id)}
+          className="size-4"
+        />
+      )}
+      <span className="truncate flex-1">{tab.title || tab.url}</span>
+      {showCurrentBadge && (
+        <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">current</Badge>
+      )}
+    </Label>
   );
 }
 
