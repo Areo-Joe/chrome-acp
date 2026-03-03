@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import imageCompression from "browser-image-compression";
 import type { ACPClient } from "../acp/client";
-import type { SessionUpdate, ToolCallContent, PermissionRequestPayload, PermissionOption, ContentBlock, ImageContent } from "../acp/types";
+import type { SessionUpdate, ToolCallContent, PermissionRequestPayload, PermissionOption, ContentBlock, ImageContent, PageContextHandler, PageContextTab } from "../acp/types";
 
 // Image compression options
 // Claude API has a 5MB limit, so we target 2MB to be safe
@@ -65,9 +65,14 @@ import {
   usePromptInputAttachments,
   type PromptInputMessage,
 } from "./ai-elements/prompt-input";
-import { ImageIcon, Plus } from "lucide-react";
+import { ImageIcon, Plus, ChevronDownIcon, CheckCircleIcon } from "lucide-react";
 import { ModelSelectorPopover } from "./model-selector";
 import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import { Checkbox } from "./ui/checkbox";
+import { Label } from "./ui/label";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "./ui/collapsible";
+import { ScrollArea } from "./ui/scroll-area";
 import {
   Tooltip,
   TooltipContent,
@@ -90,6 +95,143 @@ function AddImageButton() {
     </PromptInputButton>
   );
 }
+
+// Tab selector bar for attaching page content above the input
+function PageContextBar({
+  handler,
+  selectedTabIds,
+  sentTabIds,
+  onToggle,
+}: {
+  handler: PageContextHandler;
+  selectedTabIds: Set<number>;
+  sentTabIds: Set<number>;
+  onToggle: (tabId: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [tabs, setTabs] = useState<PageContextTab[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refreshTabs = useCallback(() => {
+    handler.listTabs().then((result) => {
+      setTabs(result.sort((a, b) => a.index - b.index));
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [handler]);
+
+  // Load tabs on mount
+  useEffect(() => {
+    refreshTabs();
+  }, [refreshTabs]);
+
+  // Re-fetch tabs when active tab changes
+  useEffect(() => {
+    if (!handler.onTabActivated) return;
+    return handler.onTabActivated(refreshTabs);
+  }, [handler, refreshTabs]);
+
+  // Refresh tabs when expanding
+  const handleToggleExpand = async (open: boolean) => {
+    if (open) {
+      const result = await handler.listTabs();
+      setTabs(result.sort((a, b) => a.index - b.index));
+    }
+    setExpanded(open);
+  };
+
+  if (loading) return null;
+
+  const activeTab = tabs.find((t) => t.active);
+  // Sent tabs always stick on top, then current tab (when collapsed)
+  const sentTabs = tabs.filter((t) => sentTabIds.has(t.id));
+  const displayTabs = expanded
+    ? [...sentTabs, ...tabs.filter((t) => !sentTabIds.has(t.id))]
+    : [...sentTabs, ...(activeTab && !sentTabIds.has(activeTab.id) ? [activeTab] : [])];
+
+  return (
+    <Collapsible open={expanded} onOpenChange={handleToggleExpand} className="border-b px-3 py-1.5">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs text-muted-foreground font-medium">Page context</Label>
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-auto py-0 px-1 text-xs text-muted-foreground hover:text-foreground">
+            {expanded ? "Collapse" : `All tabs (${tabs.length})`}
+            <ChevronDownIcon className={`ml-0.5 size-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
+          </Button>
+        </CollapsibleTrigger>
+      </div>
+      
+      {/* Default view: sent tabs + current active tab */}
+      {!expanded && (
+        <div className="flex flex-col gap-0.5 mt-1">
+          {displayTabs.map((tab) => (
+            <TabItem
+              key={tab.id}
+              tab={tab}
+              isSent={sentTabIds.has(tab.id)}
+              isSelected={selectedTabIds.has(tab.id)}
+              showCurrentBadge={tab.active}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
+      )}
+      
+      {/* Expanded view: all tabs in ScrollArea */}
+      <CollapsibleContent>
+        <ScrollArea className="max-h-40 mt-1">
+          <div className="flex flex-col gap-0.5">
+            {displayTabs.map((tab) => (
+              <TabItem
+                key={tab.id}
+                tab={tab}
+                isSent={sentTabIds.has(tab.id)}
+                isSelected={selectedTabIds.has(tab.id)}
+                showCurrentBadge={false}
+                onToggle={onToggle}
+              />
+            ))}
+          </div>
+        </ScrollArea>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+// Individual tab item component using Shadcn UI components
+function TabItem({
+  tab,
+  isSent,
+  isSelected,
+  showCurrentBadge,
+  onToggle,
+}: {
+  tab: PageContextTab;
+  isSent: boolean;
+  isSelected: boolean;
+  showCurrentBadge: boolean;
+  onToggle: (tabId: number) => void;
+}) {
+  return (
+    <Label
+      className={`flex items-center gap-2 text-xs py-0.5 rounded cursor-pointer hover:bg-accent/50 px-1 ${isSent ? "opacity-60 cursor-default" : ""}`}
+    >
+      {isSent ? (
+        <CheckCircleIcon className="size-4 shrink-0 text-green-500" />
+      ) : (
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => onToggle(tab.id)}
+          className="size-4"
+        />
+      )}
+      <span className="truncate flex-1">{tab.title || tab.url}</span>
+      {showCurrentBadge && (
+        <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">current</Badge>
+      )}
+    </Label>
+  );
+}
+
 import {
   Tool,
   ToolHeader,
@@ -168,6 +310,7 @@ type ThreadEntry = UserMessageEntry | AssistantMessageEntry | ToolCallEntry;
 
 interface ChatInterfaceProps {
   client: ACPClient;
+  pageContextHandler?: PageContextHandler;
 }
 
 // Helper to format tool call content for display
@@ -230,13 +373,17 @@ function findToolCallIndex(entries: ThreadEntry[], toolCallId: string): number {
 // ChatInterface Component
 // =============================================================================
 
-export function ChatInterface({ client }: ChatInterfaceProps) {
+export function ChatInterface({ client, pageContextHandler }: ChatInterfaceProps) {
   // Flat list of entries (like Zed's entries: Vec<AgentThreadEntry>)
   const [entries, setEntries] = useState<ThreadEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   // Reference: Zed's supports_images() checks prompt_capabilities.image
   const [supportsImages, setSupportsImages] = useState(false);
+
+  // Page context: track selected and already-sent tab IDs
+  const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set());
+  const [sentTabIds, setSentTabIds] = useState<Set<number>>(new Set());
 
   // =============================================================================
   // Permission Request Handler
@@ -503,6 +650,8 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     client.setSessionCreatedHandler((sessionId) => {
       console.log("[ChatInterface] Session created:", sessionId);
       setSessionReady(true);
+      setSelectedTabIds(new Set());
+      setSentTabIds(new Set());
       // Reference: Zed's supports_images() checks prompt_capabilities.image
       // Update supportsImages from client's promptCapabilities
       setSupportsImages(client.supportsImages);
@@ -561,12 +710,39 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     const text = message.text.trim();
     const files = message.files || [];
 
-    // Allow sending if there's text OR images (like Zed)
-    if ((!text && files.length === 0) || isLoading || !sessionReady) return;
+    // Determine which tabs need to be sent (selected but not yet sent)
+    const tabsToSend = pageContextHandler
+      ? [...selectedTabIds].filter((id) => !sentTabIds.has(id))
+      : [];
+    const hasPageContext = tabsToSend.length > 0;
+
+    // Allow sending if there's text OR images OR page context
+    if ((!text && files.length === 0 && !hasPageContext) || isLoading || !sessionReady) return;
 
     // Build ContentBlock[] from text and files
     // Reference: Zed's contents() method builds text chunks and image chunks
     const contentBlocks: ContentBlock[] = [];
+
+    // Read and attach selected page contexts
+    if (hasPageContext && pageContextHandler) {
+      for (const tabId of tabsToSend) {
+        try {
+          const result = await pageContextHandler.readTab(tabId);
+          contentBlocks.push({
+            type: "text",
+            text: `<page_context url="${result.url}" title="${result.title}">\n${result.markdown}\n</page_context>`,
+          });
+        } catch (e) {
+          console.error("[ChatInterface] Failed to read tab:", tabId, e);
+        }
+      }
+      // Mark these tabs as sent (locked)
+      setSentTabIds((prev) => {
+        const next = new Set(prev);
+        for (const id of tabsToSend) next.add(id);
+        return next;
+      });
+    }
 
     // Add text content if present
     if (text) {
@@ -955,7 +1131,24 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
       </Conversation>
 
       {/* Input area */}
-      <div className="border-t p-4">
+      <div className="border-t">
+        {/* Page context tab selector above input */}
+        {pageContextHandler && (
+          <PageContextBar
+            handler={pageContextHandler}
+            selectedTabIds={selectedTabIds}
+            sentTabIds={sentTabIds}
+            onToggle={(tabId) => {
+              setSelectedTabIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(tabId)) next.delete(tabId);
+                else next.add(tabId);
+                return next;
+              });
+            }}
+          />
+        )}
+        <div className="p-4 pt-2">
         {/* Reference: Zed's MessageEditor conditionally shows attachment UI based on supports_images() */}
         <PromptInput
           onSubmit={handleSubmit}
@@ -1011,6 +1204,7 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
             </div>
           </PromptInputFooter>
         </PromptInput>
+        </div>
       </div>
     </div>
   );
