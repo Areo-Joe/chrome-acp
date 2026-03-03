@@ -216,7 +216,7 @@ export function ThreadHistory({ client, onSelectSession }: ThreadHistoryProps) {
       </div>
 
       {/* Session list */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         {error && (
           <div className="p-4 text-center text-destructive text-sm">{error}</div>
         )}
