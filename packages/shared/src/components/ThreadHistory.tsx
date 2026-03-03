@@ -246,10 +246,10 @@ export function ThreadHistory({ client, onSelectSession }: ThreadHistoryProps) {
 
         {/* p-2 ensures rounded corners of buttons are not clipped */}
         <div className="p-2">
-          {groupedSessions.map((group) => (
+          {groupedSessions.map((group, groupIndex) => (
             <div key={group.bucket}>
               {/* Bucket separator - Reference: Zed's BucketSeparator */}
-              <div className="px-2 pt-3 pb-1">
+              <div className={cn("px-2 pb-1", groupIndex > 0 && "pt-3")}>
                 <span className="text-xs text-muted-foreground font-medium">
                   {BUCKET_LABELS[group.bucket]}
                 </span>
