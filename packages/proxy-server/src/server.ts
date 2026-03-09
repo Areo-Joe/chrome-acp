@@ -292,6 +292,7 @@ async function handleConnect(ws: WSContext): Promise<void> {
       sessionList: !!state.agentCapabilities?.sessionCapabilities?.list,
       sessionResume: !!state.agentCapabilities?.sessionCapabilities?.resume,
       promptCapabilities: state.promptCapabilities,
+      mcpCapabilities: state.agentCapabilities?.mcpCapabilities,
     });
 
     send(ws, "status", {
@@ -327,16 +328,17 @@ async function handleNewSession(
 
   try {
     const sessionCwd = params.cwd || AGENT_CWD;
+    const mcpServers = [
+      {
+        type: "http" as const,
+        url: `http://localhost:${SERVER_PORT}/mcp`,
+        name: "browser",
+        headers: [],
+      },
+    ];
     const result = await state.connection.newSession({
       cwd: sessionCwd,
-      mcpServers: [
-        {
-          type: "http",
-          url: `http://localhost:${SERVER_PORT}/mcp`,
-          name: "browser",
-          headers: [],
-        },
-      ],
+      mcpServers,
     });
 
     state.sessionId = result.sessionId;
@@ -455,8 +457,9 @@ async function handleLoadSession(
 
   try {
     const sessionCwd = params.cwd || AGENT_CWD;
+    const sessionId = params.sessionId;
     const result = await state.connection.loadSession({
-      sessionId: params.sessionId,
+      sessionId,
       cwd: sessionCwd,
       mcpServers: [
         {
@@ -468,12 +471,12 @@ async function handleLoadSession(
       ],
     });
 
-    state.sessionId = result.sessionId;
+    state.sessionId = sessionId;
     state.sessionCwd = sessionCwd;
     // TODO: Zed also stores result.modes and result.configOptions
     // Reference: acp.rs line 659-665 - config_state(response.modes, response.models, response.config_options)
     state.modelState = result.models ?? null;
-    log.info("Session loaded", { sessionId: result.sessionId, cwd: sessionCwd });
+    log.info("Session loaded", { sessionId, cwd: sessionCwd });
 
     // Restart file watcher with the session cwd
     if (state.unsubscribeWatcher) {
@@ -490,7 +493,7 @@ async function handleLoadSession(
     }
 
     send(ws, "session_loaded", {
-      sessionId: result.sessionId,
+      sessionId,
       promptCapabilities: state.promptCapabilities,
       models: state.modelState,
     });
@@ -525,9 +528,10 @@ async function handleResumeSession(
 
   try {
     const sessionCwd = params.cwd || AGENT_CWD;
+    const sessionId = params.sessionId;
     // Note: SDK uses unstable_resumeSession until API is finalized
     const result = await state.connection.unstable_resumeSession({
-      sessionId: params.sessionId,
+      sessionId,
       cwd: sessionCwd,
       mcpServers: [
         {
@@ -539,12 +543,12 @@ async function handleResumeSession(
       ],
     });
 
-    state.sessionId = result.sessionId;
+    state.sessionId = sessionId;
     state.sessionCwd = sessionCwd;
     // TODO: Zed also stores result.modes and result.configOptions
     // Reference: acp.rs line 736-742 - config_state(response.modes, response.models, response.config_options)
     state.modelState = result.models ?? null;
-    log.info("Session resumed", { sessionId: result.sessionId, cwd: sessionCwd });
+    log.info("Session resumed", { sessionId, cwd: sessionCwd });
 
     // Restart file watcher with the session cwd
     if (state.unsubscribeWatcher) {
@@ -561,7 +565,7 @@ async function handleResumeSession(
     }
 
     send(ws, "session_resumed", {
-      sessionId: result.sessionId,
+      sessionId,
       promptCapabilities: state.promptCapabilities,
       models: state.modelState,
     });

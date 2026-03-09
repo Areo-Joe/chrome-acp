@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import imageCompression from "browser-image-compression";
 import type { ACPClient } from "../acp/client";
 import type { SessionUpdate, ToolCallContent, PermissionRequestPayload, PermissionOption, ContentBlock, ImageContent } from "../acp/types";
@@ -235,13 +235,40 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   const [entries, setEntries] = useState<ThreadEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
   // Reference: Zed's supports_images() checks prompt_capabilities.image
   const [supportsImages, setSupportsImages] = useState(false);
+
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
+
+  const resetThreadState = useCallback(() => {
+    setEntries([]);
+    setIsLoading(false);
+    setSessionReady(false);
+  }, []);
+
+  const activateSession = useCallback((sessionId: string, options?: { resetEntries?: boolean }) => {
+    const shouldResetEntries = options?.resetEntries ?? true;
+    if (shouldResetEntries) {
+      setEntries([]);
+      setIsLoading(false);
+    }
+    setActiveSessionId(sessionId);
+    setSessionReady(true);
+    setSupportsImages(client.supportsImages);
+    console.log("[ChatInterface] Active session:", sessionId, "supportsImages:", client.supportsImages);
+  }, [client]);
 
   // =============================================================================
   // Permission Request Handler
   // =============================================================================
   const handlePermissionRequest = useCallback((request: PermissionRequestPayload) => {
+    if (activeSessionIdRef.current && request.sessionId !== activeSessionIdRef.current) {
+      return;
+    }
     console.log("[ChatInterface] Permission request:", request);
 
     setEntries((prev) => {
@@ -293,7 +320,11 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   // =============================================================================
   // Session Update Handler (Zed-style: check last entry type)
   // =============================================================================
-  const handleSessionUpdate = useCallback((update: SessionUpdate) => {
+  const handleSessionUpdate = useCallback((sessionId: string, update: SessionUpdate) => {
+    if (activeSessionIdRef.current && sessionId !== activeSessionIdRef.current) {
+      return;
+    }
+
     // Handle agent message chunk
     if (update.sessionUpdate === "agent_message_chunk") {
       const text = update.content.type === "text" && update.content.text ? update.content.text : "";
@@ -502,15 +533,22 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   useEffect(() => {
     client.setSessionCreatedHandler((sessionId) => {
       console.log("[ChatInterface] Session created:", sessionId);
-      setSessionReady(true);
-      // Reference: Zed's supports_images() checks prompt_capabilities.image
-      // Update supportsImages from client's promptCapabilities
-      setSupportsImages(client.supportsImages);
-      console.log("[ChatInterface] supportsImages:", client.supportsImages);
+      activateSession(sessionId);
     });
 
-    client.setSessionUpdateHandler((update: SessionUpdate) => {
-      handleSessionUpdate(update);
+    client.setSessionLoadedHandler((sessionId) => {
+      console.log("[ChatInterface] Session loaded/resumed:", sessionId);
+      activateSession(sessionId, { resetEntries: false });
+    });
+
+    client.setSessionSwitchingHandler((sessionId) => {
+      console.log("[ChatInterface] Switching to session:", sessionId);
+      setActiveSessionId(sessionId);
+      resetThreadState();
+    });
+
+    client.setSessionUpdateHandler((sessionId: string, update: SessionUpdate) => {
+      handleSessionUpdate(sessionId, update);
     });
 
     client.setPromptCompleteHandler((stopReason) => {
@@ -525,7 +563,15 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
 
     // Create session
     client.createSession();
-  }, [client, handlePermissionRequest, handleSessionUpdate]);
+    return () => {
+      client.setSessionCreatedHandler(() => {});
+      client.setSessionLoadedHandler(() => {});
+      client.setSessionSwitchingHandler(null);
+      client.setSessionUpdateHandler(() => {});
+      client.setPromptCompleteHandler(() => {});
+      client.setPermissionRequestHandler(() => {});
+    };
+  }, [activateSession, client, handlePermissionRequest, handleSessionUpdate, resetThreadState]);
 
   // =============================================================================
   // User Actions
@@ -544,16 +590,13 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     }
 
     // 1. Clear all entries (like Zed's set_server_state which creates new view)
-    setEntries([]);
-
-    // 2. Reset loading and session state
-    setIsLoading(false);
-    setSessionReady(false);
+    resetThreadState();
+    setActiveSessionId(null);
 
     // 3. Create new session (like Zed's initial_state -> connection.new_session())
     // The session_created handler will set sessionReady=true when ready
     client.createSession();
-  }, [client, isLoading]);
+  }, [client, isLoading, resetThreadState]);
 
   // Reference: Zed's MessageEditor.contents() builds Vec<acp::ContentBlock>
   // from text and attached images. We do the same here.
@@ -1015,4 +1058,3 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     </div>
   );
 }
-

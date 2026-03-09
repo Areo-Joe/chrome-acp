@@ -37,7 +37,7 @@ export type ConnectionStateHandler = (
   state: ConnectionState,
   error?: string,
 ) => void;
-export type SessionUpdateHandler = (update: SessionUpdate) => void;
+export type SessionUpdateHandler = (sessionId: string, update: SessionUpdate) => void;
 export type SessionCreatedHandler = (sessionId: string) => void;
 export type PromptCompleteHandler = (stopReason: string) => void;
 export type PermissionRequestHandler = (request: PermissionRequestPayload) => void;
@@ -51,12 +51,17 @@ export type FileChangesHandler = (changes: FileChange[]) => void;
 export type DirListingPushHandler = (path: string, items: FileItem[]) => void;
 // Handler for session loaded/resumed events
 export type SessionLoadedHandler = (sessionId: string) => void;
+// Handler fired before switching the active session.
+// This matches Zed's model more closely: the UI changes active thread first,
+// then receives updates for that thread while load/resume is in flight.
+export type SessionSwitchingHandler = (sessionId: string) => void;
 
 export class ACPClient {
   private ws: WebSocket | null = null;
   private settings: ACPSettings;
   private connectionState: ConnectionState = "disconnected";
   private sessionId: string | null = null;
+  private pendingSessionTarget: string | null = null;
   // Reference: Zed stores full agentCapabilities from initialize response
   // Used to check supports_load_session, supports_resume_session, etc.
   private _agentCapabilities: AgentCapabilities | null = null;
@@ -68,6 +73,7 @@ export class ACPClient {
   private onModelChanged: ModelChangedHandler | null = null;
   private onModelStateChanged: ModelStateChangedHandler | null = null;
   private onSessionLoaded: SessionLoadedHandler | null = null;
+  private onSessionSwitching: SessionSwitchingHandler | null = null;
 
   private onConnectionStateChange: ConnectionStateHandler | null = null;
   private onSessionUpdate: SessionUpdateHandler | null = null;
@@ -138,6 +144,10 @@ export class ACPClient {
 
   setBrowserToolCallHandler(handler: BrowserToolCallHandler): void {
     this.onBrowserToolCall = handler;
+  }
+
+  setSessionSwitchingHandler(handler: SessionSwitchingHandler | null): void {
+    this.onSessionSwitching = handler;
   }
 
   /**
@@ -336,6 +346,7 @@ export class ACPClient {
 
       case "error":
         console.error("[ACPClient] Error:", response.payload.message);
+        this.pendingSessionTarget = null;
         // Reject pending session operations if any
         this.pendingSessionList?.reject(new Error(response.payload.message));
         this.pendingSessionList = null;
@@ -350,6 +361,7 @@ export class ACPClient {
 
       case "session_created":
         this.sessionId = response.payload.sessionId;
+        this.pendingSessionTarget = null;
         // Reference: Zed stores promptCapabilities from session/initialize response
         this._promptCapabilities = response.payload.promptCapabilities ?? null;
         // Reference: Zed stores model state from NewSessionResponse.models
@@ -369,6 +381,7 @@ export class ACPClient {
 
       case "session_loaded":
         this.sessionId = response.payload.sessionId;
+        this.pendingSessionTarget = null;
         this._promptCapabilities = response.payload.promptCapabilities ?? null;
         this._modelState = response.payload.models ?? null;
         console.log("[ACPClient] Session loaded:", response.payload.sessionId);
@@ -380,6 +393,7 @@ export class ACPClient {
 
       case "session_resumed":
         this.sessionId = response.payload.sessionId;
+        this.pendingSessionTarget = null;
         this._promptCapabilities = response.payload.promptCapabilities ?? null;
         this._modelState = response.payload.models ?? null;
         console.log("[ACPClient] Session resumed:", response.payload.sessionId);
@@ -390,7 +404,7 @@ export class ACPClient {
         break;
 
       case "session_update":
-        this.onSessionUpdate?.(response.payload.update);
+        this.onSessionUpdate?.(response.payload.sessionId, response.payload.update);
         break;
 
       case "prompt_complete":
@@ -593,10 +607,13 @@ export class ACPClient {
       throw new Error("Loading sessions is not supported by this agent");
     }
     return new Promise((resolve, reject) => {
+      this.pendingSessionTarget = request.sessionId;
+      this.onSessionSwitching?.(request.sessionId);
       this.pendingSessionLoad = { resolve, reject };
       try {
         this.send({ type: "load_session", payload: request });
       } catch (err) {
+        this.pendingSessionTarget = null;
         this.pendingSessionLoad = null;
         reject(err);
         return;
@@ -604,6 +621,7 @@ export class ACPClient {
       // Timeout after 60 seconds (loading may take time for large sessions)
       setTimeout(() => {
         if (this.pendingSessionLoad) {
+          this.pendingSessionTarget = null;
           const pending = this.pendingSessionLoad;
           this.pendingSessionLoad = null;
           pending.reject(new Error("Load session timed out"));
@@ -622,10 +640,13 @@ export class ACPClient {
       throw new Error("Resuming sessions is not supported by this agent");
     }
     return new Promise((resolve, reject) => {
+      this.pendingSessionTarget = request.sessionId;
+      this.onSessionSwitching?.(request.sessionId);
       this.pendingSessionResume = { resolve, reject };
       try {
         this.send({ type: "resume_session", payload: request });
       } catch (err) {
+        this.pendingSessionTarget = null;
         this.pendingSessionResume = null;
         reject(err);
         return;
@@ -633,6 +654,7 @@ export class ACPClient {
       // Timeout after 30 seconds
       setTimeout(() => {
         if (this.pendingSessionResume) {
+          this.pendingSessionTarget = null;
           const pending = this.pendingSessionResume;
           this.pendingSessionResume = null;
           pending.reject(new Error("Resume session timed out"));
@@ -732,6 +754,7 @@ export class ACPClient {
     }
     this.setState("disconnected");
     this.sessionId = null;
+    this.pendingSessionTarget = null;
     this._modelState = null;
     this._agentCapabilities = null;
     // Notify model state subscribers that session is gone
@@ -759,4 +782,3 @@ export class ACPClient {
     this.fileReadRequestIds.clear();
   }
 }
-
