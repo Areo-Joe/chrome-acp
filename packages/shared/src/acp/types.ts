@@ -100,7 +100,9 @@ export type ProxyMessage =
   | { type: "resume_session"; payload: ResumeSessionRequest }
   // File explorer messages
   | { type: "list_dir"; payload: { path: string } }
-  | { type: "read_file"; payload: { path: string } };
+  | { type: "read_file"; payload: { path: string } }
+  // Heartbeat
+  | { type: "ping" };
 
 // Messages received FROM the proxy server
 // Reference: Zed's AgentConnection stores agentCapabilities from initialize response
@@ -151,6 +153,10 @@ export interface ProxyBrowserToolCallMessage {
   type: "browser_tool_call";
   callId: string;
   params: BrowserToolParams;
+}
+
+export interface ProxyPongMessage {
+  type: "pong";
 }
 
 export interface ProxyModelChangedMessage {
@@ -262,6 +268,7 @@ export type ProxyResponse =
   | ProxyPermissionRequestMessage
   | ProxyBrowserToolCallMessage
   | ProxyModelChangedMessage
+  | ProxyPongMessage
   | ProxyDirListingMessage
   | ProxyFileContentMessage
   | ProxyFileChangesMessage
