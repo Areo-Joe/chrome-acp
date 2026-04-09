@@ -99,6 +99,14 @@ export class ACPClient {
   private connectResolve: ((value: void) => void) | null = null;
   private connectReject: ((error: Error) => void) | null = null;
 
+  // Heartbeat state
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTimeout: ReturnType<typeof setTimeout> | null = null;
+  private missedPongs = 0;
+  private static readonly HEARTBEAT_INTERVAL_MS = 30_000;
+  private static readonly PONG_TIMEOUT_MS = 10_000;
+  private static readonly MAX_MISSED_PONGS = 2;
+
   constructor(settings: ACPSettings) {
     this.settings = settings;
   }
@@ -336,8 +344,10 @@ export class ACPClient {
           // Reference: Zed stores full agentCapabilities from status message
           this._agentCapabilities = response.payload.capabilities ?? null;
           this.setState("connected");
+          this.startHeartbeat();
           this.connectResolve?.();
         } else {
+          this.stopHeartbeat();
           this.setState("disconnected");
         }
         this.connectResolve = null;
@@ -466,6 +476,14 @@ export class ACPClient {
           handler(response.payload.changes);
         }
         break;
+
+      case "pong":
+        this.missedPongs = 0;
+        if (this.heartbeatTimeout) {
+          clearTimeout(this.heartbeatTimeout);
+          this.heartbeatTimeout = null;
+        }
+        break;
     }
   }
 
@@ -499,6 +517,40 @@ export class ACPClient {
         callId,
         result: { error: (error as Error).message },
       });
+    }
+  }
+
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.missedPongs = 0;
+
+    this.heartbeatInterval = setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        this.stopHeartbeat();
+        return;
+      }
+
+      this.ws.send(JSON.stringify({ type: "ping" }));
+
+      this.heartbeatTimeout = setTimeout(() => {
+        this.missedPongs++;
+        if (this.missedPongs >= ACPClient.MAX_MISSED_PONGS) {
+          console.warn(`[ACPClient] Server unresponsive (${this.missedPongs} missed pongs), closing connection`);
+          this.stopHeartbeat();
+          this.ws?.close(4000, "Heartbeat timeout");
+        }
+      }, ACPClient.PONG_TIMEOUT_MS);
+    }, ACPClient.HEARTBEAT_INTERVAL_MS);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+    if (this.heartbeatTimeout) {
+      clearTimeout(this.heartbeatTimeout);
+      this.heartbeatTimeout = null;
     }
   }
 
@@ -735,6 +787,8 @@ export class ACPClient {
   }
 
   disconnect(): void {
+    this.stopHeartbeat();
+
     // Reject any pending connect promise with a distinguishable error
     // This ensures the promise settles and callers can catch/ignore it
     if (this.connectReject) {

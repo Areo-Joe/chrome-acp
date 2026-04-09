@@ -9,6 +9,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
 import type { WSContext } from "hono/ws";
+import type { WebSocket as RawWebSocket } from "ws";
 import {
   handleMcpRequest,
   setExtensionWebSocket,
@@ -101,6 +102,8 @@ interface ClientState {
   unsubscribeWatcher: (() => void) | null;
   // Working directory for the current session (used by file explorer)
   sessionCwd: string | null;
+  // Heartbeat: tracks whether client responded to the last ping
+  isAlive: boolean;
 }
 
 // Module-level state (set when server starts)
@@ -115,6 +118,9 @@ const clients = new Map<WSContext, ClientState>();
 
 // Permission request timeout (5 minutes)
 const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000;
+
+// Heartbeat interval for WebSocket ping/pong (30 seconds)
+const HEARTBEAT_INTERVAL_MS = 30_000;
 
 // Generate unique request ID
 function generateRequestId(): string {
@@ -855,9 +861,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
       return {
         onOpen(_event, ws) {
           log.info("Client connected");
-          // File watcher is started when session is created (with correct cwd)
-          // Not started here to avoid showing wrong directory before session is established
-          clients.set(ws, {
+          const state: ClientState = {
             process: null,
             connection: null,
             sessionId: null,
@@ -867,7 +871,16 @@ export async function startServer(config: ServerConfig): Promise<void> {
             modelState: null,
             unsubscribeWatcher: null,
             sessionCwd: null,
+            isAlive: true,
+          };
+          clients.set(ws, state);
+
+          // Listen for protocol-level pong frames to track liveness
+          const rawWs = ws.raw as RawWebSocket;
+          rawWs.on("pong", () => {
+            state.isAlive = true;
           });
+
           // Register this WebSocket for browser tool calls
           setExtensionWebSocket(ws);
         },
@@ -928,6 +941,9 @@ export async function startServer(config: ServerConfig): Promise<void> {
             case "read_file":
               handleReadFile(ws, data.payload as { path: string });
               break;
+            case "ping":
+              send(ws, "pong");
+              break;
             default:
               send(ws, "error", {
                 message: `Unknown message type: ${data.type}`,
@@ -971,6 +987,21 @@ export async function startServer(config: ServerConfig): Promise<void> {
     server = serve({ fetch: app.fetch, port, hostname: host });
   }
   injectWebSocket(server);
+
+  // Heartbeat: periodically ping all connected clients to keep
+  // connections alive through intermediate gateways and detect dead clients.
+  setInterval(() => {
+    for (const [ws, state] of clients) {
+      if (!state.isAlive) {
+        log.info("Client heartbeat timeout, terminating connection");
+        const rawWs = ws.raw as RawWebSocket;
+        rawWs.terminate();
+        continue;
+      }
+      state.isAlive = false;
+      (ws.raw as RawWebSocket).ping();
+    }
+  }, HEARTBEAT_INTERVAL_MS);
 
   // Protocol strings based on HTTPS mode
   const httpProtocol = https ? "https" : "http";
