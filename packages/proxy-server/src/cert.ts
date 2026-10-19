@@ -2,7 +2,7 @@
  * Self-signed certificate generation for HTTPS support
  */
 
-import { X509Certificate } from "node:crypto";
+import { createHash, X509Certificate } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, networkInterfaces } from "node:os";
 import { join } from "node:path";
@@ -55,6 +55,21 @@ const CERT_VALIDITY_DAYS = 365;
 export interface TlsOptions {
   key: string;
   cert: string;
+}
+
+/** Trust the proxy certificate in Node-based agents without replacing custom CAs. */
+export function getAgentTlsEnv(cert: string): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  const extraCaPath = env.NODE_EXTRA_CA_CERTS;
+  const bundle = extraCaPath
+    ? `${readFileSync(extraCaPath, "utf-8").trim()}\n${cert}`
+    : cert;
+  // Separate bundles let proxies with different custom CAs run concurrently.
+  const hash = createHash("sha256").update(bundle).digest("hex");
+  const bundlePath = join(CERT_DIR, `agent-ca-${hash}.pem`);
+  writeFileSync(bundlePath, bundle, { mode: 0o600 });
+  env.NODE_EXTRA_CA_CERTS = bundlePath;
+  return env;
 }
 
 /**

@@ -16,7 +16,7 @@ import {
   handleBrowserToolResponse,
 } from "./mcp/handler.js";
 import { log } from "./logger.js";
-import { getOrCreateCertificate, getLanIPs } from "./cert.js";
+import { getOrCreateCertificate, getLanIPs, getAgentTlsEnv } from "./cert.js";
 import {
   listDir,
   readFile,
@@ -110,11 +110,20 @@ interface ClientState {
 let AGENT_COMMAND: string;
 let AGENT_ARGS: string[];
 let AGENT_CWD: string;
-let SERVER_PORT: number;
-let SERVER_HOST: string;
+let BROWSER_MCP_URL: string;
+let AGENT_ENV: NodeJS.ProcessEnv;
 let AUTH_TOKEN: string | undefined;
 
 const clients = new Map<WSContext, ClientState>();
+
+function getBrowserMcpServers() {
+  return [{
+    type: "http" as const,
+    url: BROWSER_MCP_URL,
+    name: "browser",
+    headers: [],
+  }];
+}
 
 // Permission request timeout (5 minutes)
 const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000;
@@ -244,6 +253,7 @@ async function handleConnect(ws: WSContext): Promise<void> {
     const agentProcess = spawn(AGENT_COMMAND, AGENT_ARGS, {
       cwd: AGENT_CWD,
       stdio: ["pipe", "pipe", "inherit"],
+      env: AGENT_ENV,
     });
 
     state.process = agentProcess;
@@ -334,17 +344,9 @@ async function handleNewSession(
 
   try {
     const sessionCwd = params.cwd || AGENT_CWD;
-    const mcpServers = [
-      {
-        type: "http" as const,
-        url: `http://localhost:${SERVER_PORT}/mcp`,
-        name: "browser",
-        headers: [],
-      },
-    ];
     const result = await state.connection.newSession({
       cwd: sessionCwd,
-      mcpServers,
+      mcpServers: getBrowserMcpServers(),
     });
 
     state.sessionId = result.sessionId;
@@ -467,14 +469,7 @@ async function handleLoadSession(
     const result = await state.connection.loadSession({
       sessionId,
       cwd: sessionCwd,
-      mcpServers: [
-        {
-          type: "http",
-          url: `http://localhost:${SERVER_PORT}/mcp`,
-          name: "browser",
-          headers: [],
-        },
-      ],
+      mcpServers: getBrowserMcpServers(),
     });
 
     state.sessionId = sessionId;
@@ -539,14 +534,7 @@ async function handleResumeSession(
     const result = await state.connection.unstable_resumeSession({
       sessionId,
       cwd: sessionCwd,
-      mcpServers: [
-        {
-          type: "http",
-          url: `http://localhost:${SERVER_PORT}/mcp`,
-          name: "browser",
-          headers: [],
-        },
-      ],
+      mcpServers: getBrowserMcpServers(),
     });
 
     state.sessionId = sessionId;
@@ -808,8 +796,8 @@ export async function startServer(config: ServerConfig): Promise<void> {
   AGENT_COMMAND = command;
   AGENT_ARGS = args;
   AGENT_CWD = cwd;
-  SERVER_PORT = port;
-  SERVER_HOST = host;
+  BROWSER_MCP_URL = `${https ? "https" : "http"}://localhost:${port}/mcp`;
+  AGENT_ENV = { ...process.env };
   AUTH_TOKEN = token;
 
   const app = new Hono();
@@ -976,6 +964,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
   let server;
   if (https) {
     const tlsOptions = await getOrCreateCertificate();
+    AGENT_ENV = getAgentTlsEnv(tlsOptions.cert);
     server = serve({
       fetch: app.fetch,
       port,
