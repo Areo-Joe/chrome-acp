@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Search, Clock, RefreshCw } from "lucide-react";
+import { Search, Clock, RefreshCw, Trash2 } from "lucide-react";
 import type { ACPClient } from "../acp/client";
-import type { AgentSessionInfo } from "../acp/types";
+import type { SessionInfo } from "../acp/types";
 import { Input } from "./ui/input";
 import { ScrollArea } from "./ui/scroll-area";
 import { Button } from "./ui/button";
@@ -80,16 +80,16 @@ function formatRelativeTime(date: Date | null): string {
 interface ThreadHistoryProps {
   client: ACPClient;
   // Returns Promise to allow loading state tracking; resolves when session is loaded
-  onSelectSession: (session: AgentSessionInfo) => void | Promise<void>;
+  onSelectSession: (session: SessionInfo) => void | Promise<void>;
 }
 
 interface GroupedSessions {
   bucket: TimeBucket;
-  sessions: AgentSessionInfo[];
+  sessions: SessionInfo[];
 }
 
 export function ThreadHistory({ client, onSelectSession }: ThreadHistoryProps) {
-  const [sessions, setSessions] = useState<AgentSessionInfo[]>([]);
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   // Start with isLoading=true to prevent flash of "no threads" message
   const [isLoading, setIsLoading] = useState(true);
@@ -97,6 +97,7 @@ export function ThreadHistory({ client, onSelectSession }: ThreadHistoryProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   // Track which session is currently being loaded to show loading state and prevent double-clicks
   const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
 
   // Check if session history is supported
   const supportsHistory = client.supportsSessionHistory;
@@ -112,8 +113,18 @@ export function ThreadHistory({ client, onSelectSession }: ThreadHistoryProps) {
     setError(null);
 
     try {
-      const response = await client.listSessions();
-      setSessions(response.sessions);
+      // Reference: Zed's `collect_all_sessions` pages until `nextCursor` is
+      // absent or repeats the previous cursor.
+      const collected: SessionInfo[] = [];
+      let cursor: string | undefined;
+      for (;;) {
+        const response = await client.listSessions(cursor ? { cursor } : undefined);
+        collected.push(...response.sessions);
+        const nextCursor = response.nextCursor ?? undefined;
+        if (!nextCursor || nextCursor === cursor) break;
+        cursor = nextCursor;
+      }
+      setSessions(collected);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -129,6 +140,29 @@ export function ThreadHistory({ client, onSelectSession }: ThreadHistoryProps) {
       setIsLoading(false);
     }
   }, [supportsHistory, loadSessions]);
+
+  // Reference: Zed's `session_info_update` updates the session list entry live.
+  useEffect(() => {
+    client.setSessionInfoChangedHandler((info) => {
+      if (!info) return;
+      setSessions((prev) => {
+        const index = prev.findIndex((s) => s.sessionId === info.sessionId);
+        if (index < 0) return prev;
+        const next = [...prev];
+        const entry = next[index];
+        if (!entry) return prev;
+        // `info` is the session-scoped info (which may not know the listed
+        // cwd), so only merge the fields carried by `session_info_update`.
+        next[index] = {
+          ...entry,
+          ...(info.title !== undefined && { title: info.title }),
+          ...(info.updatedAt !== undefined && { updatedAt: info.updatedAt }),
+        };
+        return next;
+      });
+    });
+    return () => client.setSessionInfoChangedHandler(() => {});
+  }, [client]);
 
   // Filter and group sessions
   // Reference: Zed's add_list_separators and filter_search_results
@@ -152,23 +186,26 @@ export function ThreadHistory({ client, onSelectSession }: ThreadHistoryProps) {
     });
 
     // Group by time bucket (preserving sort order within each bucket)
-    const groups = new Map<TimeBucket, AgentSessionInfo[]>();
+    const groups = new Map<TimeBucket, SessionInfo[]>();
     for (const session of sorted) {
       const date = session.updatedAt ? new Date(session.updatedAt) : new Date(0);
       const bucket = getTimeBucket(date);
-      if (!groups.has(bucket)) groups.set(bucket, []);
-      groups.get(bucket)!.push(session);
+      const existing = groups.get(bucket);
+      if (existing) existing.push(session);
+      else groups.set(bucket, [session]);
     }
 
     // Return in chronological bucket order
     const bucketOrder: TimeBucket[] = ["today", "yesterday", "thisWeek", "pastWeek", "all"];
     return bucketOrder
-      .filter((b) => groups.has(b))
-      .map((bucket) => ({ bucket, sessions: groups.get(bucket)! }));
+      .flatMap((bucket) => {
+        const sessions = groups.get(bucket);
+        return sessions ? [{ bucket, sessions }] : [];
+      });
   }, [sessions, searchQuery]);
 
   const handleSelectSession = useCallback(
-    async (session: AgentSessionInfo) => {
+    async (session: SessionInfo) => {
       // Prevent double-clicks while loading
       if (loadingSessionId) return;
 
@@ -180,6 +217,22 @@ export function ThreadHistory({ client, onSelectSession }: ThreadHistoryProps) {
       }
     },
     [onSelectSession, loadingSessionId]
+  );
+
+  const handleDeleteSession = useCallback(
+    async (session: SessionInfo) => {
+      if (deletingSessionId) return;
+      setDeletingSessionId(session.sessionId);
+      try {
+        await client.deleteSession(session.sessionId);
+        setSessions((prev) => prev.filter((s) => s.sessionId !== session.sessionId));
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setDeletingSessionId(null);
+      }
+    },
+    [client, deletingSessionId],
   );
 
   if (!supportsHistory) {
@@ -263,35 +316,56 @@ export function ThreadHistory({ client, onSelectSession }: ThreadHistoryProps) {
                 const isAnyLoading = loadingSessionId !== null;
                 const date = session.updatedAt ? new Date(session.updatedAt) : null;
 
+                const isDeleting = deletingSessionId === session.sessionId;
                 return (
-                  <button
+                  <div
                     key={session.sessionId}
-                    disabled={isAnyLoading}
-                    onClick={() => {
-                      setSelectedIndex(globalIdx);
-                      handleSelectSession(session);
-                    }}
                     className={cn(
-                      // min-w-0 is required for truncate to work in flex containers
-                      "w-full min-w-0 flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors",
-                      "hover:bg-accent",
+                      "group flex items-center gap-1 rounded-md transition-colors hover:bg-accent",
                       isSelected && "bg-accent",
-                      isAnyLoading && !isLoadingThis && "opacity-50 cursor-not-allowed",
-                      isLoadingThis && "bg-accent"
+                      isLoadingThis && "bg-accent",
+                      isAnyLoading && !isLoadingThis && "opacity-50",
                     )}
                   >
-                    {/* min-w-0 + truncate ensures long titles are clipped with ellipsis */}
-                    <span className="text-sm truncate flex-1 min-w-0">
-                      {session.title && session.title.trim() ? session.title : "New Thread"}
-                    </span>
-                    <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">
-                      {isLoadingThis ? (
-                        <RefreshCw className="h-3 w-3 animate-spin" />
-                      ) : (
-                        formatRelativeTime(date)
+                    <button
+                      disabled={isAnyLoading}
+                      onClick={() => {
+                        setSelectedIndex(globalIdx);
+                        handleSelectSession(session);
+                      }}
+                      className={cn(
+                        // min-w-0 is required for truncate to work in flex containers
+                        "min-w-0 flex-1 flex items-center gap-2 px-3 py-2 rounded-md text-left",
+                        isAnyLoading && !isLoadingThis && "cursor-not-allowed",
                       )}
-                    </span>
-                  </button>
+                    >
+                      {/* min-w-0 + truncate ensures long titles are clipped with ellipsis */}
+                      <span className="text-sm truncate flex-1 min-w-0">
+                        {session.title && session.title.trim() ? session.title : "New Thread"}
+                      </span>
+                      <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">
+                        {isLoadingThis ? (
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                        ) : (
+                          formatRelativeTime(date)
+                        )}
+                      </span>
+                    </button>
+                    {client.supportsDeleteSession && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="mr-1 size-7 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                        disabled={isDeleting}
+                        title="Delete thread"
+                        onClick={() => void handleDeleteSession(session)}
+                      >
+                        <Trash2
+                          className={cn("size-3.5", isDeleting && "animate-pulse")}
+                        />
+                      </Button>
+                    )}
+                  </div>
                 );
               })}
             </div>

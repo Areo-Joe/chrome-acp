@@ -1,16 +1,16 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import type { ACPClient } from "../acp/client";
-import type { ModelInfo, SessionModelState } from "../acp/types";
+import type { ModelPickerOption, ModelPickerState } from "../acp/types";
 
 export interface UseModelsResult {
   /** Whether model selection is supported by the current agent */
   supportsModelSelection: boolean;
   /** List of available models */
-  availableModels: ModelInfo[];
+  availableModels: ModelPickerOption[];
   /** The currently selected model ID */
   currentModelId: string | null;
   /** The currently selected model info */
-  currentModel: ModelInfo | null;
+  currentModel: ModelPickerOption | null;
   /** Set the model for the current session */
   setModel: (modelId: string) => Promise<void>;
   /** Whether a model change is in progress */
@@ -19,46 +19,28 @@ export interface UseModelsResult {
 
 /**
  * Hook to manage model selection state.
- * Reference: Zed's AcpModelSelector reads from state.available_models and state.current_model_id
  *
- * Uses event-driven updates instead of polling:
- * - setModelStateChangedHandler: called on session create/disconnect
- * - setModelChangedHandler: called when model selection changes
+ * ACP represents model selection as a session config option with category
+ * "model", so this hook subscribes to config-option updates and derives a
+ * model picker view from them (matching Zed's config-option-driven UI).
  */
 export function useModels(client: ACPClient): UseModelsResult {
-  const [modelState, setModelState] = useState<SessionModelState | null>(
+  const [modelState, setModelState] = useState<ModelPickerState | null>(
     client.modelState
   );
   const [isLoading, setIsLoading] = useState(false);
 
-  // Subscribe to model state changes (session created/destroyed)
-  // This replaces the previous 500ms polling approach
   useEffect(() => {
-    // Handler for when model state changes (session created or disconnected)
-    const handleModelStateChanged = (state: SessionModelState | null) => {
-      setModelState(state);
-    };
-
-    // Handler for when current model changes within a session
-    const handleModelChanged = (modelId: string) => {
-      setModelState((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          currentModelId: modelId,
-        };
-      });
+    const sync = () => {
+      setModelState(client.modelState);
       setIsLoading(false);
     };
 
-    // Register handlers - setModelStateChangedHandler immediately calls with current state
-    client.setModelStateChangedHandler(handleModelStateChanged);
-    client.setModelChangedHandler(handleModelChanged);
+    // Called immediately with the current state, then on every update.
+    client.setConfigOptionsChangedHandler(sync);
 
     return () => {
-      // Clear handlers on unmount
-      client.setModelStateChangedHandler(() => {});
-      client.setModelChangedHandler(() => {});
+      client.setConfigOptionsChangedHandler(() => {});
     };
   }, [client]);
 
@@ -83,7 +65,7 @@ export function useModels(client: ACPClient): UseModelsResult {
       setIsLoading(true);
       try {
         await client.setSessionModel(modelId);
-        // The model_changed event will update the state
+        // config_options_changed / config_option_update will settle the state.
       } catch (error) {
         setIsLoading(false);
         throw error;
@@ -101,4 +83,3 @@ export function useModels(client: ACPClient): UseModelsResult {
     isLoading,
   };
 }
-

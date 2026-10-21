@@ -1,9 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer as createHttpsServer } from "node:https";
+import { readFileSync } from "node:fs";
 import { Writable, Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import * as acp from "@agentclientprotocol/sdk";
+import { RequestError } from "@agentclientprotocol/sdk";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -20,14 +22,36 @@ import { getOrCreateCertificate, getLanIPs, getAgentTlsEnv } from "./cert.js";
 import {
   listDir,
   readFile,
+  readTextFile as readWorkspaceTextFile,
+  writeTextFile as writeWorkspaceTextFile,
   startWatcher,
   type FileChange,
 } from "./files.js";
+import { TerminalManager } from "./terminals.js";
 
 // Get the directory of this file to resolve public folder path
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PUBLIC_DIR = join(__dirname, "..", "public");
+
+// Read our own package version for the ACP `clientInfo` payload.
+const CLIENT_VERSION: string = (() => {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+    ) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
+
+/** Identifies this client to agents during `initialize`. */
+const CLIENT_INFO: acp.Implementation = {
+  name: "chrome-acp",
+  title: "Chrome ACP",
+  version: CLIENT_VERSION,
+};
 
 export interface ServerConfig {
   port: number;
@@ -43,64 +67,45 @@ export interface ServerConfig {
 }
 
 // Pending permission request
+// Reference: Zed's `handle_request_permission` waits for the user's decision
+// and responds with the ACP `RequestPermissionOutcome`.
 interface PendingPermission {
-  resolve: (outcome: { outcome: "cancelled" } | { outcome: "selected"; optionId: string }) => void;
-  timeout: ReturnType<typeof setTimeout>;
-}
-
-// PromptCapabilities from ACP protocol
-// Reference: Zed's prompt_capabilities to check image support
-interface PromptCapabilities {
-  audio?: boolean;
-  embeddedContext?: boolean;
-  image?: boolean;
-}
-
-// SessionModelState from ACP protocol
-// Reference: Zed's AgentModelSelector reads from state.available_models
-interface SessionModelState {
-  availableModels: Array<{
-    modelId: string;
-    name: string;
-    description?: string | null;
-  }>;
-  currentModelId: string;
-}
-
-// AgentCapabilities from ACP protocol
-// Reference: Zed's AcpConnection.agent_capabilities
-// Matches SDK's AgentCapabilities exactly
-interface AgentCapabilities {
-  _meta?: Record<string, unknown> | null;
-  loadSession?: boolean;
-  mcpCapabilities?: {
-    _meta?: Record<string, unknown> | null;
-    clientServers?: boolean;
-  };
-  promptCapabilities?: PromptCapabilities;
-  sessionCapabilities?: {
-    _meta?: Record<string, unknown> | null;
-    fork?: Record<string, unknown> | null;
-    list?: Record<string, unknown> | null;
-    resume?: Record<string, unknown> | null;
-  };
+  resolve: (outcome: acp.RequestPermissionOutcome) => void;
+  /** Tool call this permission request belongs to. */
+  toolCallId: string;
 }
 
 // Track connected clients and their agent connections
+interface PendingElicitation {
+  resolve: (response: acp.CreateElicitationResponse) => void;
+}
+
 interface ClientState {
   process: ChildProcess | null;
-  connection: acp.ClientSideConnection | null;
+  connection: acp.ClientConnection | null;
   sessionId: string | null;
+  /** Session ID currently being loaded (dedupes concurrent loads like Zed). */
+  pendingSessionLoad: string | null;
+  /** Set when session/cancel was sent (Zed's `suppress_abort_err`). */
+  cancelRequested: boolean;
   pendingPermissions: Map<string, PendingPermission>;
-  // Reference: Zed stores full agentCapabilities from initialize response
-  agentCapabilities: AgentCapabilities | null;
-  // Reference: Zed stores promptCapabilities from initialize response (convenience accessor)
-  promptCapabilities: PromptCapabilities | null;
-  // Reference: Zed stores model state from NewSessionResponse.models
-  modelState: SessionModelState | null;
+  pendingElicitations: Map<string, PendingElicitation>;
+  // Reference: Zed stores the full AgentCapabilities from the initialize response.
+  agentCapabilities: acp.AgentCapabilities | null;
+  // Reference: Zed stores promptCapabilities from the initialize response
+  // (convenience accessor used to gate image attachments).
+  promptCapabilities: acp.PromptCapabilities | null;
+  // Authentication methods advertised during initialize.
+  authMethods: acp.AuthMethod[];
+  // Reference: Zed stores `modes` / `configOptions` from session/new|load|resume.
+  // When the agent sends configOptions, `modes` is ignored (Zed's `config_state`).
+  sessionModes: acp.SessionModeState | null;
+  configOptions: acp.SessionConfigOption[] | null;
+  // Client-managed terminals for the ACP `terminal/*` methods.
+  terminals: TerminalManager;
   // File watcher unsubscribe function
   unsubscribeWatcher: (() => void) | null;
-  // Working directory for the current session (used by file explorer)
+  // Working directory for the current session (used by file explorer and fs/*).
   sessionCwd: string | null;
   // Heartbeat: tracks whether client responded to the last ping
   isAlive: boolean;
@@ -116,17 +121,14 @@ let AUTH_TOKEN: string | undefined;
 
 const clients = new Map<WSContext, ClientState>();
 
-function getBrowserMcpServers() {
+function getBrowserMcpServers(): acp.McpServer[] {
   return [{
-    type: "http" as const,
+    type: "http",
     url: BROWSER_MCP_URL,
     name: "browser",
     headers: [],
   }];
 }
-
-// Permission request timeout (5 minutes)
-const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000;
 
 // Heartbeat interval for WebSocket ping/pong (30 seconds)
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -134,6 +136,41 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 // Generate unique request ID
 function generateRequestId(): string {
   return `perm_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`Invalid message: "${field}" must be a string`);
+  }
+  return value;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function errorCode(error: unknown): number | undefined {
+  if (error instanceof RequestError) return error.code;
+  const candidate = error as { code?: unknown };
+  return typeof candidate.code === "number" ? candidate.code : undefined;
+}
+
+const REQUEST_CANCELLED = -32800;
+
+function requestCancelled(): RequestError {
+  return new RequestError(REQUEST_CANCELLED, "Request cancelled");
+}
+
+// Send an agent error, preserving the JSON-RPC code (e.g. auth_required).
+function sendAgentError(ws: WSContext, prefix: string, error: unknown): void {
+  send(ws, "error", {
+    message: `${prefix}: ${(error as Error).message}`,
+    code: errorCode(error),
+  });
 }
 
 // Send a message to the WebSocket client
@@ -150,24 +187,80 @@ function getClientCwd(ws: WSContext): string {
   return state?.sessionCwd || AGENT_CWD;
 }
 
-// Create a Client implementation that forwards events to WebSocket
-function createClient(ws: WSContext, clientState: ClientState): acp.Client {
-  return {
-    async requestPermission(params) {
+function mapFsError(error: unknown, path: string): RequestError {
+  if (error instanceof RequestError) return error;
+  if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+    return RequestError.resourceNotFound(path);
+  }
+  return RequestError.internalError(undefined, (error as Error).message);
+}
+
+// Keep client-side session state in sync with agent notifications.
+// Reference: Zed's `handle_session_notification` applies mode/config option
+// updates before forwarding the notification to the thread.
+function applySessionUpdateToState(
+  clientState: ClientState,
+  update: acp.SessionUpdate,
+): void {
+  switch (update.sessionUpdate) {
+    case "current_mode_update":
+      if (clientState.sessionModes) {
+        clientState.sessionModes = {
+          ...clientState.sessionModes,
+          currentModeId: update.currentModeId,
+        };
+      }
+      break;
+    case "config_option_update":
+      clientState.configOptions = update.configOptions;
+      break;
+    // Reference: Zed resolves a pending permission request as cancelled when
+    // the tool call it belongs to reaches a terminal status.
+    case "tool_call":
+    case "tool_call_update":
+      if (update.status === "completed" || update.status === "failed") {
+        cancelPermissionsForToolCall(clientState, update.toolCallId);
+      }
+      break;
+  }
+}
+
+function cancelPermissionsForToolCall(
+  clientState: ClientState,
+  toolCallId: string,
+): void {
+  for (const [requestId, pending] of clientState.pendingPermissions) {
+    if (pending.toolCallId !== toolCallId) continue;
+    log.debug("Cancelling permission for finished tool call", { requestId, toolCallId });
+    clientState.pendingPermissions.delete(requestId);
+    pending.resolve({ outcome: "cancelled" });
+  }
+}
+
+// Create a Client app that forwards events to WebSocket.
+// Uses the SDK's typed handler builder (`acp.client(...)`), which is the
+// recommended API; the legacy `Client` interface is deprecated.
+function createClientApp(ws: WSContext, clientState: ClientState): acp.ClientApp {
+  const app = acp.client({ name: "chrome-acp" });
+
+  app.onRequest(
+    acp.methods.client.session.requestPermission,
+    async ({ params, signal }) => {
       const requestId = generateRequestId();
-      log.debug("Permission requested", { requestId, title: params.toolCall.title });
+      log.debug("Permission requested", {
+        requestId,
+        title: params.toolCall.title,
+        options: params.options.map((option) => option.kind),
+      });
 
-      // Create a promise that will be resolved when user responds
-      const outcomePromise = new Promise<{ outcome: "cancelled" } | { outcome: "selected"; optionId: string }>((resolve) => {
-        // Set timeout to auto-cancel if no response
-        const timeout = setTimeout(() => {
-          log.warn("Permission request timed out", { requestId });
-          clientState.pendingPermissions.delete(requestId);
-          resolve({ outcome: "cancelled" });
-        }, PERMISSION_TIMEOUT_MS);
-
-        // Store the pending request in client's map
-        clientState.pendingPermissions.set(requestId, { resolve, timeout });
+      // Create a promise that will be resolved when the user responds.
+      // Reference: Zed waits for the user without an artificial timeout;
+      // cancellation comes from session/cancel or connection close.
+      const outcomePromise = new Promise<acp.RequestPermissionOutcome>((resolve) => {
+        clientState.pendingPermissions.set(requestId, {
+          resolve,
+          toolCallId: params.toolCall.toolCallId,
+        });
       });
 
       // Send permission request to client with our requestId
@@ -178,33 +271,156 @@ function createClient(ws: WSContext, clientState: ClientState): acp.Client {
         toolCall: params.toolCall,
       });
 
-      // Wait for user response
-      const outcome = await outcomePromise;
-      log.debug("Permission response received", { requestId, outcome });
+      // Reference: Zed cancels the pending permission when the ACP request is
+      // cancelled or the connection closes.
+      if (signal.aborted) {
+        clientState.pendingPermissions.delete(requestId);
+        return { outcome: { outcome: "cancelled" as const } };
+      }
+      const onAbort = () => {
+        const pending = clientState.pendingPermissions.get(requestId);
+        if (!pending) return;
+        clientState.pendingPermissions.delete(requestId);
+        pending.resolve({ outcome: "cancelled" });
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
 
-      return { outcome };
+      try {
+        // Wait for user response
+        const outcome = await outcomePromise;
+        log.debug("Permission response received", { requestId, outcome });
+        return { outcome };
+      } finally {
+        signal.removeEventListener("abort", onAbort);
+      }
     },
+  );
 
-    async sessionUpdate(params) {
-      send(ws, "session_update", params);
-    },
+  // Reference: Zed's `handle_session_notification` applies mode/config option
+  // side effects before forwarding the raw update.
+  app.onNotification(acp.methods.client.session.update, ({ params }) => {
+    applySessionUpdateToState(clientState, params.update);
+    send(ws, "session_update", params);
+  });
 
-    async readTextFile(params) {
-      log.debug("Read file", { path: params.path });
-      // TODO: Forward to extension to read file
-      return { content: "" };
-    },
+  // Reference: Zed's `handle_read_text_file`. ACP paths are absolute.
+  app.onRequest(acp.methods.client.fs.readTextFile, ({ params, signal }) => {
+    log.debug("Read text file", { path: params.path, line: params.line, limit: params.limit });
+    if (signal.aborted) throw requestCancelled();
+    try {
+      const content = readWorkspaceTextFile(params.path, params.line, params.limit);
+      return { content };
+    } catch (error) {
+      throw mapFsError(error, params.path);
+    }
+  });
 
-    async writeTextFile(params) {
-      log.debug("Write file", { path: params.path });
-      // TODO: Forward to extension to write file
+  // Reference: Zed's `handle_write_text_file`.
+  app.onRequest(acp.methods.client.fs.writeTextFile, ({ params, signal }) => {
+    log.debug("Write text file", { path: params.path });
+    if (signal.aborted) throw requestCancelled();
+    try {
+      writeWorkspaceTextFile(params.path, params.content);
       return {};
+    } catch (error) {
+      throw mapFsError(error, params.path);
+    }
+  });
+
+  // Reference: Zed's `handle_create_elicitation` (form + URL modes).
+  app.onRequest(
+    acp.methods.client.elicitation.create,
+    async ({ params, signal }) => {
+      const requestId = generateRequestId();
+      if (signal.aborted) return { action: "cancel" as const };
+
+      // Reference: Zed waits for the user; cancellation comes from
+      // session/cancel, request abort, or connection close.
+      const responsePromise = new Promise<acp.CreateElicitationResponse>((resolve) => {
+        clientState.pendingElicitations.set(requestId, { resolve });
+      });
+
+      send(ws, "elicitation_request", { requestId, request: params });
+
+      const onAbort = () => {
+        const pending = clientState.pendingElicitations.get(requestId);
+        if (!pending) return;
+        clientState.pendingElicitations.delete(requestId);
+        send(ws, "elicitation_cancelled", {});
+        pending.resolve({ action: "cancel" });
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+
+      try {
+        return await responsePromise;
+      } finally {
+        signal.removeEventListener("abort", onAbort);
+      }
     },
-  };
+  );
+
+  // Reference: Zed's `handle_complete_elicitation`.
+  app.onNotification(acp.methods.client.elicitation.complete, ({ params }) => {
+    send(ws, "elicitation_complete", { elicitationId: params.elicitationId });
+  });
+
+  // Reference: Zed's `handle_create_terminal`.
+  app.onRequest(acp.methods.client.terminal.create, ({ params, signal }) => {
+    if (signal.aborted) throw requestCancelled();
+    const terminalId = clientState.terminals.create(params);
+    return { terminalId };
+  });
+
+  // Reference: Zed's `handle_terminal_output`.
+  app.onRequest(acp.methods.client.terminal.output, ({ params }) => {
+    return clientState.terminals.output(params.terminalId, params.sessionId);
+  });
+
+  // Reference: Zed's `handle_wait_for_terminal_exit`.
+  app.onRequest(acp.methods.client.terminal.waitForExit, ({ params, signal }) => {
+    if (signal.aborted) return Promise.reject(requestCancelled());
+    return new Promise<acp.TerminalExitStatus>((resolve, reject) => {
+      let settled = false;
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        reject(requestCancelled());
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      clientState.terminals.waitForExit(params.terminalId, params.sessionId).then(
+        (status) => {
+          if (settled) return;
+          settled = true;
+          signal.removeEventListener("abort", onAbort);
+          resolve(status);
+        },
+        (error) => {
+          if (settled) return;
+          settled = true;
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      );
+    });
+  });
+
+  // Reference: Zed's `handle_kill_terminal`.
+  app.onRequest(acp.methods.client.terminal.kill, ({ params }) => {
+    clientState.terminals.kill(params.terminalId, params.sessionId);
+    return {};
+  });
+
+  // Reference: Zed's `handle_release_terminal`.
+  app.onRequest(acp.methods.client.terminal.release, ({ params }) => {
+    clientState.terminals.release(params.terminalId, params.sessionId);
+    return {};
+  });
+
+  return app;
 }
 
 // Handle permission response from client
-function handlePermissionResponse(ws: WSContext, payload: { requestId: string; outcome: { outcome: "cancelled" } | { outcome: "selected"; optionId: string } }): void {
+function handlePermissionResponse(ws: WSContext, payload: { requestId: string; outcome: acp.RequestPermissionOutcome }): void {
   const state = clients.get(ws);
   if (!state) {
     log.warn("Permission response from unknown client");
@@ -217,17 +433,40 @@ function handlePermissionResponse(ws: WSContext, payload: { requestId: string; o
     return;
   }
 
-  // Clear timeout and resolve the promise
-  clearTimeout(pending.timeout);
+  // Resolve the promise
   state.pendingPermissions.delete(payload.requestId);
   pending.resolve(payload.outcome);
+}
+
+// Handle an elicitation response from the client.
+function handleElicitationResponse(
+  ws: WSContext,
+  payload: { requestId: string; response: acp.CreateElicitationResponse },
+): void {
+  const state = clients.get(ws);
+  const pending = state?.pendingElicitations.get(payload.requestId);
+  if (!state || !pending) {
+    log.warn("Elicitation response for unknown request", { requestId: payload.requestId });
+    return;
+  }
+  state.pendingElicitations.delete(payload.requestId);
+  pending.resolve(payload.response);
+}
+
+function cancelPendingElicitations(clientState: ClientState, ws?: WSContext): void {
+  if (clientState.pendingElicitations.size === 0) return;
+  for (const [requestId, pending] of clientState.pendingElicitations) {
+    log.debug("Cancelling pending elicitation", { requestId });
+    pending.resolve({ action: "cancel" });
+  }
+  clientState.pendingElicitations.clear();
+  if (ws) send(ws, "elicitation_cancelled", {});
 }
 
 // Cancel all pending permissions for a client (called on disconnect)
 function cancelPendingPermissions(clientState: ClientState): void {
   for (const [requestId, pending] of clientState.pendingPermissions) {
     log.debug("Cancelling pending permission due to disconnect", { requestId });
-    clearTimeout(pending.timeout);
     pending.resolve({ outcome: "cancelled" });
   }
   clientState.pendingPermissions.clear();
@@ -239,11 +478,19 @@ async function handleConnect(ws: WSContext): Promise<void> {
 
   // Kill existing process if any
   if (state.process) {
-    // Cancel any pending permission requests from previous connection
+    // Cancel pending work from the previous connection.
     cancelPendingPermissions(state);
+    cancelPendingElicitations(state, ws);
+    state.terminals.dispose();
     state.process.kill();
     state.process = null;
     state.connection = null;
+    state.agentCapabilities = null;
+    state.promptCapabilities = null;
+    state.authMethods = [];
+    state.sessionModes = null;
+    state.configOptions = null;
+    state.pendingSessionLoad = null;
   }
 
   try {
@@ -258,6 +505,16 @@ async function handleConnect(ws: WSContext): Promise<void> {
 
     state.process = agentProcess;
 
+    // Spawn failures (ENOENT, EACCES, ...) would otherwise crash the server.
+    agentProcess.on("error", (error) => {
+      log.error("Failed to spawn agent", { error: error.message });
+      state.process = null;
+      state.connection = null;
+      send(ws, "error", {
+        message: `Failed to spawn agent: ${error.message}`,
+      });
+    });
+
     // Create streams for ACP SDK
     const input = Writable.toWeb(
       agentProcess.stdin!,
@@ -266,41 +523,54 @@ async function handleConnect(ws: WSContext): Promise<void> {
       agentProcess.stdout!,
     ) as unknown as ReadableStream<Uint8Array>;
 
-    // Create ACP connection
+    // Create the ACP connection using the SDK's client app builder.
     const stream = acp.ndJsonStream(input, output);
-    const connection = new acp.ClientSideConnection(
-      (_agent) => createClient(ws, state),
-      stream,
-    );
-
+    const connection = createClientApp(ws, state).connect(stream);
     state.connection = connection;
 
-    // Initialize the connection
-    const initResult = await connection.initialize({
+    // Initialize the connection.
+    // Reference: Zed's `client_capabilities_for_agent` — advertise everything
+    // this client can actually serve: file system access, terminals, session
+    // config options (including booleans), live notices, and plans.
+    const initResult = await connection.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
-      clientInfo: {
-        name: "zed",
-        version: "1.0.0",
-      },
+      clientInfo: CLIENT_INFO,
       clientCapabilities: {
         fs: {
           readTextFile: true,
           writeTextFile: true,
         },
+        terminal: true,
+        session: {
+          configOptions: {
+            boolean: {},
+          },
+          notices: {},
+          compaction: {},
+        },
+        plan: {},
+        elicitation: {
+          form: {},
+          url: {},
+        },
+        _meta: {
+          terminal_output: true,
+        },
       },
     });
 
+    // Reference: Zed rejects agents that negotiate an unsupported version.
+    if (initResult.protocolVersion !== acp.PROTOCOL_VERSION) {
+      throw new Error(
+        `Unsupported ACP protocol version ${initResult.protocolVersion} (expected ${acp.PROTOCOL_VERSION})`,
+      );
+    }
+
     // Reference: Zed stores full agentCapabilities from initialize response
     // This includes loadSession, promptCapabilities, sessionCapabilities, etc.
-    const agentCaps = initResult.agentCapabilities;
-    state.agentCapabilities = agentCaps ? {
-      _meta: agentCaps._meta,
-      loadSession: agentCaps.loadSession,
-      mcpCapabilities: agentCaps.mcpCapabilities,
-      promptCapabilities: agentCaps.promptCapabilities,
-      sessionCapabilities: agentCaps.sessionCapabilities,
-    } : null;
-    state.promptCapabilities = agentCaps?.promptCapabilities ?? null;
+    state.agentCapabilities = initResult.agentCapabilities ?? null;
+    state.promptCapabilities = initResult.agentCapabilities?.promptCapabilities ?? null;
+    state.authMethods = initResult.authMethods ?? [];
 
     log.info("Agent initialized", {
       protocolVersion: initResult.protocolVersion,
@@ -309,19 +579,26 @@ async function handleConnect(ws: WSContext): Promise<void> {
       sessionResume: !!state.agentCapabilities?.sessionCapabilities?.resume,
       promptCapabilities: state.promptCapabilities,
       mcpCapabilities: state.agentCapabilities?.mcpCapabilities,
+      authMethods: state.authMethods.map((method) => method.id),
     });
 
     send(ws, "status", {
       connected: true,
+      protocolVersion: initResult.protocolVersion,
       agentInfo: initResult.agentInfo,
       capabilities: state.agentCapabilities,
+      authMethods: state.authMethods,
     });
 
-    // Handle connection close
+    // Handle connection close. Guard against a stale connection from a
+    // previous connect() nulling out a newer one.
     connection.closed.then(() => {
+      if (state.connection !== connection) return;
       log.info("Agent connection closed");
       state.connection = null;
       state.sessionId = null;
+      state.pendingSessionLoad = null;
+      state.cancelRequested = false;
       send(ws, "status", { connected: false });
     });
   } catch (error) {
@@ -330,6 +607,91 @@ async function handleConnect(ws: WSContext): Promise<void> {
       message: `Failed to connect: ${(error as Error).message}`,
     });
   }
+}
+
+// Reference: Zed's `config_state` — when the agent returns `configOptions`, the
+// legacy `modes` state is ignored (configOptions may include a "mode" category).
+function applySessionConfig(
+  state: ClientState,
+  result: {
+    modes?: acp.SessionModeState | null;
+    configOptions?: acp.SessionConfigOption[] | null;
+  },
+): void {
+  state.configOptions = result.configOptions ?? null;
+  state.sessionModes = state.configOptions ? null : (result.modes ?? null);
+}
+
+/** Session-scoped state included in `session_created` / `session_loaded` / `session_resumed`. */
+function sessionStatePayload(state: ClientState) {
+  return {
+    promptCapabilities: state.promptCapabilities,
+    modes: state.sessionModes,
+    configOptions: state.configOptions,
+  };
+}
+
+/** Restart the file watcher and push a fresh root listing for a session. */
+async function refreshWorkspace(
+  ws: WSContext,
+  state: ClientState,
+  sessionCwd: string,
+): Promise<void> {
+  if (state.unsubscribeWatcher) {
+    state.unsubscribeWatcher();
+  }
+  state.unsubscribeWatcher = await startWatcher(sessionCwd, (changes) => {
+    send(ws, "file_changes", { changes });
+  });
+
+  const rootItems = listDir(sessionCwd, "");
+  if (rootItems !== null) {
+    send(ws, "dir_listing", { path: "", items: rootItems });
+  }
+}
+
+/**
+ * Close a session we are switching away from, when the agent supports it.
+ * Reference: Zed sends `session/close` when the last thread handle drops.
+ */
+async function closeSessionIfSupported(
+  state: ClientState,
+  sessionId: string | null,
+): Promise<void> {
+  if (!sessionId || !state.connection) return;
+  if (!state.agentCapabilities?.sessionCapabilities?.close) return;
+  try {
+    await state.connection.agent.request(acp.methods.agent.session.close, { sessionId });
+    log.debug("Closed previous session", { sessionId });
+  } catch (error) {
+    log.warn("Failed to close previous session", {
+      sessionId,
+      error: (error as Error).message,
+    });
+  }
+}
+
+interface SessionStateSnapshot {
+  sessionId: string | null;
+  sessionCwd: string | null;
+  sessionModes: acp.SessionModeState | null;
+  configOptions: acp.SessionConfigOption[] | null;
+}
+
+function snapshotSessionState(state: ClientState): SessionStateSnapshot {
+  return {
+    sessionId: state.sessionId,
+    sessionCwd: state.sessionCwd,
+    sessionModes: state.sessionModes,
+    configOptions: state.configOptions,
+  };
+}
+
+function restoreSessionState(state: ClientState, snapshot: SessionStateSnapshot): void {
+  state.sessionId = snapshot.sessionId;
+  state.sessionCwd = snapshot.sessionCwd;
+  state.sessionModes = snapshot.sessionModes;
+  state.configOptions = snapshot.configOptions;
 }
 
 async function handleNewSession(
@@ -344,45 +706,35 @@ async function handleNewSession(
 
   try {
     const sessionCwd = params.cwd || AGENT_CWD;
-    const result = await state.connection.newSession({
+    const result = await state.connection.agent.request(acp.methods.agent.session.new, {
       cwd: sessionCwd,
       mcpServers: getBrowserMcpServers(),
     });
 
+    const previousSessionId = state.sessionId;
+    if (previousSessionId) state.terminals.disposeSession(previousSessionId);
     state.sessionId = result.sessionId;
     state.sessionCwd = sessionCwd;
-    // Reference: Zed stores model state from NewSessionResponse.models
-    state.modelState = result.models ?? null;
-    log.info("Session created", { sessionId: result.sessionId, cwd: sessionCwd, hasModels: !!result.models });
-
-    // Restart file watcher with the new session cwd
-    if (state.unsubscribeWatcher) {
-      state.unsubscribeWatcher();
-    }
-    state.unsubscribeWatcher = await startWatcher(sessionCwd, (changes) => {
-      send(ws, "file_changes", { changes });
+    // Reference: Zed's `config_state(response.modes, response.config_options)`.
+    applySessionConfig(state, result);
+    await closeSessionIfSupported(state, previousSessionId);
+    log.info("Session created", {
+      sessionId: result.sessionId,
+      cwd: sessionCwd,
+      hasModes: !!result.modes,
+      configOptionCount: result.configOptions?.length ?? 0,
     });
 
-    // Send fresh root directory listing for the new session cwd
-    // This ensures the file explorer shows the correct files immediately
-    const rootItems = listDir(sessionCwd, "");
-    if (rootItems !== null) {
-      send(ws, "dir_listing", { path: "", items: rootItems });
-    }
-
-    // Reference: Include promptCapabilities so client can check image support
-    // This matches Zed's behavior of checking prompt_capabilities.image
-    // Also include models state for model selection support
+    // Register the session with the client before the (async) workspace setup
+    // so notifications that arrive during it are not dropped.
     send(ws, "session_created", {
-      ...result,
-      promptCapabilities: state.promptCapabilities,
-      models: state.modelState,
+      sessionId: result.sessionId,
+      ...sessionStatePayload(state),
     });
+    await refreshWorkspace(ws, state, sessionCwd);
   } catch (error) {
     log.error("Failed to create session", { error: (error as Error).message });
-    send(ws, "error", {
-      message: `Failed to create session: ${(error as Error).message}`,
-    });
+    sendAgentError(ws, "Failed to create session", error);
   }
 }
 
@@ -413,32 +765,22 @@ async function handleListSessions(
   }
 
   try {
-    // Note: SDK uses unstable_listSessions until API is finalized
-    const result = await state.connection.unstable_listSessions({
+    const result = await state.connection.agent.request(acp.methods.agent.session.list, {
       cwd: params.cwd,
       cursor: params.cursor,
     });
 
     log.info("Sessions listed", { count: result.sessions.length, hasMore: !!result.nextCursor });
 
-    // Map SDK's SessionInfo to our AgentSessionInfo
-    // Reference: Zed's AgentSessionList.list_sessions maps acp::SessionInfo -> AgentSessionInfo
+    // The SDK's SessionInfo already matches the wire shape Zed consumes.
     send(ws, "session_list", {
-      sessions: result.sessions.map((s: acp.SessionInfo) => ({
-        _meta: s._meta,
-        cwd: s.cwd,  // Required field in SDK's SessionInfo
-        sessionId: s.sessionId,
-        title: s.title,
-        updatedAt: s.updatedAt,
-      })),
+      sessions: result.sessions,
       nextCursor: result.nextCursor,
       _meta: result._meta,
     });
   } catch (error) {
     log.error("Failed to list sessions", { error: (error as Error).message });
-    send(ws, "error", {
-      message: `Failed to list sessions: ${(error as Error).message}`,
-    });
+    sendAgentError(ws, "Failed to list sessions", error);
   }
 }
 
@@ -463,46 +805,53 @@ async function handleLoadSession(
     return;
   }
 
+  if (state.pendingSessionLoad === params.sessionId) {
+    send(ws, "error", { message: `Session ${params.sessionId} is already loading` });
+    return;
+  }
+  const previous = snapshotSessionState(state);
+  state.pendingSessionLoad = params.sessionId;
   try {
     const sessionCwd = params.cwd || AGENT_CWD;
     const sessionId = params.sessionId;
-    const result = await state.connection.loadSession({
+    // Register the session before the request so replayed `session/update`
+    // notifications are attributed to it (Zed registers a pending session first).
+    if (state.sessionId && state.sessionId !== sessionId) {
+      state.terminals.disposeSession(state.sessionId);
+    }
+    state.sessionId = sessionId;
+    state.sessionCwd = sessionCwd;
+    const result = await state.connection.agent.request(acp.methods.agent.session.load, {
       sessionId,
       cwd: sessionCwd,
       mcpServers: getBrowserMcpServers(),
     });
 
-    state.sessionId = sessionId;
-    state.sessionCwd = sessionCwd;
-    // TODO: Zed also stores result.modes and result.configOptions
-    // Reference: acp.rs line 659-665 - config_state(response.modes, response.models, response.config_options)
-    state.modelState = result.models ?? null;
-    log.info("Session loaded", { sessionId, cwd: sessionCwd });
-
-    // Restart file watcher with the session cwd
-    if (state.unsubscribeWatcher) {
-      state.unsubscribeWatcher();
+    // Reference: Zed's `SessionConfigResponse { modes, config_options }`.
+    applySessionConfig(state, result);
+    if (previous.sessionId && previous.sessionId !== sessionId) {
+      await closeSessionIfSupported(state, previous.sessionId);
     }
-    state.unsubscribeWatcher = await startWatcher(sessionCwd, (changes) => {
-      send(ws, "file_changes", { changes });
+    log.info("Session loaded", {
+      sessionId,
+      cwd: sessionCwd,
+      hasModes: !!result.modes,
+      configOptionCount: result.configOptions?.length ?? 0,
     });
-
-    // Send fresh root directory listing
-    const rootItems = listDir(sessionCwd, "");
-    if (rootItems !== null) {
-      send(ws, "dir_listing", { path: "", items: rootItems });
-    }
 
     send(ws, "session_loaded", {
       sessionId,
-      promptCapabilities: state.promptCapabilities,
-      models: state.modelState,
+      ...sessionStatePayload(state),
     });
+    await refreshWorkspace(ws, state, sessionCwd);
   } catch (error) {
+    restoreSessionState(state, previous);
     log.error("Failed to load session", { error: (error as Error).message });
-    send(ws, "error", {
-      message: `Failed to load session: ${(error as Error).message}`,
-    });
+    sendAgentError(ws, "Failed to load session", error);
+  } finally {
+    if (state.pendingSessionLoad === params.sessionId) {
+      state.pendingSessionLoad = null;
+    }
   }
 }
 
@@ -527,54 +876,58 @@ async function handleResumeSession(
     return;
   }
 
+  const previous = snapshotSessionState(state);
   try {
     const sessionCwd = params.cwd || AGENT_CWD;
     const sessionId = params.sessionId;
-    // Note: SDK uses unstable_resumeSession until API is finalized
-    const result = await state.connection.unstable_resumeSession({
+    // Register the session before the request (see load above).
+    if (state.sessionId && state.sessionId !== sessionId) {
+      state.terminals.disposeSession(state.sessionId);
+    }
+    state.sessionId = sessionId;
+    state.sessionCwd = sessionCwd;
+    const result = await state.connection.agent.request(acp.methods.agent.session.resume, {
       sessionId,
       cwd: sessionCwd,
       mcpServers: getBrowserMcpServers(),
     });
 
-    state.sessionId = sessionId;
-    state.sessionCwd = sessionCwd;
-    // TODO: Zed also stores result.modes and result.configOptions
-    // Reference: acp.rs line 736-742 - config_state(response.modes, response.models, response.config_options)
-    state.modelState = result.models ?? null;
-    log.info("Session resumed", { sessionId, cwd: sessionCwd });
-
-    // Restart file watcher with the session cwd
-    if (state.unsubscribeWatcher) {
-      state.unsubscribeWatcher();
+    // Reference: Zed's `SessionConfigResponse { modes, config_options }`.
+    applySessionConfig(state, result);
+    if (previous.sessionId && previous.sessionId !== sessionId) {
+      await closeSessionIfSupported(state, previous.sessionId);
     }
-    state.unsubscribeWatcher = await startWatcher(sessionCwd, (changes) => {
-      send(ws, "file_changes", { changes });
+    log.info("Session resumed", {
+      sessionId,
+      cwd: sessionCwd,
+      hasModes: !!result.modes,
+      configOptionCount: result.configOptions?.length ?? 0,
     });
-
-    // Send fresh root directory listing
-    const rootItems = listDir(sessionCwd, "");
-    if (rootItems !== null) {
-      send(ws, "dir_listing", { path: "", items: rootItems });
-    }
 
     send(ws, "session_resumed", {
       sessionId,
-      promptCapabilities: state.promptCapabilities,
-      models: state.modelState,
+      ...sessionStatePayload(state),
     });
+    await refreshWorkspace(ws, state, sessionCwd);
   } catch (error) {
+    restoreSessionState(state, previous);
     log.error("Failed to resume session", { error: (error as Error).message });
-    send(ws, "error", {
-      message: `Failed to resume session: ${(error as Error).message}`,
-    });
+    sendAgentError(ws, "Failed to resume session", error);
+  } finally {
+    if (state.pendingSessionLoad === params.sessionId) {
+      state.pendingSessionLoad = null;
+    }
   }
 }
 
-// Reference: Zed's AcpThread.send() forwards Vec<acp::ContentBlock> to agent
-async function handlePrompt(
+/**
+ * Change the session mode.
+ * Reference: Zed's `AcpSessionModes::set_mode` — optimistic local update with
+ * rollback if the agent rejects the request.
+ */
+async function handleSetSessionMode(
   ws: WSContext,
-  params: { content: ContentBlock[] },
+  params: { modeId: string },
 ): Promise<void> {
   const state = clients.get(ws);
   if (!state?.connection || !state.sessionId) {
@@ -582,6 +935,237 @@ async function handlePrompt(
     return;
   }
 
+  if (!state.sessionModes) {
+    send(ws, "error", { message: "Session modes are not supported by this agent" });
+    return;
+  }
+
+  const previousModeId = state.sessionModes.currentModeId;
+  state.sessionModes = { ...state.sessionModes, currentModeId: params.modeId };
+
+  try {
+    log.info("Setting session mode", { sessionId: state.sessionId, modeId: params.modeId });
+    await state.connection.agent.request(acp.methods.agent.session.setMode, {
+      sessionId: state.sessionId,
+      modeId: params.modeId,
+    });
+    send(ws, "mode_changed", { modeId: params.modeId });
+  } catch (error) {
+    if (state.sessionModes) {
+      state.sessionModes = { ...state.sessionModes, currentModeId: previousModeId };
+    }
+    log.error("Failed to set session mode", { error: (error as Error).message });
+    sendAgentError(ws, "Failed to set session mode", error);
+  }
+}
+
+/**
+ * Change a session configuration option.
+ * Reference: Zed's `ConfigOptions::set_config_option` — the response contains
+ * the full, updated option list.
+ */
+async function handleSetConfigOption(
+  ws: WSContext,
+  params: { configId: string; value: string | boolean },
+): Promise<void> {
+  const state = clients.get(ws);
+  if (!state?.connection || !state.sessionId) {
+    send(ws, "error", { message: "No active session" });
+    return;
+  }
+
+  if (!state.configOptions) {
+    send(ws, "error", { message: "Session configuration is not supported by this agent" });
+    return;
+  }
+
+  try {
+    log.info("Setting session config option", {
+      sessionId: state.sessionId,
+      configId: params.configId,
+      value: params.value,
+    });
+    const result = await state.connection.agent.request(
+      acp.methods.agent.session.setConfigOption,
+      typeof params.value === "boolean"
+        ? { sessionId: state.sessionId, configId: params.configId, type: "boolean", value: params.value }
+        : { sessionId: state.sessionId, configId: params.configId, value: params.value },
+    );
+    state.configOptions = result.configOptions;
+    send(ws, "config_options_changed", { configOptions: state.configOptions });
+  } catch (error) {
+    log.error("Failed to set session config option", { error: (error as Error).message });
+    sendAgentError(ws, "Failed to set session config option", error);
+  }
+}
+
+/**
+ * Authenticate with one of the methods advertised during `initialize`.
+ * Reference: Zed's `AcpConnection::authenticate`.
+ */
+async function handleAuthenticate(
+  ws: WSContext,
+  params: { methodId: string },
+): Promise<void> {
+  const state = clients.get(ws);
+  if (!state?.connection) {
+    send(ws, "error", { message: "Not connected to agent" });
+    return;
+  }
+
+  const method = state.authMethods.find((candidate) => candidate.id === params.methodId);
+  if (!method) {
+    send(ws, "error", { message: `Unknown authentication method: ${params.methodId}` });
+    return;
+  }
+  // Reference: Zed only sends `authenticate` for agent-managed methods;
+  // terminal methods are run as an interactive agent process instead.
+  if ("type" in method && method.type === "terminal") {
+    send(ws, "error", {
+      message: `Authentication method ${params.methodId} requires an interactive terminal`,
+    });
+    return;
+  }
+
+  try {
+    log.info("Authenticating", { methodId: params.methodId });
+    await state.connection.agent.request(acp.methods.agent.authenticate, {
+      methodId: params.methodId,
+    });
+    send(ws, "authenticated", { methodId: params.methodId });
+  } catch (error) {
+    log.error("Authentication failed", { error: (error as Error).message });
+    sendAgentError(ws, "Authentication failed", error);
+  }
+}
+
+/**
+ * Log out of the current authentication method.
+ * Reference: Zed's `AcpConnection::logout` (gated on `agentCapabilities.auth.logout`).
+ */
+async function handleLogout(ws: WSContext): Promise<void> {
+  const state = clients.get(ws);
+  if (!state?.connection) {
+    send(ws, "error", { message: "Not connected to agent" });
+    return;
+  }
+
+  if (!state.agentCapabilities?.auth?.logout) {
+    send(ws, "error", { message: "Logout is not supported by this agent" });
+    return;
+  }
+
+  try {
+    await state.connection.agent.request(acp.methods.agent.logout, {});
+    log.info("Logged out");
+    send(ws, "logged_out", {});
+  } catch (error) {
+    log.error("Logout failed", { error: (error as Error).message });
+    sendAgentError(ws, "Logout failed", error);
+  }
+}
+
+/**
+ * Delete a session from the agent's session list.
+ * Reference: Zed's `session/delete` (AgentCapabilities.session_capabilities.delete).
+ */
+async function handleDeleteSession(
+  ws: WSContext,
+  params: { sessionId: string },
+): Promise<void> {
+  const state = clients.get(ws);
+  if (!state?.connection) {
+    send(ws, "error", { message: "Not connected to agent" });
+    return;
+  }
+
+  if (!state.agentCapabilities?.sessionCapabilities?.delete) {
+    send(ws, "error", { message: "Deleting sessions is not supported by this agent" });
+    return;
+  }
+
+  try {
+    await state.connection.agent.request(acp.methods.agent.session.delete, {
+      sessionId: params.sessionId,
+    });
+    state.terminals.disposeSession(params.sessionId);
+    log.info("Session deleted", { sessionId: params.sessionId });
+    send(ws, "session_deleted", { sessionId: params.sessionId });
+  } catch (error) {
+    log.error("Failed to delete session", { error: (error as Error).message });
+    sendAgentError(ws, "Failed to delete session", error);
+  }
+}
+
+/**
+ * Close an active session and release agent resources.
+ * Reference: Zed's `session/close` (AgentCapabilities.session_capabilities.close).
+ */
+async function handleCloseSession(
+  ws: WSContext,
+  params: { sessionId: string },
+): Promise<void> {
+  const state = clients.get(ws);
+  if (!state?.connection) {
+    send(ws, "error", { message: "Not connected to agent" });
+    return;
+  }
+
+  if (!state.agentCapabilities?.sessionCapabilities?.close) {
+    send(ws, "error", { message: "Closing sessions is not supported by this agent" });
+    return;
+  }
+
+  try {
+    await state.connection.agent.request(acp.methods.agent.session.close, {
+      sessionId: params.sessionId,
+    });
+    state.terminals.disposeSession(params.sessionId);
+    if (state.sessionId === params.sessionId) {
+      state.sessionId = null;
+    }
+    log.info("Session closed", { sessionId: params.sessionId });
+    send(ws, "session_closed", { sessionId: params.sessionId });
+  } catch (error) {
+    log.error("Failed to close session", { error: (error as Error).message });
+    sendAgentError(ws, "Failed to close session", error);
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  // Gemini CLI workaround: internal error whose `data.details` says the request
+  // was aborted (Zed's `suppress_abort_err` handling).
+  if (!(error instanceof RequestError) || error.code !== -32603) return false;
+  const data = error.data;
+  if (!data || typeof data !== "object") return false;
+  const details = (data as { details?: unknown }).details;
+  return (
+    typeof details === "string" &&
+    (details.includes("This operation was aborted") ||
+      details.includes("The user aborted a request"))
+  );
+}
+
+function errorDetail(error: unknown): string {
+  if (error instanceof RequestError && error.data && typeof error.data === "object") {
+    const details = (error.data as { details?: unknown }).details;
+    if (typeof details === "string") return details;
+  }
+  return (error as Error).message;
+}
+
+// Reference: Zed's AcpThread.send() forwards Vec<acp::ContentBlock> to agent
+async function handlePrompt(
+  ws: WSContext,
+  params: { content: acp.ContentBlock[] },
+): Promise<void> {
+  const state = clients.get(ws);
+  if (!state?.connection || !state.sessionId) {
+    send(ws, "error", { message: "No active session" });
+    return;
+  }
+
+  state.cancelRequested = false;
   try {
     // Log content blocks for debugging
     const firstText = params.content.find(b => b.type === "text")?.text;
@@ -603,18 +1187,26 @@ async function handlePrompt(
     }
 
     // Forward ContentBlock[] directly to agent (matches Zed's behavior)
-    const result = await state.connection.prompt({
+    const result = await state.connection.agent.request(acp.methods.agent.session.prompt, {
       sessionId: state.sessionId,
-      prompt: params.content as acp.ContentBlock[],
+      prompt: params.content,
     });
 
     log.info("Prompt completed", { stopReason: result.stopReason });
     send(ws, "prompt_complete", result);
   } catch (error) {
+    if (state.cancelRequested && isAbortError(error)) {
+      log.info("Treating aborted prompt as cancelled");
+      send(ws, "prompt_complete", { stopReason: "cancelled" });
+      return;
+    }
     log.error("Prompt failed", { error: (error as Error).message });
     send(ws, "error", {
-      message: `Prompt failed: ${(error as Error).message}`,
+      message: `Prompt failed: ${errorDetail(error)}`,
+      code: errorCode(error),
     });
+  } finally {
+    state.cancelRequested = false;
   }
 }
 
@@ -622,12 +1214,25 @@ function handleDisconnect(ws: WSContext): void {
   const state = clients.get(ws);
   if (!state) return;
 
+  // Cancel pending permission prompts and stop client-managed terminals.
+  cancelPendingPermissions(state);
+  cancelPendingElicitations(state, ws);
+  state.terminals.dispose();
+
   if (state.process) {
     state.process.kill();
     state.process = null;
   }
   state.connection = null;
   state.sessionId = null;
+  state.pendingSessionLoad = null;
+  state.cancelRequested = false;
+  state.sessionCwd = null;
+  state.sessionModes = null;
+  state.configOptions = null;
+  state.agentCapabilities = null;
+  state.promptCapabilities = null;
+  state.authMethods = [];
 
   send(ws, "status", { connected: false });
 }
@@ -644,10 +1249,11 @@ async function handleCancel(ws: WSContext): Promise<void> {
   }
 
   log.info("Cancel requested", { sessionId: state.sessionId });
+  state.cancelRequested = true;
 
-  // Cancel any pending permission requests (like Zed does)
-  // This ensures permission dialogs are dismissed
+  // Cancel pending permission/elicitation requests (like Zed does).
   cancelPendingPermissions(state);
+  cancelPendingElicitations(state, ws);
 
   try {
     // Send cancel notification to agent via ACP SDK
@@ -656,48 +1262,13 @@ async function handleCancel(ws: WSContext): Promise<void> {
     // 2. Abort all tool call invocations in progress
     // 3. Send any pending session/update notifications
     // 4. Respond to the original session/prompt with stopReason="cancelled"
-    await state.connection.cancel({ sessionId: state.sessionId });
+    await state.connection.agent.notify(acp.methods.agent.session.cancel, {
+      sessionId: state.sessionId,
+    });
     log.debug("Cancel notification sent to agent");
   } catch (error) {
     log.error("Failed to send cancel notification", { error: (error as Error).message });
     // Don't send error to client - the prompt will complete with appropriate status
-  }
-}
-
-// Reference: Zed's AgentModelSelector.select_model() calls connection.set_session_model()
-async function handleSetSessionModel(
-  ws: WSContext,
-  params: { modelId: string },
-): Promise<void> {
-  const state = clients.get(ws);
-  if (!state?.connection || !state.sessionId) {
-    send(ws, "error", { message: "No active session" });
-    return;
-  }
-
-  if (!state.modelState) {
-    send(ws, "error", { message: "Model selection not supported by this agent" });
-    return;
-  }
-
-  try {
-    log.info("Setting session model", { sessionId: state.sessionId, modelId: params.modelId });
-    await state.connection.unstable_setSessionModel({
-      sessionId: state.sessionId,
-      modelId: params.modelId,
-    });
-    // Update local model state
-    state.modelState = {
-      ...state.modelState,
-      currentModelId: params.modelId,
-    };
-    send(ws, "model_changed", { modelId: params.modelId });
-    log.info("Model changed successfully", { modelId: params.modelId });
-  } catch (error) {
-    log.error("Failed to set model", { error: (error as Error).message });
-    send(ws, "error", {
-      message: `Failed to set model: ${(error as Error).message}`,
-    });
   }
 }
 
@@ -724,22 +1295,6 @@ function handleReadFile(ws: WSContext, payload: { path: string }): void {
     return;
   }
   send(ws, "file_content", content);
-}
-
-// ContentBlock type matching @agentclientprotocol/sdk
-// Reference: Zed's acp::ContentBlock
-interface ContentBlock {
-  type: string;
-  text?: string;
-  data?: string;
-  mimeType?: string;
-  uri?: string;
-  name?: string;
-}
-
-interface ProxyMessage {
-  type: "connect" | "disconnect" | "new_session" | "prompt" | "cancel" | "set_session_model";
-  payload?: { cwd?: string } | { content: ContentBlock[] } | { modelId: string };
 }
 
 // Launch PWA via Termux am command
@@ -853,10 +1408,16 @@ export async function startServer(config: ServerConfig): Promise<void> {
             process: null,
             connection: null,
             sessionId: null,
+            pendingSessionLoad: null,
+            cancelRequested: false,
             pendingPermissions: new Map(),
+            pendingElicitations: new Map(),
             agentCapabilities: null,
             promptCapabilities: null,
-            modelState: null,
+            authMethods: [],
+            sessionModes: null,
+            configOptions: null,
+            terminals: new TerminalManager(),
             unsubscribeWatcher: null,
             sessionCwd: null,
             isAlive: true,
@@ -874,10 +1435,15 @@ export async function startServer(config: ServerConfig): Promise<void> {
         },
       async onMessage(event, ws) {
         try {
-          const data = JSON.parse(event.data.toString());
-          log.debug("Received message", { type: data.type });
+          const parsed: unknown = JSON.parse(event.data.toString());
+          if (!isObject(parsed)) {
+            throw new Error("Invalid message: expected a JSON object");
+          }
+          const type = requireString(parsed.type, "type");
+          const payload = isObject(parsed.payload) ? parsed.payload : {};
+          log.debug("Received message", { type });
 
-          switch (data.type) {
+          switch (type) {
             case "connect":
               await handleConnect(ws);
               break;
@@ -885,56 +1451,162 @@ export async function startServer(config: ServerConfig): Promise<void> {
               handleDisconnect(ws);
               break;
             case "new_session":
-              await handleNewSession(
-                ws,
-                (data.payload as { cwd?: string }) || {},
+              await handleNewSession(ws, { cwd: optionalString(payload.cwd) });
+              break;
+            case "prompt": {
+              const content = payload.content;
+              if (
+                !Array.isArray(content) ||
+                !content.every(
+                  (block) => isObject(block) && typeof block.type === "string",
+                )
+              ) {
+                throw new Error(
+                  "Invalid message: prompt.content must be an array of content blocks",
+                );
+              }
+              await handlePrompt(ws, { content: content as acp.ContentBlock[] });
+              break;
+            }
+            case "browser_tool_result": {
+              // Handle response from extension for browser tool call
+              const callId = requireString(parsed.callId, "callId");
+              log.trace("Raw browser_tool_result from extension", {
+                callId,
+                result: parsed.result,
+              });
+              handleBrowserToolResponse(
+                callId,
+                parsed.result as Parameters<typeof handleBrowserToolResponse>[1],
               );
               break;
-            case "prompt":
-              await handlePrompt(ws, data.payload as { content: ContentBlock[] });
-              break;
-            case "browser_tool_result":
-              // Handle response from extension for browser tool call
-              log.trace("Raw browser_tool_result from extension", {
-                callId: data.callId,
-                result: data.result,
+            }
+            case "permission_response": {
+              const requestId = requireString(payload.requestId, "requestId");
+              const outcome = payload.outcome;
+              if (!isObject(outcome)) {
+                throw new Error("Invalid message: permission outcome missing");
+              }
+              let parsedOutcome: acp.RequestPermissionOutcome;
+              if (outcome.outcome === "cancelled") {
+                parsedOutcome = { outcome: "cancelled" };
+              } else if (outcome.outcome === "selected") {
+                parsedOutcome = {
+                  outcome: "selected",
+                  optionId: requireString(outcome.optionId, "outcome.optionId"),
+                };
+              } else {
+                throw new Error("Invalid message: unknown permission outcome");
+              }
+              handlePermissionResponse(ws, {
+                requestId,
+                outcome: parsedOutcome,
               });
-              handleBrowserToolResponse(data.callId, data.result);
               break;
-            case "permission_response":
-              // Handle user's permission decision
-              handlePermissionResponse(ws, data.payload);
+            }
+            case "elicitation_response": {
+              const requestId = requireString(payload.requestId, "requestId");
+              const response = payload.response;
+              if (!isObject(response)) {
+                throw new Error("Invalid message: elicitation response missing");
+              }
+              let parsedResponse: acp.CreateElicitationResponse;
+              if (response.action === "accept") {
+                parsedResponse = {
+                  action: "accept",
+                  content: isObject(response.content)
+                    ? (response.content as Record<string, acp.ElicitationContentValue>)
+                    : undefined,
+                };
+              } else if (
+                response.action === "decline" ||
+                response.action === "cancel"
+              ) {
+                parsedResponse = { action: response.action };
+              } else {
+                throw new Error("Invalid message: unknown elicitation action");
+              }
+              handleElicitationResponse(ws, {
+                requestId,
+                response: parsedResponse,
+              });
               break;
+            }
             case "cancel":
               // Handle cancel request - send session/cancel to agent
               await handleCancel(ws);
               break;
-            case "set_session_model":
-              // Handle model selection request
-              await handleSetSessionModel(ws, data.payload as { modelId: string });
+            case "set_session_mode":
+              await handleSetSessionMode(ws, {
+                modeId: requireString(payload.modeId, "modeId"),
+              });
+              break;
+            case "set_config_option": {
+              const value = payload.value;
+              if (typeof value !== "string" && typeof value !== "boolean") {
+                throw new Error(
+                  'Invalid message: "value" must be a string or boolean',
+                );
+              }
+              await handleSetConfigOption(ws, {
+                configId: requireString(payload.configId, "configId"),
+                value,
+              });
+              break;
+            }
+            case "authenticate":
+              await handleAuthenticate(ws, {
+                methodId: requireString(payload.methodId, "methodId"),
+              });
+              break;
+            case "logout":
+              await handleLogout(ws);
               break;
             // Session history operations - Reference: Zed's AgentSessionList
             case "list_sessions":
-              await handleListSessions(ws, (data.payload as { cwd?: string; cursor?: string }) || {});
+              await handleListSessions(ws, {
+                cwd: optionalString(payload.cwd),
+                cursor: optionalString(payload.cursor),
+              });
               break;
             case "load_session":
-              await handleLoadSession(ws, data.payload as { sessionId: string; cwd?: string });
+              await handleLoadSession(ws, {
+                sessionId: requireString(payload.sessionId, "sessionId"),
+                cwd: optionalString(payload.cwd),
+              });
               break;
             case "resume_session":
-              await handleResumeSession(ws, data.payload as { sessionId: string; cwd?: string });
+              await handleResumeSession(ws, {
+                sessionId: requireString(payload.sessionId, "sessionId"),
+                cwd: optionalString(payload.cwd),
+              });
+              break;
+            case "delete_session":
+              await handleDeleteSession(ws, {
+                sessionId: requireString(payload.sessionId, "sessionId"),
+              });
+              break;
+            case "close_session":
+              await handleCloseSession(ws, {
+                sessionId: requireString(payload.sessionId, "sessionId"),
+              });
               break;
             case "list_dir":
-              handleListDir(ws, data.payload as { path: string });
+              handleListDir(ws, {
+                path: requireString(payload.path, "path"),
+              });
               break;
             case "read_file":
-              handleReadFile(ws, data.payload as { path: string });
+              handleReadFile(ws, {
+                path: requireString(payload.path, "path"),
+              });
               break;
             case "ping":
               send(ws, "pong");
               break;
             default:
               send(ws, "error", {
-                message: `Unknown message type: ${data.type}`,
+                message: `Unknown message type: ${type}`,
               });
           }
         } catch (error) {

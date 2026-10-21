@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { FolderOpen, MessageSquare, History } from "lucide-react";
 import type { ACPClient } from "../acp/client";
-import type { AgentSessionInfo } from "../acp/types";
+import type { SessionInfo } from "../acp/types";
 import { ChatInterface } from "./ChatInterface";
 import { FileExplorer } from "./FileExplorer";
 import { ThreadHistory } from "./ThreadHistory";
@@ -27,7 +27,7 @@ export function ACPMain({ client }: ACPMainProps) {
   // Handle session selection from history
   // Reference: Zed's connection_view.rs line 616-631
   // Zed prioritizes load_session (with history), falls back to resume_session (without history)
-  const handleSelectSession = useCallback(async (session: AgentSessionInfo) => {
+  const handleSelectSession = useCallback(async (session: SessionInfo) => {
     try {
       if (client.supportsLoadSession) {
         // load_session replays full history
@@ -67,25 +67,31 @@ export function ACPMain({ client }: ACPMainProps) {
       touchStartY.current = null;
       return;
     }
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
+    const touch = e.touches[0];
+    if (!touch) return;
+    touchStartX.current = touch.clientX;
+    touchStartY.current = touch.clientY;
   }, [isInHorizontalScrollableArea]);
 
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     if (touchStartX.current === null || touchStartY.current === null) return;
 
-    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
-    const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    const deltaX = touch.clientX - touchStartX.current;
+    const deltaY = touch.clientY - touchStartY.current;
 
     // Only trigger if horizontal swipe is dominant and significant
     if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
       const currentIndex = TAB_ORDER.indexOf(activeTab);
-      if (deltaX < 0 && currentIndex < TAB_ORDER.length - 1) {
+      if (deltaX < 0) {
         // Swipe left → next tab
-        setActiveTab(TAB_ORDER[currentIndex + 1]);
-      } else if (deltaX > 0 && currentIndex > 0) {
+        const next = TAB_ORDER[currentIndex + 1];
+        if (next) setActiveTab(next);
+      } else if (deltaX > 0) {
         // Swipe right → previous tab
-        setActiveTab(TAB_ORDER[currentIndex - 1]);
+        const previous = TAB_ORDER[currentIndex - 1];
+        if (previous) setActiveTab(previous);
       }
     }
 

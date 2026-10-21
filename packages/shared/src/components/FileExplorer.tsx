@@ -104,7 +104,6 @@ const EXT_TO_LANGUAGE: Record<string, BundledLanguage> = {
   wasm: "wasm",
   ini: "ini",
   env: "dotenv",
-  gitignore: "gitignore",
   editorconfig: "ini",
   prettierrc: "json",
   eslintrc: "json",
@@ -118,13 +117,13 @@ function getLanguageFromPath(path: string): BundledLanguage | null {
   if (lowerFilename === "dockerfile") return "dockerfile";
   if (lowerFilename === "makefile" || lowerFilename === "gnumakefile") return "makefile";
   if (lowerFilename === "cmakelists.txt") return "cmake";
-  if (lowerFilename === ".gitignore") return "gitignore";
+  if (lowerFilename === ".gitignore") return null;
   if (lowerFilename === ".env" || lowerFilename.startsWith(".env.")) return "dotenv";
 
   // Extension-based lookup
   const ext = filename.split(".").pop()?.toLowerCase();
   if (ext && ext in EXT_TO_LANGUAGE) {
-    return EXT_TO_LANGUAGE[ext];
+    return EXT_TO_LANGUAGE[ext] ?? null;
   }
 
   return null;

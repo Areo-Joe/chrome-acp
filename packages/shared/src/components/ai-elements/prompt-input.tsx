@@ -139,6 +139,8 @@ const useOptionalProviderAttachments = () =>
 
 export type PromptInputProviderProps = PropsWithChildren<{
   initialInput?: string;
+  /** When false, paste/drag/file-dialog attachments are ignored. */
+  attachmentsEnabled?: boolean;
 }>;
 
 /**
@@ -147,6 +149,7 @@ export type PromptInputProviderProps = PropsWithChildren<{
  */
 export function PromptInputProvider({
   initialInput: initialTextInput = "",
+  attachmentsEnabled = true,
   children,
 }: PromptInputProviderProps) {
   // ----- textInput state
@@ -161,6 +164,7 @@ export function PromptInputProvider({
   const openRef = useRef<() => void>(() => {});
 
   const add = useCallback((files: File[] | FileList) => {
+    if (!attachmentsEnabled) return;
     const incoming = Array.from(files);
     if (incoming.length === 0) {
       return;
@@ -178,7 +182,7 @@ export function PromptInputProvider({
         }))
       )
     );
-  }, []);
+  }, [attachmentsEnabled]);
 
   const remove = useCallback((id: string) => {
     setAttachmentFiles((prev) => {

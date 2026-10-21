@@ -7,3 +7,4 @@ export * from "./reasoning";
 export * from "./shimmer";
 export * from "./tool";
 
+export * from "./content-blocks";

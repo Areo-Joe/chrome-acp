@@ -8,13 +8,13 @@ import {
   CommandGroup,
   CommandItem,
 } from "../ui/command";
-import type { ModelInfo } from "../../acp/types";
+import type { ModelPickerOption } from "../../acp/types";
 import { cn } from "../../lib/utils";
 
 interface ModelSelectorPickerProps {
-  models: ModelInfo[];
+  models: ModelPickerOption[];
   currentModelId: string | null;
-  onSelect: (model: ModelInfo) => void;
+  onSelect: (model: ModelPickerOption) => void;
   /** Whether to show the search input (default: true) */
   showSearch?: boolean;
   /** Whether we're on a mobile device (disables auto-selection) */

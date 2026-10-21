@@ -1,7 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import imageCompression from "browser-image-compression";
 import type { ACPClient } from "../acp/client";
-import type { SessionUpdate, ToolCallContent, PermissionRequestPayload, PermissionOption, ContentBlock, ImageContent } from "../acp/types";
+import type {
+  SessionUpdate,
+  ToolCallContent,
+  ToolCallStatus as ACPToolCallStatus,
+  ToolKind,
+  ToolCallLocation,
+  PermissionRequestPayload,
+  PermissionOption,
+  ContentBlock,
+  CreateElicitationRequest,
+  CreateElicitationResponse,
+  ImageContent,
+  PlanEntry,
+  Notice,
+} from "../acp/types";
 
 // Image compression options
 // Claude API has a 5MB limit, so we target 2MB to be safe
@@ -46,15 +60,13 @@ import {
   ConversationScrollButtons,
   LAST_USER_MESSAGE_ATTR,
 } from "./ai-elements/conversation";
-import {
-  Message,
-  MessageContent,
-  MessageResponse,
-  MessageAttachment,
-  MessageAttachments,
-} from "./ai-elements/message";
+import { Message, MessageContent } from "./ai-elements/message";
+import { ContentBlockList } from "./ai-elements/content-blocks";
+import { CodeBlock } from "./ai-elements/code-block";
+import { Badge } from "./ui/badge";
 import {
   PromptInput,
+  PromptInputProvider,
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputSubmit,
@@ -65,7 +77,7 @@ import {
   usePromptInputAttachments,
   type PromptInputMessage,
 } from "./ai-elements/prompt-input";
-import { ImageIcon, Plus } from "lucide-react";
+import { ImageIcon, Loader2, Lock, Plus } from "lucide-react";
 import { ModelSelectorPopover } from "./model-selector";
 import { Button } from "./ui/button";
 import {
@@ -76,13 +88,19 @@ import {
 
 // Reference: Zed's add_images_from_picker() - Button to open file dialog for images
 // Must be inside PromptInput to access attachments context
-function AddImageButton() {
+function AddImageButton({ disabled }: { disabled?: boolean }) {
   const attachments = usePromptInputAttachments();
   return (
     <PromptInputButton
       type="button"
       variant="ghost"
       size="sm"
+      disabled={disabled}
+      title={
+        disabled
+          ? "This agent does not support image input (promptCapabilities.image is false)"
+          : "Attach image"
+      }
       onClick={() => attachments.openFileDialog()}
     >
       <ImageIcon className="size-4" />
@@ -104,22 +122,50 @@ import {
   ReasoningContent,
 } from "./ai-elements/reasoning";
 import { ToolPermissionButtons } from "./ai-elements/permission-request";
+import { PlanPanel, type PlanView } from "./session/PlanPanel";
+import { NoticeCard } from "./session/NoticeCard";
+import { SessionConfigSelectors } from "./session/SessionConfigSelectors";
+import { SlashCommandMenu } from "./session/SlashCommandMenu";
+import { UsageIndicator } from "./session/UsageIndicator";
+import { CompactionCard, type CompactionView } from "./session/CompactionCard";
+import { ElicitationCard } from "./session/ElicitationDialog";
+import { useAvailableCommands } from "../hooks/useSessionConfig";
 
 // =============================================================================
 // Type Definitions - Flat Entry Structure (matching Zed's architecture)
 // =============================================================================
 
-// Tool call status (matches Zed's ToolCallStatus enum)
-type ToolCallStatus = "running" | "complete" | "error" | "waiting_for_confirmation" | "rejected" | "canceled";
+// UI tool call status (matches Zed's UI status enum)
+type ToolCallStatus =
+  | "pending"
+  | "running"
+  | "complete"
+  | "error"
+  | "waiting_for_confirmation"
+  | "rejected"
+  | "canceled";
 
 // Tool call data
 interface ToolCallData {
   id: string;
   title: string;
   status: ToolCallStatus;
+  /** Local user decision (rejected/canceled) that survives reported-status clears. */
+  localStatus?: "rejected" | "canceled";
+  kind?: ToolKind;
+  name?: string | null;
+  locations?: ToolCallLocation[];
   content?: ToolCallContent[];
-  rawInput?: Record<string, unknown>;
-  rawOutput?: Record<string, unknown>;
+  rawInput?: unknown;
+  rawOutput?: unknown;
+  /** Tool call _meta (Zed reads tool_name / terminal_info / terminal_output / terminal_exit). */
+  meta?: Record<string, unknown> | null;
+  /** Display-only terminal streamed through tool call _meta (Zed terminal_provider). */
+  terminal?: {
+    output: string;
+    truncated?: boolean;
+    exitStatus?: { exitCode?: number | null; signal?: string | null } | null;
+  };
   // Permission request data (only when status is "waiting_for_confirmation")
   permissionRequest?: {
     requestId: string;
@@ -130,24 +176,22 @@ interface ToolCallData {
 }
 
 // Assistant message chunk - can be regular message or thought
-type AssistantChunk =
-  | { type: "message"; text: string }
-  | { type: "thought"; text: string };
-
-// Image data for display in user messages
-// Reference: Zed's ContentBlock::Image stores decoded image for rendering
-interface UserMessageImage {
-  mimeType: string;
-  data: string;  // base64 encoded
-}
+type AssistantChunk = {
+  type: "message" | "thought";
+  blocks: ContentBlock[];
+  messageId?: string | null;
+};
 
 // User message entry
 // Reference: Zed's UserMessage { content: ContentBlock, chunks: Vec<acp::ContentBlock> }
 interface UserMessageEntry {
   type: "user_message";
   id: string;
-  content: string;
-  images?: UserMessageImage[];  // Images attached to this message
+  blocks: ContentBlock[];
+  /** Reference: chunks with the same messageId belong to one message. */
+  messageId?: string | null;
+  /** True until the agent echoes the message back over `user_message_chunk`. */
+  isOptimistic?: boolean;
 }
 
 // Assistant message entry - contains chunks (text + thoughts)
@@ -163,19 +207,37 @@ interface ToolCallEntry {
   toolCall: ToolCallData;
 }
 
+// Pending agent elicitation (inline in the transcript, like Zed's ElicitationCard).
+interface ElicitationEntry {
+  type: "elicitation";
+  id: string;
+  request: CreateElicitationRequest;
+}
+
+// Context compaction entry (timeline-positioned upsert).
+interface CompactionEntry {
+  type: "compaction";
+  id: string;
+  view: CompactionView;
+}
+
 // Thread entry - flat list of all entries
-type ThreadEntry = UserMessageEntry | AssistantMessageEntry | ToolCallEntry;
+type ThreadEntry =
+  | UserMessageEntry
+  | AssistantMessageEntry
+  | ToolCallEntry
+  | CompactionEntry
+  | ElicitationEntry;
 
 interface ChatInterfaceProps {
   client: ACPClient;
 }
 
-// Helper to format tool call content for display
-function formatToolOutput(
-  content?: ToolCallContent[],
-  rawOutput?: Record<string, unknown>,
-): unknown {
-  // First try to extract from structured content
+// Helper to format tool call content for display.
+// Reference: Zed renders content/diff/terminal variants; unknown variants are
+// surfaced instead of dropped.
+function formatToolOutput(tool: ToolCallData): string | null {
+  const { content, rawOutput } = tool;
   if (content && content.length > 0) {
     const results: string[] = [];
 
@@ -185,20 +247,37 @@ function formatToolOutput(
           results.push(item.content.text);
         }
       } else if (item.type === "diff") {
-        results.push(`📝 ${item.path}\n--- Old\n+++ New\n${item.newText}`);
+        const oldLines = (item.oldText ?? "").split("\n");
+        const newLines = item.newText.split("\n");
+        results.push(
+          `📝 ${item.path}\n${[
+            ...oldLines.map((line) => `- ${line}`),
+            ...newLines.map((line) => `+ ${line}`),
+          ].join("\n")}`,
+        );
       } else if (item.type === "terminal") {
-        results.push(`🖥️ Terminal: ${item.terminalId}`);
+        results.push(
+          tool.terminal
+            ? `🖥️ Terminal output (${item.terminalId})`
+            : `🖥️ Terminal: ${item.terminalId}`,
+        );
+      } else {
+        results.push(`Unsupported tool call content: ${JSON.stringify(item)}`);
       }
     }
 
     if (results.length > 0) {
-      return results.length === 1 ? results[0] : results.join("\n\n");
+      return results.join("\n\n");
     }
   }
 
+  if (tool.terminal?.output) {
+    return tool.terminal.output;
+  }
+
   // Fall back to rawOutput if content didn't produce results
-  if (rawOutput && Object.keys(rawOutput).length > 0) {
-    return rawOutput;
+  if (rawOutput && typeof rawOutput === "object" && Object.keys(rawOutput).length > 0) {
+    return JSON.stringify(rawOutput, null, 2);
   }
 
   return null;
@@ -208,11 +287,14 @@ function formatToolOutput(
 // Helper Functions
 // =============================================================================
 
-// Map ACP status string to our status type
-function mapToolStatus(status: string): ToolCallStatus {
+// Map ACP status to our status type.
+// Reference: Zed's `underlying_status()` — an absent/cleared reported status
+// falls back to Pending (not InProgress).
+function mapToolStatus(status: ACPToolCallStatus | null | undefined): ToolCallStatus {
   if (status === "completed") return "complete";
   if (status === "failed") return "error";
-  return "running";
+  if (status === "in_progress") return "running";
+  return "pending";
 }
 
 // Find tool call index in entries (search from end, like Zed)
@@ -224,6 +306,228 @@ function findToolCallIndex(entries: ThreadEntry[], toolCallId: string): number {
     }
   }
   return -1;
+}
+
+// Append a message/thought chunk to the trailing assistant message (Zed's
+// `push_assistant_content_block_with_message_id`).
+// Reference: Zed's `can_merge_message_chunks` — merge iff the ids are equal,
+// or either side has no id.
+function canMergeMessageChunks(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  if (!left || !right) return true;
+  return left === right;
+}
+
+/** Append blocks, merging adjacent text blocks (Zed appends Markdown chunks). */
+function appendBlocks(
+  existing: ContentBlock[],
+  incoming: ContentBlock[],
+): ContentBlock[] {
+  const next = [...existing];
+  for (const block of incoming) {
+    const last = next[next.length - 1];
+    if (block.type === "text" && last?.type === "text") {
+      next[next.length - 1] = { ...last, text: last.text + block.text };
+    } else {
+      next.push(block);
+    }
+  }
+  return next;
+}
+
+function appendAssistantChunk(
+  entries: ThreadEntry[],
+  kind: "message" | "thought",
+  block: ContentBlock,
+  messageId?: string | null,
+): ThreadEntry[] {
+  const lastEntry = entries[entries.length - 1];
+  if (lastEntry?.type === "assistant_message") {
+    const lastChunk = lastEntry.chunks[lastEntry.chunks.length - 1];
+    if (lastChunk?.type === kind && canMergeMessageChunks(lastChunk.messageId, messageId)) {
+      return [
+        ...entries.slice(0, -1),
+        {
+          ...lastEntry,
+          chunks: [
+            ...lastEntry.chunks.slice(0, -1),
+            { ...lastChunk, blocks: appendBlocks(lastChunk.blocks, [block]), messageId },
+          ],
+        },
+      ];
+    }
+    return [
+      ...entries.slice(0, -1),
+      {
+        ...lastEntry,
+        chunks: [...lastEntry.chunks, { type: kind, blocks: [block], messageId }],
+      },
+    ];
+  }
+  return [
+    ...entries,
+    {
+      type: "assistant_message",
+      id: `assistant-${Date.now()}`,
+      chunks: [{ type: kind, blocks: [block], messageId }],
+    },
+  ];
+}
+
+function metaObject(
+  meta: Record<string, unknown> | null | undefined,
+  key: string,
+): Record<string, unknown> | null {
+  const value = meta?.[key];
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+// Reference: Zed's `handle_session_notification` pre/post-handles
+// `_meta.terminal_info`, `_meta.terminal_output`, and `_meta.terminal_exit`.
+function applyToolMeta(tool: ToolCallData): void {
+  const info = metaObject(tool.meta, "terminal_info");
+  if (info && typeof info.terminal_id === "string" && !tool.terminal) {
+    tool.terminal = { output: "" };
+  }
+
+  const output = metaObject(tool.meta, "terminal_output");
+  if (output && typeof output.data === "string") {
+    tool.terminal = {
+      ...(tool.terminal ?? { output: "" }),
+      output: (tool.terminal?.output ?? "") + output.data,
+    };
+  }
+
+  const exit = metaObject(tool.meta, "terminal_exit");
+  if (exit) {
+    tool.terminal = {
+      ...(tool.terminal ?? { output: "" }),
+      exitStatus: {
+        exitCode: typeof exit.exit_code === "number" ? exit.exit_code : null,
+        signal: typeof exit.signal === "string" ? exit.signal : null,
+      },
+    };
+  }
+
+  const toolName = tool.meta?.tool_name;
+  if (!tool.name && typeof toolName === "string") {
+    tool.name = toolName;
+  }
+}
+
+function fallbackTitle(tool: ToolCallData): string {
+  // Reference: Zed treats an empty/whitespace title as absent.
+  const title = tool.title?.trim();
+  if (title) return title;
+  const name = tool.name?.trim();
+  return name || "Tool call";
+}
+
+// A full `tool_call` update is a wholesale snapshot (Zed's `upsert_tool_call`).
+function upsertToolCall(entries: ThreadEntry[], snapshot: ToolCallData): ThreadEntry[] {
+  const normalized: ToolCallData = { ...snapshot };
+  applyToolMeta(normalized);
+  normalized.title = fallbackTitle(normalized);
+
+  const index = findToolCallIndex(entries, normalized.id);
+  if (index < 0) {
+    return [...entries, { type: "tool_call", toolCall: normalized }];
+  }
+  return entries.map((entry, entryIndex) => {
+    if (entryIndex !== index || entry.type !== "tool_call") return entry;
+    const terminal = normalized.status === "complete" || normalized.status === "error";
+    const hasPendingPermission = !terminal && entry.toolCall.permissionRequest != null;
+    // A full snapshot should not drop terminal output streamed via _meta.
+    const terminalState = normalized.terminal ?? entry.toolCall.terminal;
+    const keepLocal =
+      entry.toolCall.localStatus != null &&
+      (normalized.status === "pending" || normalized.status === "running");
+    return {
+      type: "tool_call",
+      toolCall: {
+        ...normalized,
+        // Reference: a pending authorization takes precedence over the
+        // reported status; local decisions survive non-terminal updates.
+        status: hasPendingPermission
+          ? "waiting_for_confirmation"
+          : keepLocal
+            ? (entry.toolCall.localStatus ?? normalized.status)
+            : normalized.status,
+        localStatus: keepLocal ? entry.toolCall.localStatus : undefined,
+        terminal: terminalState,
+        permissionRequest: terminal ? undefined : entry.toolCall.permissionRequest,
+        isStandalonePermission: terminal ? undefined : entry.toolCall.isStandalonePermission,
+      },
+    };
+  });
+}
+
+// Partial update: absent field = unchanged, null = clear, value = set.
+// Reference: Zed's `ToolCall::apply_patch` (content/locations/title/... replace
+// wholesale when present; terminal statuses close a pending permission prompt).
+function applyToolCallUpdate(
+  entries: ThreadEntry[],
+  update: Extract<SessionUpdate, { sessionUpdate: "tool_call_update" }>,
+): ThreadEntry[] {
+  const index = findToolCallIndex(entries, update.toolCallId);
+  if (index < 0) {
+    // Reference: Zed inserts a synthetic failed "Tool call not found" row and
+    // discards the payload.
+    console.warn(`[ChatInterface] Tool call not found for update: ${update.toolCallId}`);
+    return [
+      ...entries,
+      {
+        type: "tool_call",
+        toolCall: {
+          id: update.toolCallId,
+          title: "Tool call not found",
+          status: "error",
+          content: [{ type: "content", content: { type: "text", text: "Tool call not found" } }],
+        },
+      },
+    ];
+  }
+
+  return entries.map((entry, entryIndex) => {
+    if (entryIndex !== index || entry.type !== "tool_call") return entry;
+    const current = entry.toolCall;
+    const next: ToolCallData = { ...current };
+
+    // Reference: a cleared title falls back to tool_name / "Tool call".
+    if (update.title !== undefined) next.title = update.title ?? "";
+    if (update.name !== undefined) next.name = update.name;
+    if (update.kind !== undefined) next.kind = update.kind ?? undefined;
+    if (update.status !== undefined) {
+      const terminal = update.status === "completed" || update.status === "failed";
+      if (update.status === null) {
+        // Reference: clearing reported status keeps an explicit local decision.
+        if (!current.permissionRequest) {
+          next.status = current.localStatus ?? "pending";
+        }
+      } else if (!current.permissionRequest || terminal) {
+        next.status = mapToolStatus(update.status);
+        next.localStatus = undefined;
+      }
+      if (terminal) {
+        next.permissionRequest = undefined;
+        next.isStandalonePermission = undefined;
+      }
+    }
+    if (update.content !== undefined) next.content = update.content ?? [];
+    if (update.locations !== undefined) next.locations = update.locations ?? [];
+    if (update.rawInput !== undefined) next.rawInput = update.rawInput;
+    if (update.rawOutput !== undefined) next.rawOutput = update.rawOutput;
+    // Reference: legacy v1 `_meta` is sticky/replaced when present.
+    if (update._meta !== undefined) next.meta = update._meta;
+    applyToolMeta(next);
+    next.title = fallbackTitle(next);
+
+    return { type: "tool_call", toolCall: next };
+  });
 }
 
 // =============================================================================
@@ -239,15 +543,59 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   const activeSessionIdRef = useRef<string | null>(null);
   // Reference: Zed's supports_images() checks prompt_capabilities.image
   const [supportsImages, setSupportsImages] = useState(false);
+  // Plans: legacy `plan` updates plus ID-addressed `plan_update`/`plan_removed`.
+  const [planState, setPlanState] = useState<{
+    plans: Record<string, PlanView>;
+    visiblePlanId: string | null;
+  }>({ plans: {}, visiblePlanId: null });
+  // Notices are live, dismissible events — not part of the transcript
+  // (Reference: Zed's `notices: Vec<(usize, Notice)>`).
+  const [notices, setNotices] = useState<Array<{ id: number; notice: Notice }>>([]);
+  const nextNoticeIdRef = useRef(0);
+  // Auth-required state (ACP error -32000 / -32002).
+  const [authRequired, setAuthRequired] = useState<{ message: string } | null>(null);
+  const [authBusy, setAuthBusy] = useState<string | null>(null);
+  // Used by the error handler registered once in the setup effect.
+  const isLoadingRef = useRef(false);
+  const sessionReadyRef = useRef(false);
+  // The client optimistically adds the user message; agents may echo it back
+  // via `user_message_chunk`. Ignore those echoed chunks (Zed does the same).
+  const ignoreUserEchoRef = useRef(false);
+  const lastSentTextRef = useRef("");
+  const echoedTextRef = useRef("");
+  const pendingEchoBlocksRef = useRef<ContentBlock[]>([]);
+  // Slash commands advertised by the agent.
+  const availableCommands = useAvailableCommands(client);
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
 
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  useEffect(() => {
+    sessionReadyRef.current = sessionReady;
+  }, [sessionReady]);
+
   const resetThreadState = useCallback(() => {
     setEntries([]);
     setIsLoading(false);
     setSessionReady(false);
+    setPlanState({ plans: {}, visiblePlanId: null });
+    setNotices([]);
+    nextNoticeIdRef.current = 0;
+    setAuthRequired(null);
+    ignoreUserEchoRef.current = false;
+    lastSentTextRef.current = "";
+    echoedTextRef.current = "";
+    pendingEchoBlocksRef.current = [];
+  }, []);
+
+  const pushNotice = useCallback((notice: Notice) => {
+    const id = nextNoticeIdRef.current++;
+    setNotices((prev) => [...prev, { id, notice }]);
   }, []);
 
   const activateSession = useCallback((sessionId: string, options?: { resetEntries?: boolean }) => {
@@ -255,6 +603,10 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     if (shouldResetEntries) {
       setEntries([]);
       setIsLoading(false);
+      setPlanState({ plans: {}, visiblePlanId: null });
+      setNotices([]);
+      nextNoticeIdRef.current = 0;
+      setAuthRequired(null);
     }
     setActiveSessionId(sessionId);
     setSessionReady(true);
@@ -280,7 +632,12 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
         return prev.map((entry, index) => {
           if (index !== toolCallIndex) return entry;
           if (entry.type !== "tool_call") return entry;
-          if (entry.toolCall.status !== "running") return entry;
+          if (
+            entry.toolCall.status !== "running" &&
+            entry.toolCall.status !== "pending"
+          ) {
+            return entry;
+          }
 
           return {
             type: "tool_call",
@@ -318,212 +675,236 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   }, []);
 
   // =============================================================================
-  // Session Update Handler (Zed-style: check last entry type)
+  // Session Update Handler (Zed-style: append-only entries, tri-state updates)
   // =============================================================================
   const handleSessionUpdate = useCallback((sessionId: string, update: SessionUpdate) => {
     if (activeSessionIdRef.current && sessionId !== activeSessionIdRef.current) {
       return;
     }
 
-    // Handle agent message chunk
-    if (update.sessionUpdate === "agent_message_chunk") {
-      const text = update.content.type === "text" && update.content.text ? update.content.text : "";
-      if (!text) return;
+    switch (update.sessionUpdate) {
+      case "agent_message_chunk":
+        setEntries((prev) =>
+          appendAssistantChunk(prev, "message", update.content, update.messageId),
+        );
+        return;
 
-      setEntries((prev) => {
-        const lastEntry = prev[prev.length - 1];
+      case "agent_thought_chunk":
+        setEntries((prev) =>
+          appendAssistantChunk(prev, "thought", update.content, update.messageId),
+        );
+        return;
 
-        // If last entry is AssistantMessage, append to it
-        if (lastEntry?.type === "assistant_message") {
-          const lastChunk = lastEntry.chunks[lastEntry.chunks.length - 1];
+      case "user_message_chunk": {
+        const block = update.content;
+        let blocksToAdd: ContentBlock[] = [block];
 
-          // If last chunk is same type (message), append text
-          if (lastChunk?.type === "message") {
+        if (block.type === "text") {
+          if (!block.text) return;
+          // Skip chunks echoing the optimistic user message (Zed's optimistic
+          // echo suppression). Chunks may be split, so compare the accumulated
+          // echo against the text we sent.
+          if (ignoreUserEchoRef.current && lastSentTextRef.current) {
+            echoedTextRef.current += block.text;
+            if (lastSentTextRef.current.startsWith(echoedTextRef.current)) {
+              if (echoedTextRef.current.length >= lastSentTextRef.current.length) {
+                ignoreUserEchoRef.current = false;
+              }
+              return;
+            }
+            // Not an echo after all: keep what already arrived and append it.
+            ignoreUserEchoRef.current = false;
+            blocksToAdd = [{ type: "text", text: echoedTextRef.current }];
+          }
+        } else if (ignoreUserEchoRef.current) {
+          // Drop an echoed attachment that matches the optimistic message.
+          const encoded = JSON.stringify(block);
+          const index = pendingEchoBlocksRef.current.findIndex(
+            (candidate) => JSON.stringify(candidate) === encoded,
+          );
+          if (index >= 0) {
+            pendingEchoBlocksRef.current.splice(index, 1);
+            if (pendingEchoBlocksRef.current.length === 0) {
+              ignoreUserEchoRef.current = false;
+            }
+            return;
+          }
+        }
+
+        setEntries((prev) => {
+          const lastEntry = prev[prev.length - 1];
+          // Reference: Zed merges user chunks by messageId (equal, or either
+          // side missing).
+          if (
+            lastEntry?.type === "user_message" &&
+            canMergeMessageChunks(lastEntry.messageId, update.messageId)
+          ) {
             return [
               ...prev.slice(0, -1),
               {
                 ...lastEntry,
-                chunks: [
-                  ...lastEntry.chunks.slice(0, -1),
-                  { type: "message", text: lastChunk.text + text },
-                ],
+                blocks: appendBlocks(lastEntry.blocks, blocksToAdd),
+                messageId: lastEntry.messageId ?? update.messageId,
               },
             ];
           }
-
-          // Otherwise add new message chunk
           return [
-            ...prev.slice(0, -1),
+            ...prev,
             {
-              ...lastEntry,
-              chunks: [...lastEntry.chunks, { type: "message", text }],
+              type: "user_message",
+              id: `user-${Date.now()}-${prev.length}`,
+              blocks: blocksToAdd,
+              messageId: update.messageId,
             },
           ];
-        }
+        });
+        return;
+      }
 
-        // Create new AssistantMessage entry
-        const newEntry: AssistantMessageEntry = {
-          type: "assistant_message",
-          id: `assistant-${Date.now()}`,
-          chunks: [{ type: "message", text }],
+      // A full tool call is a wholesale snapshot (Zed replaces all fields).
+      case "tool_call": {
+        const snapshot: ToolCallData = {
+          id: update.toolCallId,
+          title: update.title,
+          status: mapToolStatus(update.status),
+          kind: update.kind,
+          name: update.name,
+          locations: update.locations ?? [],
+          content: update.content ?? [],
+          rawInput: update.rawInput,
+          rawOutput: update.rawOutput,
+          meta: update._meta,
         };
-        return [...prev, newEntry];
-      });
-    }
-    // Handle agent thought chunk (NEW - was missing before)
-    else if (update.sessionUpdate === "agent_thought_chunk") {
-      const text = update.content.type === "text" && update.content.text ? update.content.text : "";
-      if (!text) return;
+        setEntries((prev) => upsertToolCall(prev, snapshot));
+        return;
+      }
 
-      setEntries((prev) => {
-        const lastEntry = prev[prev.length - 1];
+      // Partial update: absent field = unchanged, null = clear, value = set.
+      case "tool_call_update": {
+        setEntries((prev) => applyToolCallUpdate(prev, update));
+        return;
+      }
 
-        // If last entry is AssistantMessage, append to it
-        if (lastEntry?.type === "assistant_message") {
-          const lastChunk = lastEntry.chunks[lastEntry.chunks.length - 1];
+      case "plan": {
+        const view: PlanView = { id: "legacy", entries: update.entries };
+        setPlanState((prev) => ({
+          plans: { ...prev.plans, legacy: view },
+          visiblePlanId: "legacy",
+        }));
+        return;
+      }
 
-          // If last chunk is same type (thought), append text
-          if (lastChunk?.type === "thought") {
+      case "plan_update": {
+        const content = update.plan;
+        const view: PlanView = { id: content.planId };
+        if (content.type === "items") view.entries = content.entries;
+        else if (content.type === "markdown") view.markdown = content.content;
+        else if (content.type === "file") view.uri = content.uri;
+        setPlanState((prev) => ({
+          plans: { ...prev.plans, [content.planId]: view },
+          visiblePlanId: content.planId,
+        }));
+        return;
+      }
+
+      case "plan_removed": {
+        setPlanState((prev) => {
+          const plans = { ...prev.plans };
+          delete plans[update.planId];
+          // Reference: pick another visible plan if the current one is removed.
+          const remaining = Object.keys(plans);
+          return {
+            plans,
+            visiblePlanId:
+              prev.visiblePlanId === update.planId
+                ? (remaining[remaining.length - 1] ?? null)
+                : prev.visiblePlanId,
+          };
+        });
+        return;
+      }
+
+      case "notice": {
+        const notice: Notice = update;
+        const id = nextNoticeIdRef.current++;
+        setNotices((prev) => [...prev, { id, notice }]);
+        return;
+      }
+
+      // Reference: Zed upserts compactions by id; the first update fixes the
+      // timeline position and later updates patch the same entry.
+      case "compaction_update": {
+        setEntries((prev) => {
+          const index = prev.findIndex(
+            (entry) =>
+              entry.type === "compaction" && entry.view.id === update.compactionId,
+          );
+          const existing =
+            index >= 0 && prev[index]?.type === "compaction"
+              ? prev[index].view
+              : null;
+          const view: CompactionView = {
+            id: update.compactionId,
+            status: update.status,
+            summary:
+              update.summary !== undefined
+                ? (update.summary ?? [])
+                : (existing?.summary ?? []),
+            error:
+              update.error !== undefined ? update.error : (existing?.error ?? null),
+          };
+          if (index < 0) {
             return [
-              ...prev.slice(0, -1),
+              ...prev,
+              { type: "compaction", id: update.compactionId, view },
+            ];
+          }
+          return prev.map((entry, entryIndex) =>
+            entryIndex === index ? { type: "compaction", id: view.id, view } : entry,
+          );
+        });
+        return;
+      }
+
+      case "compaction_summary_chunk": {
+        setEntries((prev) => {
+          const index = prev.findIndex(
+            (entry) =>
+              entry.type === "compaction" && entry.view.id === update.compactionId,
+          );
+          if (index < 0) {
+            return [
+              ...prev,
               {
-                ...lastEntry,
-                chunks: [
-                  ...lastEntry.chunks.slice(0, -1),
-                  { type: "thought", text: lastChunk.text + text },
-                ],
+                type: "compaction",
+                id: update.compactionId,
+                view: {
+                  id: update.compactionId,
+                  status: "in_progress",
+                  summary: [update.content],
+                },
               },
             ];
           }
-
-          // Otherwise add new thought chunk
-          return [
-            ...prev.slice(0, -1),
-            {
-              ...lastEntry,
-              chunks: [...lastEntry.chunks, { type: "thought", text }],
-            },
-          ];
-        }
-
-        // Create new AssistantMessage entry with thought
-        const newEntry: AssistantMessageEntry = {
-          type: "assistant_message",
-          id: `assistant-${Date.now()}`,
-          chunks: [{ type: "thought", text }],
-        };
-        return [...prev, newEntry];
-      });
-    }
-    // Handle user message chunk (NEW - was missing before)
-    else if (update.sessionUpdate === "user_message_chunk") {
-      const text = update.content.type === "text" && update.content.text ? update.content.text : "";
-      if (!text) return;
-
-      setEntries((prev) => {
-        const lastEntry = prev[prev.length - 1];
-
-        // If last entry is UserMessage, append to it
-        if (lastEntry?.type === "user_message") {
-          return [
-            ...prev.slice(0, -1),
-            {
-              ...lastEntry,
-              content: lastEntry.content + text,
-            },
-          ];
-        }
-
-        // Create new UserMessage entry
-        const newEntry: UserMessageEntry = {
-          type: "user_message",
-          id: `user-${Date.now()}`,
-          content: text,
-        };
-        return [...prev, newEntry];
-      });
-    }
-    // Handle tool call (UPSERT - update if exists, create if not)
-    else if (update.sessionUpdate === "tool_call") {
-      const toolCallData: ToolCallData = {
-        id: update.toolCallId,
-        title: update.title,
-        status: mapToolStatus(update.status),
-        content: update.content,
-        rawInput: update.rawInput,
-        rawOutput: update.rawOutput,
-      };
-
-      setEntries((prev) => {
-        // UPSERT: Check if tool call already exists
-        const existingIndex = findToolCallIndex(prev, update.toolCallId);
-
-        if (existingIndex >= 0) {
-          // UPDATE existing tool call
-          return prev.map((entry, index) => {
-            if (index !== existingIndex) return entry;
-            if (entry.type !== "tool_call") return entry;
-
+          return prev.map((entry, entryIndex) => {
+            if (entryIndex !== index || entry.type !== "compaction") return entry;
             return {
-              type: "tool_call",
-              toolCall: {
-                ...entry.toolCall,
-                ...toolCallData,
+              type: "compaction",
+              id: entry.view.id,
+              view: {
+                ...entry.view,
+                summary: appendBlocks(entry.view.summary, [update.content]),
               },
             };
           });
-        }
-
-        // CREATE new tool call entry
-        const newEntry: ToolCallEntry = {
-          type: "tool_call",
-          toolCall: toolCallData,
-        };
-        return [...prev, newEntry];
-      });
-    }
-    // Handle tool call update (partial update)
-    else if (update.sessionUpdate === "tool_call_update") {
-      setEntries((prev) => {
-        const existingIndex = findToolCallIndex(prev, update.toolCallId);
-
-        if (existingIndex < 0) {
-          // Tool call not found - create a failed tool call entry (like Zed)
-          console.warn(`[ChatInterface] Tool call not found for update: ${update.toolCallId}`);
-          const failedEntry: ToolCallEntry = {
-            type: "tool_call",
-            toolCall: {
-              id: update.toolCallId,
-              title: update.title || "Tool call not found",
-              status: "error",
-              content: [{ type: "content", content: { type: "text", text: "Tool call not found" } }],
-            },
-          };
-          return [...prev, failedEntry];
-        }
-
-        return prev.map((entry, index) => {
-          if (index !== existingIndex) return entry;
-          if (entry.type !== "tool_call") return entry;
-
-          const newStatus = update.status ? mapToolStatus(update.status) : entry.toolCall.status;
-          const mergedContent = update.content
-            ? [...(entry.toolCall.content || []), ...update.content]
-            : entry.toolCall.content;
-
-          return {
-            type: "tool_call",
-            toolCall: {
-              ...entry.toolCall,
-              status: newStatus,
-              ...(update.title && { title: update.title }),
-              content: mergedContent,
-              ...(update.rawInput && { rawInput: update.rawInput }),
-              ...(update.rawOutput && { rawOutput: update.rawOutput }),
-            },
-          };
         });
-      });
+        return;
+      }
+
+      // Usage, commands, modes, config options, and session info are tracked by
+      // ACPClient and exposed through their dedicated handlers/hooks.
+      default:
+        return;
     }
   }, []);
 
@@ -533,12 +914,25 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   useEffect(() => {
     client.setSessionCreatedHandler((sessionId) => {
       console.log("[ChatInterface] Session created:", sessionId);
+      setAuthRequired(null);
       activateSession(sessionId);
     });
 
     client.setSessionLoadedHandler((sessionId) => {
       console.log("[ChatInterface] Session loaded/resumed:", sessionId);
+      setAuthRequired(null);
       activateSession(sessionId, { resetEntries: false });
+      if (client.lastSessionLoadMode === "resume") {
+        // Reference: ACP `session/resume` does not replay history (only
+        // `session/load` does); make that explicit instead of showing an
+        // empty thread.
+        pushNotice({
+          severity: "info",
+          title: "Session resumed",
+          description:
+            "This agent does not support history replay (session/load). The conversation continues without previous messages.",
+        });
+      }
     });
 
     client.setSessionSwitchingHandler((sessionId) => {
@@ -553,13 +947,62 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
 
     client.setPromptCompleteHandler((stopReason) => {
       console.log("[ChatInterface] Prompt complete:", stopReason);
-      // Always set isLoading=false when prompt completes
-      // This includes stopReason="cancelled" (which is the expected response after client.cancel())
-      // Note: Tool calls are already marked as "canceled" in handleCancel before this fires
+      ignoreUserEchoRef.current = false;
+      lastSentTextRef.current = "";
+      echoedTextRef.current = "";
+      pendingEchoBlocksRef.current = [];
       setIsLoading(false);
     });
 
     client.setPermissionRequestHandler(handlePermissionRequest);
+    client.setElicitationRequestHandler((payload) => {
+      setEntries((prev) => [
+        ...prev,
+        {
+          type: "elicitation",
+          id: payload.requestId,
+          request: payload.request,
+        },
+      ]);
+    });
+    client.setElicitationCompleteHandler((elicitationId) => {
+      setEntries((prev) =>
+        prev.filter(
+          (entry) =>
+            !(
+              entry.type === "elicitation" &&
+              entry.request.mode === "url" &&
+              entry.request.elicitationId === elicitationId
+            ),
+        ),
+      );
+    });
+    client.setElicitationCancelledHandler(() => {
+      setEntries((prev) => prev.filter((entry) => entry.type !== "elicitation"));
+    });
+
+    // Surface proxy errors (e.g. a failed prompt) in the transcript and stop
+    // the loading indicator.
+    client.setErrorHandler((message, code) => {
+      // Reference: Zed maps JSON-RPC -32000 to AuthRequired and surfaces the
+      // agent's auth methods.
+      if (code === -32000 || code === -32002) {
+        isLoadingRef.current = false;
+        setIsLoading(false);
+        setAuthRequired({ message });
+        return;
+      }
+      // Surface prompt failures and session-creation errors in the transcript;
+      // other errors are already handled by their callers (e.g. thread list).
+      if (!isLoadingRef.current && sessionReadyRef.current) return;
+      isLoadingRef.current = false;
+      setIsLoading(false);
+      pushNotice({
+        severity: "error",
+        title: "Request failed",
+        description: message,
+      });
+    });
 
     // Create session
     client.createSession();
@@ -570,8 +1013,12 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
       client.setSessionUpdateHandler(() => {});
       client.setPromptCompleteHandler(() => {});
       client.setPermissionRequestHandler(() => {});
+      client.setElicitationRequestHandler(() => {});
+      client.setElicitationCompleteHandler(() => {});
+      client.setElicitationCancelledHandler(() => {});
+      client.setErrorHandler(() => {});
     };
-  }, [activateSession, client, handlePermissionRequest, handleSessionUpdate, resetThreadState]);
+  }, [activateSession, client, handlePermissionRequest, handleSessionUpdate, pushNotice, resetThreadState]);
 
   // =============================================================================
   // User Actions
@@ -598,6 +1045,62 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     client.createSession();
   }, [client, isLoading, resetThreadState]);
 
+  const agentAuthMethods = client.authMethods.filter(
+    (method) => !("type" in method && method.type === "terminal"),
+  );
+
+  const retrySession = useCallback(() => {
+    // Reference: Zed resets the conversation (new thread) after login.
+    resetThreadState();
+    setActiveSessionId(null);
+    client.createSession();
+  }, [client, resetThreadState]);
+
+  const handleAuthenticate = useCallback(
+    async (methodId: string) => {
+      setAuthBusy(methodId);
+      try {
+        await client.authenticate(methodId);
+        setAuthRequired(null);
+        retrySession();
+      } catch (error) {
+        pushNotice({
+          severity: "error",
+          title: "Authentication failed",
+          description: (error as Error).message,
+        });
+      } finally {
+        setAuthBusy(null);
+      }
+    },
+    [client, pushNotice, retrySession],
+  );
+
+  const handleElicitationResponse = useCallback(
+    (requestId: string, response: CreateElicitationResponse) => {
+      client.respondToElicitation(requestId, response);
+      setEntries((prev) =>
+        prev.filter(
+          (entry) => !(entry.type === "elicitation" && entry.id === requestId),
+        ),
+      );
+    },
+    [client],
+  );
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await client.logout();
+      pushNotice({ severity: "info", title: "Logged out" });
+    } catch (error) {
+      pushNotice({
+        severity: "error",
+        title: "Logout failed",
+        description: (error as Error).message,
+      });
+    }
+  }, [client, pushNotice]);
+
   // Reference: Zed's MessageEditor.contents() builds Vec<acp::ContentBlock>
   // from text and attached images. We do the same here.
   const handleSubmit = async (message: PromptInputMessage) => {
@@ -606,6 +1109,19 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
 
     // Allow sending if there's text OR images (like Zed)
     if ((!text && files.length === 0) || isLoading || !sessionReady) return;
+
+    // Reference: Zed clears completed entries from the legacy plan at the start
+    // of each turn (`clear_completed_plan_entries`).
+    setPlanState((prev) => {
+      const legacy = prev.plans.legacy;
+      if (!legacy?.entries) return prev;
+      const entries = legacy.entries.filter((entry) => entry.status !== "completed");
+      if (entries.length === legacy.entries.length) return prev;
+      return {
+        ...prev,
+        plans: { ...prev.plans, legacy: { ...legacy, entries } },
+      };
+    });
 
     // Build ContentBlock[] from text and files
     // Reference: Zed's contents() method builds text chunks and image chunks
@@ -618,9 +1134,6 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
 
     // Convert image files to ImageContent blocks
     // Reference: Zed's MentionImage stores base64 data + format
-    // Also collect images for display in the user message entry
-    const userImages: UserMessageImage[] = [];
-
     for (const file of files) {
       if (file.mediaType?.startsWith("image/") && file.url) {
         try {
@@ -675,7 +1188,11 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
           const base64Data = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => {
-              const result = reader.result as string;
+              const result = reader.result;
+              if (typeof result !== "string") {
+                reject(new Error("FileReader returned a non-string result"));
+                return;
+              }
               const commaIndex = result.indexOf(",");
               resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
             };
@@ -690,13 +1207,6 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
             data: base64Data,
           };
           contentBlocks.push(imageContent);
-
-          // Reference: Zed stores image data in UserMessage for display
-          // Keep a copy for rendering in the chat history
-          userImages.push({
-            mimeType: finalMimeType,
-            data: base64Data,
-          });
         } catch (error) {
           console.error("[ChatInterface] Failed to process image:", {
             filename: file.filename,
@@ -710,14 +1220,19 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
 
     if (contentBlocks.length === 0) return;
 
-    // Add user message as new entry with images
-    // Reference: Zed's UserMessage contains both content and chunks (images)
+    // Add the optimistic user message (Zed stores the sent ContentBlocks).
     const userEntry: UserMessageEntry = {
       type: "user_message",
       id: `user-${Date.now()}`,
-      content: text,
-      images: userImages.length > 0 ? userImages : undefined,
+      blocks: contentBlocks,
+      isOptimistic: true,
     };
+    ignoreUserEchoRef.current = true;
+    lastSentTextRef.current = text;
+    echoedTextRef.current = "";
+    pendingEchoBlocksRef.current = contentBlocks.filter(
+      (block) => block.type !== "text",
+    );
     setEntries((prev) => [...prev, userEntry]);
     setIsLoading(true);
 
@@ -726,6 +1241,10 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
       await client.sendPrompt(contentBlocks);
     } catch (error) {
       console.error("[ChatInterface] Failed to send prompt:", error);
+      ignoreUserEchoRef.current = false;
+      lastSentTextRef.current = "";
+      echoedTextRef.current = "";
+      pendingEchoBlocksRef.current = [];
       setIsLoading(false);
     }
   };
@@ -744,6 +1263,7 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
 
         // Check if status should be canceled (matches Zed's logic)
         const shouldCancel =
+          entry.toolCall.status === "pending" ||
           entry.toolCall.status === "running" ||
           entry.toolCall.status === "waiting_for_confirmation";
 
@@ -755,6 +1275,7 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
           toolCall: {
             ...entry.toolCall,
             status: "canceled" as ToolCallStatus,
+            localStatus: "canceled",
             permissionRequest: undefined, // Clear any pending permission request
           },
         };
@@ -796,6 +1317,7 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
           toolCall: {
             ...entry.toolCall,
             status: newStatus,
+            localStatus: isRejected ? "rejected" : undefined,
             permissionRequest: undefined,
             isStandalonePermission: undefined,
           },
@@ -813,6 +1335,8 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
     switch (status) {
       case "error":
         return "output-error" as const;
+      case "pending":
+        return "input-streaming" as const;
       case "running":
         return "input-available" as const;
       case "waiting_for_confirmation":
@@ -830,9 +1354,12 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   // Render a tool call entry
   const renderToolCall = (entry: ToolCallEntry) => {
     const tool = entry.toolCall;
-    const toolOutput = formatToolOutput(tool.content, tool.rawOutput);
+    const toolOutput = formatToolOutput(tool);
     const hasOutput =
-      tool.status !== "running" && tool.status !== "waiting_for_confirmation" && toolOutput !== null;
+      tool.status !== "pending" &&
+      tool.status !== "running" &&
+      tool.status !== "waiting_for_confirmation" &&
+      toolOutput !== null;
 
     return (
       <Tool
@@ -846,7 +1373,47 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
           state={getToolState(tool.status)}
         />
         <ToolContent>
-          {tool.rawInput && <ToolInput input={tool.rawInput} />}
+          {tool.kind && (
+            <div className="px-4 pt-3">
+              <Badge variant="secondary" className="text-[10px] uppercase">
+                {tool.kind}
+              </Badge>
+            </div>
+          )}
+          {tool.locations && tool.locations.length > 0 && (
+            <div className="flex flex-wrap gap-1 px-4 pt-3">
+              {tool.locations.map((location, index) => (
+                <span
+                  key={`${location.path}-${index}`}
+                  className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+                >
+                  {location.path}
+                  {location.line != null ? `:${location.line}` : ""}
+                </span>
+              ))}
+            </div>
+          )}
+          {tool.rawInput != null && (
+            <ToolInput input={tool.rawInput} />
+          )}
+          {tool.terminal && (
+            <div className="space-y-2 p-4">
+              <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                Terminal
+              </h4>
+              <CodeBlock
+                code={tool.terminal.output || "(no output)"}
+                language="shell"
+              />
+              {tool.terminal.exitStatus && (
+                <div className="text-xs text-muted-foreground">
+                  {tool.terminal.exitStatus.exitCode != null
+                    ? `Exited with code ${tool.terminal.exitStatus.exitCode}`
+                    : `Terminated by ${tool.terminal.exitStatus.signal ?? "signal"}`}
+                </div>
+              )}
+            </div>
+          )}
           {/* Show permission buttons when waiting for confirmation */}
           {tool.status === "waiting_for_confirmation" && tool.permissionRequest && (
             <ToolPermissionButtons
@@ -883,21 +1450,42 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
   // Render
   // =============================================================================
   const hasMessages = entries.length > 0;
+  const visiblePlan = planState.visiblePlanId
+    ? (planState.plans[planState.visiblePlanId] ?? null)
+    : null;
 
   return (
     <div className="flex flex-col h-full">
+      {/* Plan card (full replacement on every plan/plan_update) */}
+      {sessionReady && <PlanPanel plan={visiblePlan} />}
+      {/* Live notices (dismissible, not part of the transcript) */}
+      {notices.length > 0 && (
+        <div className="mx-2 mt-2 flex flex-col gap-2">
+          {notices.map(({ id, notice }) => (
+            <NoticeCard
+              key={id}
+              notice={notice}
+              onDismiss={() =>
+                setNotices((prev) => prev.filter((entry) => entry.id !== id))
+              }
+            />
+          ))}
+        </div>
+      )}
       {/* Messages area */}
       <Conversation className="flex-1">
         <ConversationContent>
-          {!sessionReady ? (
+          {!sessionReady && entries.length === 0 && notices.length === 0 ? (
             <div className="flex items-center justify-center p-4">
               <Shimmer>Creating session...</Shimmer>
             </div>
           ) : entries.length === 0 ? (
-            <ConversationEmptyState
-              title="Start a conversation"
-              description="Type a message below to chat with the ACP agent"
-            />
+            notices.length === 0 ? (
+              <ConversationEmptyState
+                title="Start a conversation"
+                description="Type a message below to chat with the ACP agent"
+              />
+            ) : null
           ) : (
             <>
               {entries.map((entry, index) => {
@@ -914,25 +1502,7 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
                       {...(isLastUserMessage && { [LAST_USER_MESSAGE_ATTR]: "true" })}
                     >
                       <MessageContent>
-                        {/* Show images using MessageAttachment component */}
-                        {entry.images && entry.images.length > 0 && (
-                          <MessageAttachments>
-                            {entry.images.map((img, imgIndex) => (
-                              <MessageAttachment
-                                key={imgIndex}
-                                data={{
-                                  type: "file",
-                                  mediaType: img.mimeType,
-                                  url: `data:${img.mimeType};base64,${img.data}`,
-                                }}
-                              />
-                            ))}
-                          </MessageAttachments>
-                        )}
-                        {/* Show text content if present */}
-                        {entry.content && (
-                          <MessageResponse>{entry.content}</MessageResponse>
-                        )}
+                        <ContentBlockList blocks={entry.blocks} />
                       </MessageContent>
                     </Message>
                   );
@@ -955,13 +1525,18 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
                               >
                                 <ReasoningTrigger />
                                 <ReasoningContent>
-                                  <MessageResponse>{chunk.text}</MessageResponse>
+                                  <ContentBlockList blocks={chunk.blocks} />
                                 </ReasoningContent>
                               </Reasoning>
                             );
                           }
                           // Regular message chunk
-                          return <MessageResponse key={chunkIndex}>{chunk.text}</MessageResponse>;
+                          return (
+                            <ContentBlockList
+                              key={chunkIndex}
+                              blocks={chunk.blocks}
+                            />
+                          );
                         })}
                       </MessageContent>
                     </Message>
@@ -976,6 +1551,22 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
                         {renderToolCall(entry)}
                       </MessageContent>
                     </Message>
+                  );
+                }
+
+                if (entry.type === "compaction") {
+                  return <CompactionCard key={entry.id} view={entry.view} />;
+                }
+
+                if (entry.type === "elicitation") {
+                  return (
+                    <ElicitationCard
+                      key={entry.id}
+                      request={entry.request}
+                      onRespond={(response) =>
+                        handleElicitationResponse(entry.id, response)
+                      }
+                    />
                   );
                 }
 
@@ -999,61 +1590,124 @@ export function ChatInterface({ client }: ChatInterfaceProps) {
 
       {/* Input area */}
       <div className="border-t p-4">
-        {/* Reference: Zed's MessageEditor conditionally shows attachment UI based on supports_images() */}
-        <PromptInput
-          onSubmit={handleSubmit}
-          accept={supportsImages ? "image/*" : undefined}
-          multiple={supportsImages}
-        >
-          {/* Show attachments header when images are supported */}
-          {supportsImages && (
-            <PromptInputHeader>
-              <PromptInputAttachments>
-                {/* children is called per-file, not with array */}
-                {(file) => <PromptInputAttachment data={file} />}
-              </PromptInputAttachments>
-            </PromptInputHeader>
-          )}
-          <PromptInputTextarea
-            placeholder={sessionReady ? "Type a message..." : "Waiting for session..."}
-            disabled={!sessionReady}
-          />
-          <PromptInputFooter>
-            {/* Left side: Model selector and image button */}
-            <div className="flex items-center gap-1">
-              {/* Reference: Zed's AcpModelSelectorPopover in message editor footer */}
-              <ModelSelectorPopover client={client} />
-              {/* Reference: Zed's add_images_from_picker() shows image picker button only when supported */}
-              {supportsImages && <AddImageButton />}
+        {authRequired && (
+          <div className="mb-3 rounded-lg border border-orange-500/30 bg-orange-500/5 p-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Lock className="size-4 text-orange-500" />
+              Authentication required
             </div>
-            {/* Right side: New thread button (when has messages) and submit */}
-            <div className="flex items-center gap-1">
-              {/* New Thread button - only show when there are messages */}
-              {/* Reference: Zed's new_thread_menu in agent_panel.rs */}
-              {hasMessages && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={handleNewSession}
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span className="sr-only">New Thread</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>New Thread</TooltipContent>
-                </Tooltip>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {authRequired.message}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {agentAuthMethods.map((method) => (
+                <Button
+                  key={method.id}
+                  size="sm"
+                  disabled={authBusy !== null}
+                  title={method.description ?? undefined}
+                  onClick={() => void handleAuthenticate(method.id)}
+                >
+                  {authBusy === method.id ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    method.name
+                  )}
+                </Button>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={authBusy !== null}
+                onClick={() => {
+                  setAuthRequired(null);
+                  retrySession();
+                }}
+              >
+                Retry
+              </Button>
+              {client.supportsLogout && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={authBusy !== null}
+                  onClick={() => void handleLogout()}
+                >
+                  Log out
+                </Button>
               )}
-              <PromptInputSubmit
-                status={chatStatus}
-                disabled={!sessionReady}
-                onClick={isLoading ? handleCancel : undefined}
-              />
             </div>
-          </PromptInputFooter>
-        </PromptInput>
+            {agentAuthMethods.length === 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                This agent requires an interactive terminal login, which this
+                client does not provide.
+              </p>
+            )}
+          </div>
+        )}
+        {/* Reference: Zed's MessageEditor conditionally shows attachment UI based on supports_images() */}
+        <PromptInputProvider attachmentsEnabled={supportsImages}>
+          <PromptInput
+            onSubmit={handleSubmit}
+            accept={supportsImages ? "image/*" : undefined}
+            multiple={supportsImages}
+          >
+            {/* Slash-command suggestions from `available_commands_update` */}
+            <SlashCommandMenu commands={availableCommands} />
+            {/* Show attachments header when images are supported */}
+            {supportsImages && (
+              <PromptInputHeader>
+                <PromptInputAttachments>
+                  {/* children is called per-file, not with array */}
+                  {(file) => <PromptInputAttachment data={file} />}
+                </PromptInputAttachments>
+              </PromptInputHeader>
+            )}
+            <PromptInputTextarea
+              placeholder={sessionReady ? "Type a message..." : "Waiting for session..."}
+              disabled={!sessionReady}
+            />
+            <PromptInputFooter>
+              {/* Left side: session config (modes/options), model selector, usage, image button */}
+              <div className="flex items-center gap-1">
+                {/* Reference: Zed's ConfigOptionsView precedes the legacy mode/model selectors */}
+                <SessionConfigSelectors client={client} />
+                {/* Reference: Zed's AcpModelSelectorPopover in message editor footer */}
+                <ModelSelectorPopover client={client} />
+                <UsageIndicator client={client} />
+                {/* Reference: Zed's add_images_from_picker() shows image picker button only when supported */}
+                {/* Always visible so unsupported agents are discoverable; disabled + tooltip otherwise. */}
+                <AddImageButton disabled={!supportsImages} />
+              </div>
+              {/* Right side: New thread button (when has messages) and submit */}
+              <div className="flex items-center gap-1">
+                {/* New Thread button - only show when there are messages */}
+                {/* Reference: Zed's new_thread_menu in agent_panel.rs */}
+                {hasMessages && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleNewSession}
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span className="sr-only">New Thread</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>New Thread</TooltipContent>
+                  </Tooltip>
+                )}
+                <PromptInputSubmit
+                  status={chatStatus}
+                  disabled={!sessionReady}
+                  onClick={isLoading ? handleCancel : undefined}
+                />
+              </div>
+            </PromptInputFooter>
+          </PromptInput>
+        </PromptInputProvider>
       </div>
     </div>
   );

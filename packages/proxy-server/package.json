@@ -34,7 +34,7 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.14.1",
+    "@agentclientprotocol/sdk": "^1.9.0",
     "@hono/node-server": "^1.13.8",
     "@hono/node-ws": "^1.0.5",
     "@parcel/watcher": "^2.5.6",

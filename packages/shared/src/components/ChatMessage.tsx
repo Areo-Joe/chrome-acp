@@ -1,7 +1,7 @@
 import { cn } from "../lib/utils";
 import { User, Bot, Wrench, Loader2 } from "lucide-react";
 
-export interface ToolCall {
+export interface ChatMessageToolCall {
   id: string;
   title: string;
   status: "running" | "complete" | "error";
@@ -11,7 +11,7 @@ export interface ChatMessageData {
   id: string;
   role: "user" | "agent";
   content: string;
-  toolCalls?: ToolCall[];
+  toolCalls?: ChatMessageToolCall[];
   isStreaming?: boolean;
 }
 
@@ -60,7 +60,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
 }
 
 interface ToolCallDisplayProps {
-  toolCall: ToolCall;
+  toolCall: ChatMessageToolCall;
 }
 
 function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {

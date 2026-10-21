@@ -11,8 +11,8 @@
  * - Handles tens of thousands of files without exhausting inotify limits
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { resolve, relative, sep, basename, extname } from "node:path";
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, resolve, relative, sep, basename, extname } from "node:path";
 import * as watcher from "@parcel/watcher";
 import { log } from "./logger.js";
 
@@ -165,6 +165,54 @@ export function listDir(root: string, dirPath: string): FileItem[] | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Read a text file for the ACP `fs/read_text_file` method.
+ *
+ * Reference: Zed's `handle_read_text_file` — agents may reference any absolute
+ * path, not just the session working directory (the agent process itself
+ * already has the same file-system access).
+ *
+ * @param line  1-based line number to start reading from
+ * @param limit maximum number of lines to read
+ */
+export function readTextFile(
+  absolutePath: string,
+  line?: number | null,
+  limit?: number | null,
+): string {
+  if (!isAbsolute(absolutePath)) {
+    throw new Error(`Path must be absolute: ${absolutePath}`);
+  }
+
+  const stats = statSync(absolutePath);
+  if (!stats.isFile()) {
+    throw new Error(`Not a file: ${absolutePath}`);
+  }
+
+  const content = readFileSync(absolutePath, "utf-8");
+  if (line === undefined && limit === undefined) {
+    return content;
+  }
+
+  const lines = content.split("\n");
+  const start = line ? Math.max(0, line - 1) : 0;
+  const end = limit !== undefined && limit !== null ? start + limit : lines.length;
+  return lines.slice(start, end).join("\n");
+}
+
+/**
+ * Write a text file for the ACP `fs/write_text_file` method.
+ *
+ * Creates parent directories as needed (like Zed's buffer save).
+ */
+export function writeTextFile(absolutePath: string, content: string): void {
+  if (!isAbsolute(absolutePath)) {
+    throw new Error(`Path must be absolute: ${absolutePath}`);
+  }
+  mkdirSync(dirname(absolutePath), { recursive: true });
+  writeFileSync(absolutePath, content, "utf-8");
 }
 
 /**

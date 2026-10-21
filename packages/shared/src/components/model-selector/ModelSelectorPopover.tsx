@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { ModelSelectorPicker } from "./ModelSelectorPicker";
 import type { ACPClient } from "../../acp/client";
-import type { ModelInfo } from "../../acp/types";
+import type { ModelPickerOption } from "../../acp/types";
 import { useModels } from "../../hooks/useModels";
 
 interface ModelSelectorPopoverProps {
@@ -40,7 +40,7 @@ export function ModelSelectorPopover({
   const isMobile = typeof window !== "undefined" &&
     window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
-  const handleSelect = async (model: ModelInfo) => {
+  const handleSelect = async (model: ModelPickerOption) => {
     try {
       await setModel(model.modelId);
       onModelSelect?.(model.modelId);

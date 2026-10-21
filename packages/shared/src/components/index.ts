@@ -5,3 +5,4 @@ export * from "./ChatMessage";
 export * from "./FileExplorer";
 export * from "./ThreadHistory";
 export * from "./model-selector";
+export * from "./session";
