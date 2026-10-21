@@ -19,13 +19,13 @@ export default defineConfig({
     outDir: resolve(__dirname, "../proxy-server/public"),
     emptyOutDir: true,
     sourcemap: true,
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         main: resolve(__dirname, "src/index.html"),
       },
       output: {
-        // Enable code splitting with proper chunking (Rolldown advancedChunks)
-        advancedChunks: {
+        // Split shared dependencies into named chunks.
+        codeSplitting: {
           groups: [
             { name: "react", test: /[\\/]react(?:-dom)?[\\/]/ },
             { name: "radix", test: /@radix-ui[\\/]/ },
