@@ -34,7 +34,7 @@ jobs:
         run: |
           cd packages/chrome-extension
           # Remove sourcemaps (not needed for production)
-          rm -f dist/*.map
+          find dist -type f -name '*.map' -delete
           # Zip only required files
           zip -r ../../chrome-acp.zip manifest.json icons/ rules/ dist/
 

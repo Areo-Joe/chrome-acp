@@ -290,5 +290,5 @@ Agent                    Proxy                   Extension
 | Styling | Tailwind CSS |
 | UI Components | shadcn/ui + Vercel AI Elements |
 | Server | Hono (HTTP + WebSocket) |
-| Build | Bun (extension), Vite (web-client) |
+| Build | Vite 8 (extension and web-client), TypeScript (proxy-server) |
 

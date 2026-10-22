@@ -162,12 +162,23 @@ bun run build:extension  # Chrome extension
 bun run build:proxy      # Proxy server
 bun run build:web        # Web client
 
-# Development mode (extension with hot reload)
+# Browser UI development with Vite hot reload
 bun run dev
+
+# Rebuild extension pages and background when source files change
+bun run --filter @chrome-acp/extension watch
 
 # Release new version
 just release <version>
 ```
+
+For Chrome API testing, load `packages/chrome-extension` as an unpacked extension
+in `chrome://extensions`. After a rebuild, reload the extension and reopen its
+side panel. The Vite browser preview supports UI development; Chrome extension
+APIs require the unpacked extension.
+
+Both frontends use Vite 8. Build scripts run on Node.js; Bun manages dependencies
+and runs workspace commands. The proxy server uses TypeScript (`tsc`).
 
 ## Packages
 

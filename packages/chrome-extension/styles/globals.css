@@ -2,6 +2,8 @@
 @import "tw-animate-css";
 @import "../../shared/src/styles/streamdown.css";
 
+@source "../../shared/src";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
