@@ -16,7 +16,7 @@ npm install -g @chrome-acp/proxy-server
 
 ```bash
 # From monorepo root
-bun install
+pnpm install
 ```
 
 ## Usage
@@ -33,11 +33,15 @@ npx @chrome-acp/proxy-server /path/to/agent
 acp-proxy /path/to/agent
 ```
 
-### Via source
+### Via local build
 
 ```bash
-bun src/cli/bin.ts /path/to/agent
+# From monorepo root
+pnpm run build:proxy
+node packages/proxy-server/dist/cli/bin.js /path/to/agent
 ```
+
+To also build the Web client served at `/app/`, run `pnpm run build`.
 
 ### Examples
 

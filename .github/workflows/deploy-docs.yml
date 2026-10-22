@@ -6,6 +6,10 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - '.nvmrc'
       - '.github/workflows/deploy-docs.yml'
   # Allow manual trigger
   workflow_dispatch:
@@ -28,14 +32,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
 
       - name: Install dependencies
-        run: cd docs && bun install
+        run: pnpm install --frozen-lockfile
 
       - name: Build docs
-        run: cd docs && bun run build
+        run: pnpm run build:docs
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

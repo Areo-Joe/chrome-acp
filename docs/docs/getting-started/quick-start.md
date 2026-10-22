@@ -7,7 +7,7 @@ Get Chrome ACP running in just a few minutes.
 
 ## Prerequisites
 
-- **Node.js 18+** (or Bun)
+- **Node.js 18+**
 - A supported AI agent (we'll use Claude Code in this guide)
 
 ## Step 1: Install

@@ -1,0 +1,11 @@
+packages:
+  - packages/*
+  - docs
+
+# Local packages are linked only through explicit workspace: dependencies.
+linkWorkspacePackages: false
+sharedWorkspaceLockfile: true
+strictPeerDependencies: true
+
+allowBuilds:
+  '@parcel/watcher': true

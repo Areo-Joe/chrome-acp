@@ -15,18 +15,16 @@ Part of the [chrome-acp](https://github.com/Areo-Joe/chrome-acp) monorepo.
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) installed
+- pnpm 12.14.0 (pinned in the root `package.json`)
+- Node.js 26.7+ (`nvm use` reads the root `.nvmrc`)
 - Chrome browser
 
 ### Build
 
 ```bash
 # From monorepo root
-bun install
-bun run build:extension
-
-# Or from this directory
-bun run build
+pnpm install
+pnpm run build:extension
 ```
 
 ### Load in Chrome
@@ -39,12 +37,16 @@ bun run build
 ### Development Mode
 
 ```bash
-# From monorepo root
-bun run dev
+# Browser UI development with Vite hot reload (from monorepo root)
+pnpm run dev
 
-# Or from this directory
-bun --hot src/index.ts
+# Rebuild extension pages and background when source files change
+pnpm --filter @chrome-acp/extension run watch
 ```
+
+For Chrome API testing, use the unpacked extension. After each rebuild, reload
+the extension in `chrome://extensions` and reopen its side panel. The Vite
+browser preview supports UI development; Chrome APIs require the extension.
 
 ## Usage
 
@@ -72,7 +74,8 @@ Default proxy server URL: `ws://localhost:9315/ws`
 - React 19
 - Tailwind CSS 4
 - Radix UI components
-- Bun bundler
+- Vite 8 + Rolldown
+- pnpm for dependency management and workspace commands
 
 ## License
 

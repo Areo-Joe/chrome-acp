@@ -4,19 +4,19 @@ default:
 
 # Build the Chrome extension
 build:
-    bun run build:extension
+    pnpm run build:extension
 
 # Build proxy server
 build-proxy:
-    bun run build:proxy
+    pnpm run build:proxy
 
 # Build web client (PWA)
 build-web:
-    bun run build:web
+    pnpm run build:web
 
 # Build all
 build-all:
-    bun run build
+    pnpm run build
 
 # Release a new version
 # Usage: just release 1.2.3

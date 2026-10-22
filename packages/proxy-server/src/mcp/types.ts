@@ -7,7 +7,7 @@
 // They define the protocol between proxy-server and browser extension.
 //
 // Why duplicated? proxy-server uses NodeNext module resolution which requires
-// .js extensions, while shared package is designed for bundlers (Bun/Vite).
+// .js extensions, while shared package is designed for bundlers (Vite).
 // Until we have a proper @chrome-acp/protocol package, keep these in sync manually.
 // ============================================================================
 

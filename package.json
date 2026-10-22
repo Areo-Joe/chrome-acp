@@ -3,17 +3,19 @@
   "version": "0.1.1",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/*"
-  ],
-  "scripts": {
-    "dev": "bun run --filter @chrome-acp/extension dev",
-    "build": "bun run build:web && bun run build:extension && bun run build:proxy",
-    "build:extension": "bun run --filter @chrome-acp/extension build",
-    "build:proxy": "bun run --filter @chrome-acp/proxy-server build",
-    "build:web": "bun run --filter @chrome-acp/web-client build"
-  },
   "devDependencies": {
     "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @chrome-acp/extension run dev",
+    "build": "pnpm run build:web && pnpm run build:extension && pnpm run build:proxy",
+    "build:extension": "pnpm --filter @chrome-acp/extension run build",
+    "build:proxy": "pnpm --filter @chrome-acp/proxy-server run build",
+    "build:web": "pnpm --filter @chrome-acp/web-client run build",
+    "build:docs": "pnpm --filter @chrome-acp/docs run build"
+  },
+  "packageManager": "pnpm@12.14.0",
+  "engines": {
+    "node": ">=26.7.0"
   }
 }

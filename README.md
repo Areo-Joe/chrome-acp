@@ -154,19 +154,25 @@ Any [ACP-compatible agent](https://agentclientprotocol.com/get-started/agents) w
 ## Development
 
 ```bash
+# Use the project's Node.js version and pinned pnpm
+nvm use
+npm install --global pnpm@12.14.0
+pnpm install
+
 # Build all packages
-bun run build
+pnpm run build
 
 # Build individual packages
-bun run build:extension  # Chrome extension
-bun run build:proxy      # Proxy server
-bun run build:web        # Web client
+pnpm run build:extension  # Chrome extension
+pnpm run build:proxy      # Proxy server
+pnpm run build:web        # Web client
+pnpm run build:docs       # Documentation
 
 # Browser UI development with Vite hot reload
-bun run dev
+pnpm run dev
 
 # Rebuild extension pages and background when source files change
-bun run --filter @chrome-acp/extension watch
+pnpm --filter @chrome-acp/extension run watch
 
 # Release new version
 just release <version>
@@ -177,12 +183,15 @@ in `chrome://extensions`. After a rebuild, reload the extension and reopen its
 side panel. The Vite browser preview supports UI development; Chrome extension
 APIs require the unpacked extension.
 
-Both frontends use Vite 8. Build scripts run on Node.js; Bun manages dependencies
+Both frontends use Vite 8. Build scripts run on Node.js; pnpm manages dependencies
 and runs workspace commands. The proxy server uses TypeScript (`tsc`).
 
 ## Packages
 
-This is a Bun monorepo with four packages:
+The pnpm workspace includes four application packages and the `docs` site.
+Run installs from the repository root. `pnpm-workspace.yaml` defines membership,
+and `pnpm-lock.yaml` locks every project. Internal packages use `workspace:*`.
+CI installs with `pnpm install --frozen-lockfile`.
 
 | Package | Description |
 |---------|-------------|
@@ -190,6 +199,7 @@ This is a Bun monorepo with four packages:
 | [`packages/web-client`](./packages/web-client) | PWA web client served by proxy server |
 | [`packages/shared`](./packages/shared) | Shared UI components and utilities (`@chrome-acp/shared`) |
 | [`packages/proxy-server`](./packages/proxy-server) | WebSocket proxy server (npm: `@chrome-acp/proxy-server`) |
+| [`docs`](./docs) | Rspress documentation site |
 
 ## License
 

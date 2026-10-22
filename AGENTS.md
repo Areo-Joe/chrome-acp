@@ -2,12 +2,13 @@
 
 ## Architecture
 
-Chrome ACP is a Bun monorepo with 4 packages:
+Chrome ACP is a pnpm monorepo with 4 application packages and a documentation site:
 
 - **chrome-extension** - Chrome MV3 extension with sidepanel UI
 - **web-client** - Web client served by proxy-server
 - **shared** - Shared UI components and utilities
 - **proxy-server** - WebSocket server that bridges clients to ACP agents
+- **docs** - Rspress documentation site
 
 ```mermaid
 graph LR
@@ -21,7 +22,9 @@ Chrome extensions run in a browser sandbox and cannot spawn subprocesses. The pr
 
 ## Tech Stack
 
-- **Bun** - Package manager and build tool (not runtime, to support Android Termux which only has Node.js)
+- **pnpm** - Package manager and workspace command runner
+- **Vite 8** - Builds both frontends; Node.js runs build scripts and the proxy server (including Android Termux)
+- **TypeScript (`tsc`)** - Builds the proxy server
 - **React + TypeScript + Tailwind CSS**
 - **[shadcn/ui](https://ui.shadcn.com/)** - Base UI component library
 - **[Vercel AI Elements](https://elements.ai-sdk.dev/)** - AI chat components (Conversation, Message, CodeBlock, Reasoning, etc.)
@@ -29,35 +32,42 @@ Chrome extensions run in a browser sandbox and cannot spawn subprocesses. The pr
 
 ### Best Practices
 
-- Use Bun as the package manager. Install dependencies with `bun add`, never edit package.json manually.
+- Use the pnpm version pinned in `package.json`. Add package dependencies with `pnpm --filter <package-name> add`; use `pnpm add -Dw` for root development tools. Never edit dependency declarations manually.
 - Keep UI code DRY. Shared components go in `packages/shared` and are imported by other packages.
-- Do not use Bun-specific APIs. The code must run on Node.js (for Termux compatibility).
-- Prefer [shadcn/ui](https://ui.shadcn.com/) and [Vercel AI Elements](https://elements.ai-sdk.dev/) for UI components. Use their CLIs with Bun:
+- Use Node.js APIs so the proxy server runs on Android Termux.
+- Prefer [shadcn/ui](https://ui.shadcn.com/) and [Vercel AI Elements](https://elements.ai-sdk.dev/) for UI components. Use their CLIs with pnpm:
   ```bash
-  bunx --bun shadcn@latest add <component>
-  bunx --bun ai-elements@latest add <component>
+  pnpm dlx shadcn@latest add <component>
+  pnpm dlx ai-elements@latest add <component>
   ```
 
-## Bun Workspace
+## pnpm Workspace
 
-This is a Bun monorepo using `workspaces` to manage multiple packages.
+The root `pnpm-workspace.yaml` includes `packages/*` and `docs`. All projects use the root `pnpm-lock.yaml`. Keep internal dependencies on `workspace:*` so they resolve locally.
+
+Keep dependencies declared in the package that imports them. Dependency build
+scripts are reviewed individually in `allowBuilds` in `pnpm-workspace.yaml`.
 
 **All commands run from the root directory:**
 
 ```bash
+# Use Node.js 26 from .nvmrc
+nvm use
+
 # Install dependencies
-bun install
+pnpm install
 
 # Build all packages
-bun run build
+pnpm run build
 
 # Build individual packages
-bun run build:extension
-bun run build:proxy
-bun run build:web
+pnpm run build:extension
+pnpm run build:proxy
+pnpm run build:web
+pnpm run build:docs
 
 # Development mode
-bun run dev
+pnpm run dev
 ```
 
 Packages reference each other via the `@chrome-acp/*` namespace:
@@ -73,7 +83,7 @@ Packages reference each other via the `@chrome-acp/*` namespace:
 
 ```bash
 # Build all packages
-bun run build
+pnpm run build
 
 # Release a new version (updates manifest.json + package.json, tags, and pushes)
 just release <version>
@@ -81,3 +91,7 @@ just release <version>
 ```
 
 After release, GitHub Actions automatically builds and uploads release artifacts.
+
+Use `pnpm run build` for release artifacts: it builds the Web client before the
+proxy package that ships its generated assets. Build documentation separately
+with `pnpm run build:docs`.

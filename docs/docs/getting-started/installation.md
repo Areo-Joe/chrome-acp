@@ -13,12 +13,6 @@ This guide covers detailed installation options for Chrome ACP.
 npm install -g @chrome-acp/proxy-server
 ```
 
-### Using Bun
-
-```bash
-bun install -g @chrome-acp/proxy-server
-```
-
 ### Using pnpm
 
 ```bash
@@ -86,12 +80,14 @@ git clone https://github.com/Areo-Joe/chrome-acp.git
 cd chrome-acp
 
 # Install dependencies
-bun install
+nvm use
+npm install --global pnpm@12.14.0
+pnpm install
 
 # Build the extension
-bun run build:extension
+pnpm run build:extension
 
-# Load packages/chrome-extension/dist in Chrome
+# Load packages/chrome-extension in Chrome (the folder containing manifest.json)
 ```
 
 ## Verifying Installation

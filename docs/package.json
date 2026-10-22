@@ -9,5 +9,10 @@
   },
   "devDependencies": {
     "@rspress/core": "^2.0.3"
-  }
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "type": "module"
 }

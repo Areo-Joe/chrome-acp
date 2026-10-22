@@ -285,7 +285,7 @@ Agent                    Proxy                   Extension
 
 | Component | Technology |
 |-----------|------------|
-| Package Manager | Bun (workspaces) |
+| Package Manager | pnpm (workspaces) |
 | UI Framework | React + TypeScript |
 | Styling | Tailwind CSS |
 | UI Components | shadcn/ui + Vercel AI Elements |
