@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "../../../shared/src/styles/streamdown.css";
 
 /* Scan shared package for Tailwind classes - use direct relative path instead of node_modules */
 @source "../../../shared/src";
