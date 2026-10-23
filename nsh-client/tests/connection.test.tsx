@@ -27,7 +27,8 @@ test("waits for agent status, prevents duplicate connects, and disconnects", asy
   expect(app.texts()).toContain("Connecting…");
   await app.waitFor("text:Disconnect");
   expect(app.texts()).toContain("Connected");
-  expect(app.enabled("id:connect")).toBe(false);
+  expect(app.shows("id:chat-page")).toBe(true);
+  expect(app.enabled("id:send-message")).toBe(false);
   await app.press("id:disconnect");
   expect(app.texts()).toContain("Disconnected");
   expect(app.enabled("id:connect")).toBe(true);

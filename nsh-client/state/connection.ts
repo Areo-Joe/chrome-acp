@@ -62,7 +62,9 @@ export function createConnection() {
       }
     });
     attempt.setErrorHandler((message) => {
-      if (client === attempt) finish("error", message);
+      if (client !== attempt) return;
+      if (state() === "connecting") finish("error", message);
+      else error.set(message); // Session/config errors do not close a healthy transport.
     });
     timeout = setTimeout(() => {
       if (client === attempt) finish("error", "Connection timed out. Check the address, token and proxy.");
@@ -72,5 +74,12 @@ export function createConnection() {
     });
   }
 
-  return { state, error, connect, disconnect: () => finish("disconnected") };
+  return {
+    state, error, connect,
+    getClient: () => client,
+    clearError: () => error.set(null),
+    disconnect: () => finish("disconnected"),
+  };
 }
+
+export type Connection = ReturnType<typeof createConnection>;

@@ -1,6 +1,6 @@
 # NSH Client
 
-A connection form with a shared TSX entry and custom macOS / Android hosts. The repository selects NSH; a global NSH installation is not used.
+A connection form and Chat composer with a shared TSX entry and custom macOS / Android hosts. The repository selects NSH; a global NSH installation is not used.
 
 ```sh
 cd nsh-client
@@ -23,8 +23,16 @@ are preserved. The token follows the Web client's query-token authentication.
 Connected is shown only after the proxy confirms its ACP agent initialization.
 The screen supports loading, cancellation, disconnect, errors and a 30-second
 connection timeout. Inputs are locked while connecting/connected, and Connect is
-disabled for invalid addresses or an active connection. No sessions or prompts
-are created. Settings are held in memory only.
+disabled for invalid addresses or an active connection. Settings are held in memory only.
+
+After connecting, the app opens Chat and creates an ACP session to obtain its
+configuration and advertised commands. The bottom composer supports multiline
+drafts, slash-command completion and argument hints. Configuration
+selectors follow the agent’s current options (including grouped selects and
+booleans), with legacy mode fallback. Changes wait for agent confirmation; errors
+remain visible without dropping the connection. Disconnect or Back returns to the
+connection form. Sending is disabled; no prompts are sent. See
+[the Zed comparison](docs/ZED_COMPOSER.md) for the source references and deferred features.
 
 The app imports the existing `packages/shared/src/acp/client.ts` directly. Run
 `pnpm install` from the repository root before type checking or connection tests.
@@ -105,7 +113,9 @@ observed; this toolchain change does not rebuild those libraries.
 
 ## Layout and Android Studio
 
-- `App.tsx`: shared UI.
+- `App.tsx`: connection-driven navigation.
+- `pages/`, `components/`: Connect / Chat pages and the bottom composer.
+- `state/`: connection and ACP session/configuration state.
 - `native-host/`: Rust/AppKit host; connects to the dev server when given a URL.
 - `android-host/`: Kotlin/Compose host embedding NshView with AndroidView.
 - `justfile`: small command entry points; builds and delegates to the Rust CLI.
