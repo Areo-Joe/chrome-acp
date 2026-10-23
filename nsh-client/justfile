@@ -1,0 +1,25 @@
+# List available commands
+default:
+    @just --list
+
+# Prepare the pinned NSH toolchain
+setup:
+    @just _cli setup
+
+# Run the custom macOS host with TSX hot reload
+macos:
+    @just _cli macos
+
+# Run the custom Android host; optionally select a device
+[positional-arguments]
+android device="":
+    @just _cli android "$1"
+
+# Build once, then run directly so long-running hosts do not hold Cargo locks
+[private]
+[positional-arguments]
+_cli +args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo +stable build --quiet --manifest-path cli/Cargo.toml --target-dir .nsh/cli-target --locked
+    exec .nsh/cli-target/debug/nsh-client-cli "$@"

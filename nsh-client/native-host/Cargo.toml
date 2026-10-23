@@ -1,0 +1,7 @@
+[package]
+name = "nsh-client-macos"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nsh-platform-macos = { version = "=0.2.0", features = ["dev"] }
