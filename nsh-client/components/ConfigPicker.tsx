@@ -31,10 +31,20 @@ export function ConfigPicker(props: Props) {
           testID={`config-${props.id}`}
           disabled={props.disabled}
           accessibilityLabel={`${props.name}: ${current()}`}
-          class="h-9 flex-row items-center justify-center gap-2 rounded-lg border border-border px-3 disabled:opacity-40"
+          class="h-9 flex-row items-center justify-center gap-2 rounded-lg border border-border px-3"
         >
-          <Text numberOfLines={1} class="text-xs font-medium text-foreground" style={{ lineHeight: 16 }}>{props.busy ? "Updating…" : current()}</Text>
-          <Icon name="chevron-down" size={14} />
+          <Text numberOfLines={1} class="text-xs font-medium text-foreground" style={{ lineHeight: 16 }}>{current()}</Text>
+          <If when={props.busy}>
+            <View
+              testID={`config-loading-${props.id}`}
+              pointerEvents="none"
+              class="border-muted-foreground"
+              style={{ width: 14, height: 14, flexShrink: 0, borderWidth: 2, borderRadius: 7,
+                borderTopColor: "transparent", animationName: "spin", animationDuration: 800,
+                animationTimingFunction: "linear", animationIterationCount: "infinite" }}
+            />
+          </If>
+          <If when={!props.busy}><Icon name="chevron-down" size={14} /></If>
         </View>
       }
     >

@@ -1,6 +1,7 @@
 import { effect, signal, untracked } from "nsh";
 import type { AvailableCommand, SessionConfigOption, SessionModeState } from "../../packages/shared/src/acp/types";
 import type { Connection } from "./connection";
+import { createOptimisticChange } from "./optimistic-change";
 
 export type Choice = { value: string | boolean; name: string; description?: string | null; group?: string };
 
@@ -34,15 +35,21 @@ export function createComposer(connection: Connection) {
   const modes = signal<SessionModeState | null>(null);
   let disposed = false;
   let sessionTimer: ReturnType<typeof setTimeout> | undefined;
-  const pending = signal<string | null>(null);
-  let target: { id: string; value: string | boolean; legacy: boolean } | null = null;
-  let configTimer: ReturnType<typeof setTimeout> | undefined;
+  const change = createOptimisticChange<{ id: string; value: string | boolean; legacy: boolean }>({
+    send: (target) => target.legacy
+      ? client.setSessionMode(String(target.value))
+      : client.setConfigOption(target.id, target.value),
+    isConfirmed: (target) => target.legacy
+      ? modes()?.currentModeId === target.value
+      : options()?.find((option) => option.id === target.id)?.currentValue === target.value,
+    timeoutMessage: "The agent did not confirm the configuration change.",
+    onError: (reason) => fail(reason instanceof Error ? reason.message : "Cannot change configuration."),
+  });
+  const pending = () => change.target()?.id ?? null;
 
-  function clearPending() {
-    if (configTimer !== undefined) clearTimeout(configTimer);
-    configTimer = undefined;
-    target = null;
-    pending.set(null);
+  function selectedValue(id: string, confirmed: string | boolean) {
+    const target = change.target();
+    return target?.id === id ? target.value : confirmed;
   }
 
   function refresh() {
@@ -50,15 +57,12 @@ export function createComposer(connection: Connection) {
     options.set(client!.configOptions);
     modes.set(client!.sessionModes);
     commands.set(client!.availableCommands);
-    if (target && (target.legacy
-      ? modes()?.currentModeId === target.value
-      : options()?.find((option) => option.id === target!.id)?.currentValue === target.value)) clearPending();
   }
 
   function fail(message: string) {
     if (disposed) return;
     error.set(message);
-    clearPending();
+    change.cancel();
     if (phase() === "loading") {
       if (sessionTimer !== undefined) clearTimeout(sessionTimer);
       phase.set("error");
@@ -86,24 +90,20 @@ export function createComposer(connection: Connection) {
     if (disposed || phase() !== "ready" || pending()) return;
     error.set(null);
     connection.clearError();
-    target = { id, value, legacy };
-    pending.set(id);
-    configTimer = setTimeout(() => fail("The agent did not confirm the configuration change."), 15_000);
-    const request = legacy ? client!.setSessionMode(String(value)) : client!.setConfigOption(id, value);
-    void request.catch((reason: unknown) => fail(reason instanceof Error ? reason.message : "Cannot change configuration."));
+    change.start({ id, value, legacy });
   }
 
   function dispose() {
     disposed = true;
     if (sessionTimer !== undefined) clearTimeout(sessionTimer);
-    clearPending();
+    change.dispose();
     client!.setSessionCreatedHandler(() => {});
     client!.setConfigOptionsChangedHandler(() => {});
     client!.setSessionModesChangedHandler(() => {});
     client!.setAvailableCommandsChangedHandler(() => {});
   }
 
-  return { phase, error, draft, commands, options, modes, pending, choose, dispose };
+  return { phase, error, draft, commands, options, modes, pending, slow: change.slow, selectedValue, choose, dispose };
 }
 
 export type ComposerState = ReturnType<typeof createComposer>;

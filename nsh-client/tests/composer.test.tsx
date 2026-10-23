@@ -26,21 +26,37 @@ test("drafts support multiline and advertised slash commands without sending", a
   expect(app.value("id:token")).toBe("valid");
 });
 
-test("configuration selectors wait for agent confirmation", async () => {
+test("configuration selectors show the target immediately while waiting for confirmation", async () => {
   const app = await chat();
   await app.waitFor("id:config-model");
   await app.press("id:config-model");
   await app.waitFor("id:choice-model-smart");
   await app.press("id:choice-model-smart");
-  expect(app.texts()).toContain("Updating…");
-  expect(app.enabled("id:config-thinking")).toBe(false);
-  await app.waitUntil(() => app.enabled("id:config-model"));
   expect(app.texts()).toContain("Smart");
+  expect(app.shows("text:Updating…")).toBe(false);
+  expect(app.enabled("id:config-thinking")).toBe(false);
+  await app.waitFor("id:config-loading-model");
+  expect(app.texts()).toContain("Smart");
+  await app.waitUntil(() => app.enabled("id:config-model"));
+  expect(app.shows("id:config-loading-model")).toBe(false);
   await app.press("id:config-thinking");
   await app.waitFor("id:choice-thinking-true");
   await app.press("id:choice-thinking-true");
   await app.waitUntil(() => app.enabled("id:config-thinking") && !app.shows("id:choice-thinking-true"));
   expect(app.texts()).toContain("On");
+  await app.press("id:disconnect");
+});
+
+test("rejection preserves unrelated authoritative configuration updates", async () => {
+  const app = await chat("config-error-updated");
+  await app.waitFor("id:config-model");
+  await app.press("id:config-model");
+  await app.press("id:choice-model-smart");
+  await app.waitFor("id:session-error");
+  expect(app.texts()).toContain("Configuration rejected");
+  expect(app.texts()).toContain("Fast");
+  expect(app.texts()).toContain("On");
+  expect(app.enabled("id:config-model")).toBe(true);
   await app.press("id:disconnect");
 });
 

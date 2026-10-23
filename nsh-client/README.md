@@ -29,8 +29,10 @@ After connecting, the app opens Chat and creates an ACP session to obtain its
 configuration and advertised commands. The bottom composer supports multiline
 drafts, slash-command completion and argument hints. Configuration
 selectors follow the agent’s current options (including grouped selects and
-booleans), with legacy mode fallback. Changes wait for agent confirmation; errors
-remain visible without dropping the connection. Disconnect or Back returns to the
+booleans), with legacy mode fallback. Selections display the target immediately;
+a spinner appears after 300 ms while waiting for agent confirmation. Configuration
+changes run one at a time. Rejection or a 15-second timeout reveals the latest
+confirmed value and an error without dropping the connection. Disconnect or Back returns to the
 connection form. Sending is disabled; no prompts are sent. See
 [the Zed comparison](docs/ZED_COMPOSER.md) for the source references and deferred features.
 

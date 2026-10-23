@@ -78,10 +78,10 @@ export function Composer(props: { state: ComposerState }) {
                   id={option().id}
                   name={option().name}
                   description={option().description}
-                  value={option().currentValue}
+                  value={state.selectedValue(option().id, option().currentValue)}
                   choices={configChoices(option())}
                   disabled={busy()}
-                  busy={state.pending() === option().id}
+                  busy={state.slow() && state.pending() === option().id}
                   onSelect={(value) => state.choose(option().id, value)}
                 />
               )}
@@ -90,10 +90,10 @@ export function Composer(props: { state: ComposerState }) {
               <ConfigPicker
                 id="legacy-mode"
                 name="Mode"
-                value={state.modes()!.currentModeId}
+                value={state.selectedValue("legacy-mode", state.modes()!.currentModeId)}
                 choices={state.modes()!.availableModes.map((mode) => ({ value: mode.id, name: mode.name, description: mode.description }))}
                 disabled={busy()}
-                busy={state.pending() === "legacy-mode"}
+                busy={state.slow() && state.pending() === "legacy-mode"}
                 onSelect={(value) => state.choose("legacy-mode", value, true)}
               />
             </If>

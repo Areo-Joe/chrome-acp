@@ -64,6 +64,14 @@ server.on("connection", (socket, request) => {
       const option = options.find((option) => option.id === message.payload.configId);
       assert.ok(option, "Unknown config ID");
       if (token === "config-error") return send("error", { message: "Configuration rejected" });
+      if (token === "config-error-updated") {
+        later(() => {
+          options.find((option) => option.id === "thinking").currentValue = true;
+          send("config_options_changed", { configOptions: options });
+        }, 100);
+        later(() => send("error", { message: "Configuration rejected" }), 400);
+        return;
+      }
       later(() => {
         option.currentValue = message.payload.value;
         send("config_options_changed", { configOptions: options });
@@ -91,7 +99,7 @@ try {
     assert.equal(forward.status, 0, "Could not forward the mock proxy port to Android");
   }
   const files = ["tests/connection.test.tsx", "tests/composer.test.tsx"];
-  if (!android) files.push("tests/connection-timeout.test.tsx");
+  if (!android) files.push("tests/connection-timeout.test.tsx", "tests/optimistic-change.test.tsx");
   for (const file of files) {
     const child = spawn(`${root}.nsh/toolchain/bin/nsh`, ["test", file, ...args], { cwd: root, stdio: "inherit" });
     [code] = await once(child, "exit");
