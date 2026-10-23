@@ -1,7 +1,6 @@
 # NSH Client
 
-A minimal Hello World application with a shared TSX entry and custom macOS /
-Android hosts. The repository selects NSH; a global NSH installation is not used.
+A connection form with a shared TSX entry and custom macOS / Android hosts. The repository selects NSH; a global NSH installation is not used.
 
 ```sh
 cd nsh-client
@@ -15,6 +14,30 @@ Keep the command running while editing. Saving TSX updates the running UI.
 Rust/Kotlin host changes require restarting the command. Ctrl-C stops the dev
 server and host; Android also removes its USB port forwarding. The servers start
 at ports 8790 / 8791, using the next available port when needed.
+
+## Connection screen
+
+Enter a WS/WSS proxy URL and an optional token, then press Connect. A bare server
+address such as `ws://host:9315` uses `/ws`; explicit paths and query parameters
+are preserved. The token follows the Web client's query-token authentication.
+Connected is shown only after the proxy confirms its ACP agent initialization.
+The screen supports loading, cancellation, disconnect, errors and a 30-second
+connection timeout. Inputs are locked while connecting/connected, and Connect is
+disabled for invalid addresses or an active connection. No sessions or prompts
+are created. Settings are held in memory only.
+
+The app imports the existing `packages/shared/src/acp/client.ts` directly. Run
+`pnpm install` from the repository root before type checking or connection tests.
+For protocol/UI tests (a local mock proxy, no real agent):
+
+```sh
+node tests/connection.mjs                  # headless, including timeout
+node tests/connection.mjs --target android # device, with mock-proxy USB forwarding
+```
+
+The device runner uses NSH's standard test host; `just android` uses our custom
+Kotlin/Compose host. After device tests, use `just android` to reopen this app.
+The test proxy binds port 19437; it must be free.
 
 ## Pinned toolchain
 

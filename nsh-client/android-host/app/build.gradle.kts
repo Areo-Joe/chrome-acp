@@ -35,6 +35,7 @@ val bundleNsh = tasks.register<BundleNsh>("bundleNsh") {
         include("**/*.tsx", "**/*.ts", "nsh.json")
         exclude("**/*.test.*", ".nsh/**", "native-host/**", "android-host/**", "cli/**")
     })
+    inputs.files(fileTree(nshClient.resolve("../packages/shared/src/acp")) { include("**/*.ts") })
     inputs.file(nshExecutable)
     inputs.files(nshAar)
     outputDirectory.set(layout.buildDirectory.dir("generated/nshAssets"))

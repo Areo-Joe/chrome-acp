@@ -405,7 +405,7 @@ export class ACPClient {
 
         ws.onmessage = (event) => {
           // Ignore messages from stale sockets
-          if (this.ws !== ws) return;
+          if (this.ws !== ws || typeof event.data !== "string") return;
           try {
             const response: ProxyResponse = JSON.parse(event.data);
             this.handleResponse(response);
