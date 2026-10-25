@@ -1,18 +1,10 @@
-/**
- * Client-managed terminals for the ACP `terminal/*` methods.
- *
- * Reference: Zed's `crates/acp_thread/src/terminal.rs`
- * - commands are spawned in the session working directory
- * - stdout/stderr are captured into a byte-limited buffer (oldest bytes are
- *   dropped at a character boundary, matching ACP's `outputByteLimit`)
- * - `terminal/output` returns the current output plus the exit status once the
- *   command has finished
- * - `terminal/kill` stops the command but keeps the terminal alive so the final
- *   output can still be read
- * - `terminal/release` kills (if needed) and forgets the terminal
- */
+/** Client-owned ACP terminals, following Zed's headless shell execution path. */
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { killProcessTree, ownsProcessGroup } from "./process.js";
 import { randomUUID } from "node:crypto";
 import { RequestError, type CreateTerminalRequest, type TerminalExitStatus, type TerminalOutputResponse } from "@agentclientprotocol/sdk";
 import { log } from "./logger.js";
@@ -28,7 +20,8 @@ export class Terminal {
   private output = "";
   private truncated = false;
   private exitStatus: TerminalExitStatus | null = null;
-  private exitWaiters: Array<(status: TerminalExitStatus) => void> = [];
+  readonly ready: Promise<void>;
+  private readonly exitWaiters = new Set<(status: TerminalExitStatus) => void>();
 
   constructor(id: string, params: CreateTerminalRequest) {
     this.id = id;
@@ -39,78 +32,91 @@ export class Terminal {
     // agent omits it, output is not truncated.
     this.outputByteLimit = params.outputByteLimit ?? null;
 
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    const env: NodeJS.ProcessEnv = { ...process.env, PAGER: "", GIT_PAGER: "cat" };
     for (const variable of params.env ?? []) {
       env[variable.name] = variable.value;
     }
 
-    this.process = spawn(params.command, params.args ?? [], {
+    // Zed's ShellBuilder treats a command without args as a shell expression,
+    // and quotes the executable and each argument when args are supplied.
+    const args = params.args ?? [];
+    const quote = process.platform === "win32"
+      ? (value: string) => "'" + value.replaceAll("'", "''") + "'"
+      : (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+    const command = args.length ? [quote(params.command), ...args.map(quote)].join(" ") : params.command;
+    const shell = process.platform === "win32" ? "powershell.exe"
+      : existsSync("/bin/sh") ? "/bin/sh" : join(process.env.PREFIX ?? "/data/data/com.termux/files/usr", "bin/sh");
+    const shellArgs = process.platform === "win32"
+      ? ["-NoProfile", "-NonInteractive", "-Command", args.length ? `& ${command}` : command]
+      : ["-c", `exec </dev/null\n${command}`];
+    this.process = spawn(shell, shellArgs, {
       cwd: this.cwd,
       env,
+      detached: ownsProcessGroup,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    this.ready = new Promise((resolve, reject) => {
+      this.process.once("spawn", resolve);
+      this.process.once("error", reject);
+    });
 
-    this.process.stdout?.on("data", (chunk: Buffer) => {
-      this.append(chunk.toString("utf-8"));
-    });
-    this.process.stderr?.on("data", (chunk: Buffer) => {
-      this.append(chunk.toString("utf-8"));
-    });
+    for (const stream of [this.process.stdout, this.process.stderr]) {
+      const decoder = new StringDecoder("utf8");
+      stream?.on("data", (chunk: Buffer) => this.append(decoder.write(chunk)));
+      stream?.on("end", () => this.append(decoder.end()));
+    }
     this.process.on("error", (error) => {
-      // Spawn failures (e.g. command not found) surface as terminal output.
       this.append(`\n${error.message}\n`);
-      this.finish(null, null);
+      this.finish(1, null);
     });
-    this.process.on("close", (code, signal) => {
-      this.finish(code, signal);
-    });
+    // Exit is independent of stdio: descendants may keep pipes open. Output
+    // continues to refresh after completion, as it does in Zed's Terminal.
+    this.process.on("exit", (code, signal) => this.finish(code, signal));
   }
 
   /** Current captured output and exit status (non-blocking). */
   currentOutput(): TerminalOutputResponse {
     return {
-      output: this.output,
+      output: this.truncated && this.output.includes("\n")
+        ? this.output.slice(0, this.output.lastIndexOf("\n")) : this.output,
       truncated: this.truncated,
       exitStatus: this.exitStatus,
     };
   }
 
   /** Resolves when the command exits (immediately if it already has). */
-  waitForExit(): Promise<TerminalExitStatus> {
-    if (this.exitStatus) {
-      return Promise.resolve(this.exitStatus);
-    }
-    return new Promise((resolve) => {
-      this.exitWaiters.push(resolve);
+  waitForExit(signal?: AbortSignal): Promise<TerminalExitStatus> {
+    if (signal?.aborted) return Promise.reject(new RequestError(-32800, "Request cancelled"));
+    if (this.exitStatus) return Promise.resolve(this.exitStatus);
+    return new Promise((resolve, reject) => {
+      const onExit = (status: TerminalExitStatus) => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve(status);
+      };
+      const onAbort = () => {
+        this.exitWaiters.delete(onExit);
+        reject(new RequestError(-32800, "Request cancelled"));
+      };
+      this.exitWaiters.add(onExit);
+      signal?.addEventListener("abort", onAbort, { once: true });
     });
   }
 
-  /** Sends SIGTERM without forgetting the terminal (ACP `terminal/kill`). */
+  /** Match Zed's process-group kill, retaining output until release. */
   kill(): void {
-    if (this.exitStatus) return;
     log.debug("Killing terminal", { terminalId: this.id, command: this.command });
-    this.process.kill();
+    killProcessTree(this.process);
   }
 
   private append(text: string): void {
+    if (!text || this.truncated) return;
     this.output += text;
     if (this.outputByteLimit === null) return;
-
-    const excess = Buffer.byteLength(this.output, "utf-8") - this.outputByteLimit;
-    if (excess <= 0) return;
-
-    // Drop the oldest characters until the retained output fits the limit,
-    // never splitting a surrogate pair.
-    let start = 0;
-    let remaining = excess;
-    while (remaining > 0 && start < this.output.length) {
-      const codePoint = this.output.codePointAt(start);
-      if (codePoint === undefined) break;
-      const width = codePoint > 0xffff ? 2 : 1;
-      remaining -= Buffer.byteLength(this.output.slice(start, start + width), "utf-8");
-      start += width;
-    }
-    this.output = this.output.slice(start);
+    const bytes = Buffer.from(this.output, "utf8");
+    if (bytes.length <= this.outputByteLimit) return;
+    let end = this.outputByteLimit;
+    while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--;
+    this.output = bytes.subarray(0, end).toString("utf8");
     this.truncated = true;
   }
 
@@ -120,8 +126,8 @@ export class Terminal {
       exitCode: code,
       signal: signal ?? null,
     };
-    const waiters = this.exitWaiters;
-    this.exitWaiters = [];
+    const waiters = [...this.exitWaiters];
+    this.exitWaiters.clear();
     for (const resolve of waiters) {
       resolve(this.exitStatus);
     }
@@ -135,10 +141,20 @@ export class Terminal {
 export class TerminalManager {
   private readonly terminals = new Map<string, Terminal>();
 
-  create(params: CreateTerminalRequest): string {
+  async create(params: CreateTerminalRequest): Promise<string> {
     const id = randomUUID();
     const terminal = new Terminal(id, params);
     this.terminals.set(id, terminal);
+    try {
+      await terminal.ready;
+      if (this.terminals.get(id) !== terminal) {
+        throw new RequestError(-32800, "Request cancelled");
+      }
+    } catch (error) {
+      this.terminals.delete(id);
+      terminal.kill();
+      throw error;
+    }
     log.debug("Terminal created", { terminalId: id, command: terminal.command, cwd: terminal.cwd });
     return id;
   }
@@ -147,8 +163,8 @@ export class TerminalManager {
     return this.get(terminalId, sessionId).currentOutput();
   }
 
-  async waitForExit(terminalId: string, sessionId: string): Promise<TerminalExitStatus> {
-    return this.get(terminalId, sessionId).waitForExit();
+  async waitForExit(terminalId: string, sessionId: string, signal?: AbortSignal): Promise<TerminalExitStatus> {
+    return this.get(terminalId, sessionId).waitForExit(signal);
   }
 
   kill(terminalId: string, sessionId: string): void {

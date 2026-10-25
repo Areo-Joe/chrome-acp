@@ -25,6 +25,11 @@ export const command = buildCommand({
         brief: "Host to bind to (use 0.0.0.0 for remote access)",
         default: "localhost",
       },
+      acp: {
+        kind: "boolean",
+        brief: "Relay ACP JSON-RPC directly over WebSocket (requires an ACP client)",
+        default: false,
+      },
       debug: {
         kind: "boolean",
         brief: "Enable debug logging to file",
@@ -64,7 +69,7 @@ export const command = buildCommand({
   },
   func: async function (
     this: LocalContext,
-    flags: { port: number; host: string; debug: boolean; "no-auth": boolean; termux: boolean; https: boolean; "public-url"?: string },
+    flags: { acp: boolean; port: number; host: string; debug: boolean; "no-auth": boolean; termux: boolean; https: boolean; "public-url"?: string },
     ...args: readonly string[]
   ) {
     const port = flags.port;
@@ -98,6 +103,6 @@ export const command = buildCommand({
 
     // Import and run the server
     const { startServer } = await import("../server.js");
-    await startServer({ port, host, command: command!, args: [...agentArgs], cwd, debug, token, termux, https, publicUrl });
+    await startServer({ acp: flags.acp, port, host, command: command!, args: [...agentArgs], cwd, debug, token, termux, https, publicUrl });
   },
 });

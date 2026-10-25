@@ -11,7 +11,9 @@
  * - Handles tens of thousands of files without exhausting inotify limits
  */
 
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdir, readFile as readFileAsync, stat, writeFile } from "node:fs/promises";
+import { RequestError } from "@agentclientprotocol/sdk";
 import { dirname, isAbsolute, resolve, relative, sep, basename, extname } from "node:path";
 import * as watcher from "@parcel/watcher";
 import { log } from "./logger.js";
@@ -168,51 +170,69 @@ export function listDir(root: string, dirPath: string): FileItem[] | null {
 }
 
 /**
- * Read a text file for the ACP `fs/read_text_file` method.
- *
- * Reference: Zed's `handle_read_text_file` — agents may reference any absolute
- * path, not just the session working directory (the agent process itself
- * already has the same file-system access).
- *
- * @param line  1-based line number to start reading from
- * @param limit maximum number of lines to read
+ * ACP text reads use disk contents. Line ranges match Zed's buffer anchors:
+ * preserve newlines and reject a start beyond the final row (including the
+ * empty final row of a file ending in a newline).
  */
-export function readTextFile(
+export async function readTextFile(
   absolutePath: string,
   line?: number | null,
   limit?: number | null,
-): string {
-  if (!isAbsolute(absolutePath)) {
-    throw new Error(`Path must be absolute: ${absolutePath}`);
+  signal?: AbortSignal,
+): Promise<string> {
+  if (!isAbsolute(absolutePath)) throw RequestError.invalidParams(undefined, `Path must be absolute: ${absolutePath}`);
+  signal?.throwIfAborted();
+  const stats = await stat(absolutePath);
+  if (!stats.isFile()) throw RequestError.resourceNotFound(absolutePath);
+  const content = await readFileAsync(absolutePath, { encoding: "utf8", signal });
+  const startRow = Math.max(0, (line ?? 1) - 1);
+  let start = 0;
+  for (let row = 0; row < startRow; row++) {
+    const newline = content.indexOf("\n", start);
+    if (newline < 0) throw RequestError.invalidParams("Attempting to read beyond the end of the file");
+    start = newline + 1;
   }
-
-  const stats = statSync(absolutePath);
-  if (!stats.isFile()) {
-    throw new Error(`Not a file: ${absolutePath}`);
+  if (limit === undefined || limit === null) return content.slice(start);
+  let end = start;
+  for (let row = 0; row < limit && end < content.length; row++) {
+    const newline = content.indexOf("\n", end);
+    end = newline < 0 ? content.length : newline + 1;
   }
+  return content.slice(start, end);
+}
 
-  const content = readFileSync(absolutePath, "utf-8");
-  if (line === undefined && limit === undefined) {
-    return content;
+let acceptingWrites = true;
+const pendingWrites = new Set<Promise<void>>();
+
+/** Stop accepting writes before taking the drain snapshot. */
+export async function finishPendingFileWrites(): Promise<void> {
+  acceptingWrites = false;
+  const results = await Promise.allSettled([...pendingWrites]);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      log.error("File write failed during shutdown", { error: String(result.reason) });
+    }
   }
-
-  const lines = content.split("\n");
-  const start = line ? Math.max(0, line - 1) : 0;
-  const end = limit !== undefined && limit !== null ? start + limit : lines.length;
-  return lines.slice(start, end).join("\n");
 }
 
 /**
- * Write a text file for the ACP `fs/write_text_file` method.
- *
- * Creates parent directories as needed (like Zed's buffer save).
+ * Like Zed's write handler, cancellation is checked before the write starts.
+ * Once started, finish the write: aborting writeFile can leave a truncated file.
  */
-export function writeTextFile(absolutePath: string, content: string): void {
-  if (!isAbsolute(absolutePath)) {
-    throw new Error(`Path must be absolute: ${absolutePath}`);
+export async function writeTextFile(absolutePath: string, content: string, signal?: AbortSignal): Promise<void> {
+  if (!isAbsolute(absolutePath)) throw RequestError.invalidParams(undefined, `Path must be absolute: ${absolutePath}`);
+  if (!acceptingWrites) throw RequestError.requestCancelled(undefined, "Server is shutting down");
+  signal?.throwIfAborted();
+  const writing = (async () => {
+    await mkdir(dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, content, { encoding: "utf8" });
+  })();
+  pendingWrites.add(writing);
+  try {
+    await writing;
+  } finally {
+    pendingWrites.delete(writing);
   }
-  mkdirSync(dirname(absolutePath), { recursive: true });
-  writeFileSync(absolutePath, content, "utf-8");
 }
 
 /**

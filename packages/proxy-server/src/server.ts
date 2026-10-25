@@ -22,12 +22,14 @@ import { getOrCreateCertificate, getLanIPs, getAgentTlsEnv } from "./cert.js";
 import {
   listDir,
   readFile,
-  readTextFile as readWorkspaceTextFile,
-  writeTextFile as writeWorkspaceTextFile,
   startWatcher,
+  finishPendingFileWrites,
   type FileChange,
 } from "./files.js";
 import { TerminalManager } from "./terminals.js";
+import { registerLocalCapabilities } from "./local-capabilities.js";
+import { AcpRelay } from "./acp-relay.js";
+import { killProcessTree, ownsProcessGroup } from "./process.js";
 
 // Get the directory of this file to resolve public folder path
 const __filename = fileURLToPath(import.meta.url);
@@ -64,6 +66,7 @@ export interface ServerConfig {
   termux?: boolean;
   https?: boolean;
   publicUrl?: string;
+  acp?: boolean;
 }
 
 // Pending permission request
@@ -159,12 +162,6 @@ function errorCode(error: unknown): number | undefined {
   return typeof candidate.code === "number" ? candidate.code : undefined;
 }
 
-const REQUEST_CANCELLED = -32800;
-
-function requestCancelled(): RequestError {
-  return new RequestError(REQUEST_CANCELLED, "Request cancelled");
-}
-
 // Send an agent error, preserving the JSON-RPC code (e.g. auth_required).
 function sendAgentError(ws: WSContext, prefix: string, error: unknown): void {
   send(ws, "error", {
@@ -185,14 +182,6 @@ function send(ws: WSContext, type: string, payload?: unknown): void {
 function getClientCwd(ws: WSContext): string {
   const state = clients.get(ws);
   return state?.sessionCwd || AGENT_CWD;
-}
-
-function mapFsError(error: unknown, path: string): RequestError {
-  if (error instanceof RequestError) return error;
-  if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
-    return RequestError.resourceNotFound(path);
-  }
-  return RequestError.internalError(undefined, (error as Error).message);
 }
 
 // Keep client-side session state in sync with agent notifications.
@@ -242,6 +231,12 @@ function cancelPermissionsForToolCall(
 // recommended API; the legacy `Client` interface is deprecated.
 function createClientApp(ws: WSContext, clientState: ClientState): acp.ClientApp {
   const app = acp.client({ name: "chrome-acp" });
+  registerLocalCapabilities(app, clientState.terminals, (sessionId) => {
+    if (sessionId !== clientState.sessionId) {
+      throw RequestError.internalError(`unknown session: ${sessionId}`);
+    }
+    return clientState.sessionCwd ?? AGENT_CWD;
+  });
 
   app.onRequest(
     acp.methods.client.session.requestPermission,
@@ -303,30 +298,6 @@ function createClientApp(ws: WSContext, clientState: ClientState): acp.ClientApp
     send(ws, "session_update", params);
   });
 
-  // Reference: Zed's `handle_read_text_file`. ACP paths are absolute.
-  app.onRequest(acp.methods.client.fs.readTextFile, ({ params, signal }) => {
-    log.debug("Read text file", { path: params.path, line: params.line, limit: params.limit });
-    if (signal.aborted) throw requestCancelled();
-    try {
-      const content = readWorkspaceTextFile(params.path, params.line, params.limit);
-      return { content };
-    } catch (error) {
-      throw mapFsError(error, params.path);
-    }
-  });
-
-  // Reference: Zed's `handle_write_text_file`.
-  app.onRequest(acp.methods.client.fs.writeTextFile, ({ params, signal }) => {
-    log.debug("Write text file", { path: params.path });
-    if (signal.aborted) throw requestCancelled();
-    try {
-      writeWorkspaceTextFile(params.path, params.content);
-      return {};
-    } catch (error) {
-      throw mapFsError(error, params.path);
-    }
-  });
-
   // Reference: Zed's `handle_create_elicitation` (form + URL modes).
   app.onRequest(
     acp.methods.client.elicitation.create,
@@ -362,58 +333,6 @@ function createClientApp(ws: WSContext, clientState: ClientState): acp.ClientApp
   // Reference: Zed's `handle_complete_elicitation`.
   app.onNotification(acp.methods.client.elicitation.complete, ({ params }) => {
     send(ws, "elicitation_complete", { elicitationId: params.elicitationId });
-  });
-
-  // Reference: Zed's `handle_create_terminal`.
-  app.onRequest(acp.methods.client.terminal.create, ({ params, signal }) => {
-    if (signal.aborted) throw requestCancelled();
-    const terminalId = clientState.terminals.create(params);
-    return { terminalId };
-  });
-
-  // Reference: Zed's `handle_terminal_output`.
-  app.onRequest(acp.methods.client.terminal.output, ({ params }) => {
-    return clientState.terminals.output(params.terminalId, params.sessionId);
-  });
-
-  // Reference: Zed's `handle_wait_for_terminal_exit`.
-  app.onRequest(acp.methods.client.terminal.waitForExit, ({ params, signal }) => {
-    if (signal.aborted) return Promise.reject(requestCancelled());
-    return new Promise<acp.TerminalExitStatus>((resolve, reject) => {
-      let settled = false;
-      const onAbort = () => {
-        if (settled) return;
-        settled = true;
-        reject(requestCancelled());
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-      clientState.terminals.waitForExit(params.terminalId, params.sessionId).then(
-        (status) => {
-          if (settled) return;
-          settled = true;
-          signal.removeEventListener("abort", onAbort);
-          resolve(status);
-        },
-        (error) => {
-          if (settled) return;
-          settled = true;
-          signal.removeEventListener("abort", onAbort);
-          reject(error);
-        },
-      );
-    });
-  });
-
-  // Reference: Zed's `handle_kill_terminal`.
-  app.onRequest(acp.methods.client.terminal.kill, ({ params }) => {
-    clientState.terminals.kill(params.terminalId, params.sessionId);
-    return {};
-  });
-
-  // Reference: Zed's `handle_release_terminal`.
-  app.onRequest(acp.methods.client.terminal.release, ({ params }) => {
-    clientState.terminals.release(params.terminalId, params.sessionId);
-    return {};
   });
 
   return app;
@@ -482,7 +401,9 @@ async function handleConnect(ws: WSContext): Promise<void> {
     cancelPendingPermissions(state);
     cancelPendingElicitations(state, ws);
     state.terminals.dispose();
-    state.process.kill();
+    killProcessTree(state.process);
+    state.process.stdin?.destroy();
+    state.process.stdout?.destroy();
     state.process = null;
     state.connection = null;
     state.agentCapabilities = null;
@@ -500,6 +421,7 @@ async function handleConnect(ws: WSContext): Promise<void> {
     const agentProcess = spawn(AGENT_COMMAND, AGENT_ARGS, {
       cwd: AGENT_CWD,
       stdio: ["pipe", "pipe", "inherit"],
+      detached: ownsProcessGroup,
       env: AGENT_ENV,
     });
 
@@ -508,8 +430,7 @@ async function handleConnect(ws: WSContext): Promise<void> {
     // Spawn failures (ENOENT, EACCES, ...) would otherwise crash the server.
     agentProcess.on("error", (error) => {
       log.error("Failed to spawn agent", { error: error.message });
-      state.process = null;
-      state.connection = null;
+      if (state.process === agentProcess) connection.close(error);
       send(ws, "error", {
         message: `Failed to spawn agent: ${error.message}`,
       });
@@ -527,6 +448,18 @@ async function handleConnect(ws: WSContext): Promise<void> {
     const stream = acp.ndJsonStream(input, output);
     const connection = createClientApp(ws, state).connect(stream);
     state.connection = connection;
+
+    let exitTimer: ReturnType<typeof setTimeout> | undefined;
+    agentProcess.once("exit", () => {
+      if (connection.signal.aborted) return;
+      exitTimer = setTimeout(() => connection.close(new Error("Agent process exited")), 250);
+    });
+    // Register cleanup before initialization so failed startup also releases
+    // pending handlers and the process group. Never touch a newer connection.
+    connection.closed.then(() => {
+      clearTimeout(exitTimer);
+      if (state.connection === connection) handleDisconnect(ws);
+    });
 
     // Initialize the connection.
     // Reference: Zed's `client_capabilities_for_agent` — advertise everything
@@ -590,17 +523,6 @@ async function handleConnect(ws: WSContext): Promise<void> {
       authMethods: state.authMethods,
     });
 
-    // Handle connection close. Guard against a stale connection from a
-    // previous connect() nulling out a newer one.
-    connection.closed.then(() => {
-      if (state.connection !== connection) return;
-      log.info("Agent connection closed");
-      state.connection = null;
-      state.sessionId = null;
-      state.pendingSessionLoad = null;
-      state.cancelRequested = false;
-      send(ws, "status", { connected: false });
-    });
   } catch (error) {
     log.error("Failed to connect", { error: (error as Error).message });
     send(ws, "error", {
@@ -1088,7 +1010,6 @@ async function handleDeleteSession(
     await state.connection.agent.request(acp.methods.agent.session.delete, {
       sessionId: params.sessionId,
     });
-    state.terminals.disposeSession(params.sessionId);
     log.info("Session deleted", { sessionId: params.sessionId });
     send(ws, "session_deleted", { sessionId: params.sessionId });
   } catch (error) {
@@ -1218,9 +1139,14 @@ function handleDisconnect(ws: WSContext): void {
   cancelPendingPermissions(state);
   cancelPendingElicitations(state, ws);
   state.terminals.dispose();
+  state.connection?.close();
+  state.unsubscribeWatcher?.();
+  state.unsubscribeWatcher = null;
 
   if (state.process) {
-    state.process.kill();
+    killProcessTree(state.process);
+    state.process.stdin?.destroy();
+    state.process.stdout?.destroy();
     state.process = null;
   }
   state.connection = null;
@@ -1357,6 +1283,8 @@ export async function startServer(config: ServerConfig): Promise<void> {
 
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
+  const relays = new Map<WSContext, AcpRelay>();
+  let shuttingDown = false;
 
   // Health check endpoint
   app.get("/health", (c) => {
@@ -1369,7 +1297,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
   });
 
   // MCP Streamable HTTP endpoint for browser tool
-  app.post("/mcp", handleMcpRequest);
+  if (!config.acp) app.post("/mcp", handleMcpRequest);
 
   // Serve PWA from /app (use absolute path so it works from any CWD)
   app.use("/app/*", serveStatic({
@@ -1403,6 +1331,10 @@ export async function startServer(config: ServerConfig): Promise<void> {
 
       return {
         onOpen(_event, ws) {
+          if (shuttingDown) {
+            ws.close(1001, "Server is shutting down");
+            return;
+          }
           log.info("Client connected");
           const state: ClientState = {
             process: null,
@@ -1430,10 +1362,29 @@ export async function startServer(config: ServerConfig): Promise<void> {
             state.isAlive = true;
           });
 
-          // Register this WebSocket for browser tool calls
-          setExtensionWebSocket(ws);
+          if (config.acp) {
+            const relay = new AcpRelay({
+              command: AGENT_COMMAND,
+              args: AGENT_ARGS,
+              cwd: AGENT_CWD,
+              env: AGENT_ENV,
+              send: (message) => {
+                if (ws.readyState === 1) ws.send(JSON.stringify(message));
+              },
+              close: (reason) => ws.close(1011, reason),
+            });
+            relays.set(ws, relay);
+          } else {
+            // Register this WebSocket for browser tool calls.
+            setExtensionWebSocket(ws);
+          }
         },
       async onMessage(event, ws) {
+        if (shuttingDown) return;
+        if (config.acp) {
+          await relays.get(ws)?.receive(event.data.toString());
+          return;
+        }
         try {
           const parsed: unknown = JSON.parse(event.data.toString());
           if (!isObject(parsed)) {
@@ -1622,11 +1573,14 @@ export async function startServer(config: ServerConfig): Promise<void> {
           cancelPendingPermissions(state);
           // Unsubscribe from file watcher
           state.unsubscribeWatcher?.();
+          state.unsubscribeWatcher = null;
         }
-        handleDisconnect(ws);
+        relays.get(ws)?.dispose();
+        relays.delete(ws);
+        if (!config.acp) handleDisconnect(ws);
         clients.delete(ws);
         // Clear extension WebSocket if this was it
-        setExtensionWebSocket(null);
+        if (!config.acp) setExtensionWebSocket(null);
       },
     };
     }),
@@ -1651,7 +1605,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
 
   // Heartbeat: periodically ping all connected clients to keep
   // connections alive through intermediate gateways and detect dead clients.
-  setInterval(() => {
+  const heartbeatTimer = setInterval(() => {
     for (const [ws, state] of clients) {
       if (!state.isAlive) {
         log.info("Client heartbeat timeout, terminating connection");
@@ -1663,6 +1617,30 @@ export async function startServer(config: ServerConfig): Promise<void> {
       (ws.raw as RawWebSocket).ping();
     }
   }, HEARTBEAT_INTERVAL_MS);
+
+  // Detached process groups need explicit cleanup when the CLI is stopped.
+  // Zed owns these resources through OwnedChild/Terminal drop handlers.
+  const shutdown = async (exitCode: number) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    clearInterval(heartbeatTimer);
+    // Close admission synchronously, then let every accepted save settle even
+    // when closing its ACP connection cancels the original request.
+    const writesFinished = finishPendingFileWrites();
+    const serverClosed = new Promise<void>((resolve) => server.close(() => resolve()));
+    for (const relay of relays.values()) relay.dispose();
+    for (const [ws] of clients) {
+      if (!config.acp) handleDisconnect(ws);
+      (ws.raw as RawWebSocket).terminate();
+    }
+    await writesFinished;
+    // Bound remaining HTTP cleanup only after saves finish. This deadline must
+    // never interrupt a write that has already truncated its destination.
+    await Promise.race([serverClosed, new Promise<void>((resolve) => setTimeout(resolve, 1000))]);
+    process.exit(exitCode);
+  };
+  process.on("SIGINT", () => { void shutdown(130); });
+  process.on("SIGTERM", () => { void shutdown(143); });
 
   // Protocol strings based on HTTPS mode
   const httpProtocol = https ? "https" : "http";
@@ -1687,13 +1665,17 @@ export async function startServer(config: ServerConfig): Promise<void> {
   console.log(`  🚀 ACP Proxy Server${https ? " (HTTPS)" : ""}`);
   console.log();
 
-  // One-click URLs (open in browser)
-  console.log(`  Open in browser:`);
-  console.log(`    ➜ Local:   ${localAppUrl}${tokenSuffix}`);
-  if (host === "0.0.0.0") {
-    console.log(`    ➜ Network: ${networkAppUrl}${tokenSuffix}`);
-  }
+  console.log(`  Mode: ${config.acp ? "ACP JSON-RPC (requires an ACP WebSocket client)" : "legacy"}`);
   console.log();
+
+  if (!config.acp) {
+    console.log(`  Open in browser:`);
+    console.log(`    ➜ Local:   ${localAppUrl}${tokenSuffix}`);
+    if (host === "0.0.0.0") {
+      console.log(`    ➜ Network: ${networkAppUrl}${tokenSuffix}`);
+    }
+    console.log();
+  }
 
   // Manual connection info (for form input)
   console.log(`  Manual connection:`);
@@ -1707,8 +1689,8 @@ export async function startServer(config: ServerConfig): Promise<void> {
   }
   console.log();
 
-  // Show QR code for mobile connection
-  if (AUTH_TOKEN) {
+  // The mobile QR format is part of the legacy frontend protocol.
+  if (AUTH_TOKEN && !config.acp) {
     // Use publicUrl if provided, otherwise fall back to networkWsUrl
     const qrUrl = publicUrl || networkWsUrl;
     const qrData = JSON.stringify({ url: qrUrl, token: AUTH_TOKEN });
@@ -1721,7 +1703,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
     }
     console.log();
     console.log(qrString);
-  } else {
+  } else if (!AUTH_TOKEN) {
     console.log(`  ⚠️  Authentication disabled (--no-auth)`);
     console.log();
   }
@@ -1743,7 +1725,8 @@ export async function startServer(config: ServerConfig): Promise<void> {
     https,
     publicUrl,
     wsEndpoint: `${wsProtocol}://${displayHost}:${port}/ws`,
-    mcpEndpoint: `${httpProtocol}://${displayHost}:${port}/mcp`,
+    mode: config.acp ? "acp" : "legacy",
+    mcpEndpoint: config.acp ? undefined : `${httpProtocol}://${displayHost}:${port}/mcp`,
     agent: AGENT_COMMAND,
     agentArgs: AGENT_ARGS,
     cwd: AGENT_CWD,
