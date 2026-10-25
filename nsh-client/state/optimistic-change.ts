@@ -1,28 +1,24 @@
-import { cleanup, effect, signal, untracked } from "nsh";
+import { cleanup, signal } from "nsh";
 
 type Options<T> = {
-  send: (target: T) => void | Promise<unknown>;
-  isConfirmed: (target: T) => boolean;
+  send: (target: T) => Promise<unknown>;
+  isCurrent: (target: T) => boolean;
   onError: (reason: unknown) => void;
-  timeoutMs?: number;
   loadingDelayMs?: number;
-  timeoutMessage?: string;
 };
 
-/** One optimistic change, held until authoritative state confirms it. */
+/** One optimistic RPC change, held until its matching response settles. */
 export function createOptimisticChange<T>(options: Options<T>) {
   const target = signal<T | null>(null);
   const slow = signal(false);
   let active: { target: T } | null = null;
   let loadingTimer: ReturnType<typeof setTimeout> | undefined;
-  let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
 
   function cancel() {
     active = null;
     if (loadingTimer !== undefined) clearTimeout(loadingTimer);
-    if (timeoutTimer !== undefined) clearTimeout(timeoutTimer);
-    loadingTimer = timeoutTimer = undefined;
+    loadingTimer = undefined;
     slow.set(false);
     target.set(null);
   }
@@ -34,24 +30,20 @@ export function createOptimisticChange<T>(options: Options<T>) {
     options.onError(reason);
   }
 
-  effect(() => {
-    const next = target();
-    if (next !== null && options.isConfirmed(next)) untracked(cancel);
-  });
-
   function start(next: T) {
-    if (disposed || active || options.isConfirmed(next)) return;
+    if (disposed || active || options.isCurrent(next)) return;
     const operation = { target: next };
     active = operation;
     loadingTimer = setTimeout(() => {
       if (active === operation) slow.set(true);
     }, options.loadingDelayMs ?? 300);
-    timeoutTimer = setTimeout(() => reject(operation,
-      new Error(options.timeoutMessage ?? "The change was not confirmed.")), options.timeoutMs ?? 15_000);
     target.set(next);
     try {
-      // Send completion is not confirmation for sockets/subscriptions.
-      void Promise.resolve(options.send(next)).catch((reason: unknown) => reject(operation, reason));
+      // Success accepts the response's actual state, including normalized
+      // values or removed options. Notifications alone do not settle this RPC.
+      void options.send(next).then(() => {
+        if (active === operation) cancel();
+      }, (reason: unknown) => reject(operation, reason));
     } catch (reason) {
       reject(operation, reason);
     }

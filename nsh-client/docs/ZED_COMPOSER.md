@@ -19,17 +19,19 @@ Zed 发送按钮：上下文加载中显示 loading；生成中且草稿为空�
 
 ## 协议与生命周期
 
-1. 代理 `status.connected = true` 后进入 Chat；此时只确认 transport / agent 初始化完成。
-2. 复用共享 `ACPClient` 发送 `new_session`，等待 `session_created`，取得 session ID、配置与能力。创建 session 不会发送 prompt，但会在 agent 侧创建会话。
-3. 复用共享 client 对 session 创建前的命令更新的缓冲，以及后续命令、配置、mode 更新事件。
-4. 配置变更发送 `set_config_option`；旧 mode 发送 `set_session_mode`。选择后立即显示目标值，超过 300 ms 才用转圈替换箭头，等待时禁用所有配置选择器并保持外观稳定。这些方法发送后即返回，只有权威更新匹配目标值才结束等待；拒绝或 15 秒无确认时移除临时值，显示服务端最新值和错误。session 初始化 30 秒超时。
+1. 通过共享 `DirectACPClient` 和 ACP SDK 的 WebSocket transport 发送 `initialize`，等待匹配的 JSON-RPC 响应后进入 Chat。proxy 以 `--acp` 启动，不使用旧版消息包装。
+2. 连接页要求填写 proxy 所在机器上的绝对工作目录，作为 `session/new.cwd`；会话创建等待其 RPC 响应取得 ID 和配置，不发送 prompt。
+3. `DirectACPClient` 在会话创建期间有界缓冲提前到达的 `session/update`，按 session ID 应用命令更新，并消费后续命令、配置和 mode 通知。
+4. 配置变更发送 `session/set_config_option`，boolean 请求带 `type: "boolean"`；旧 mode 发送 `session/set_mode`。等待对应 RPC 响应结束乐观变更：成功时展示响应的实际值，即使值被规范化或选项被移除，也立即结束等待。期间的匹配通知只更新服务端状态，不提前确认 RPC；后续失败仍可展示。mode 请求期间收到的权威通知会保留，空成功响应只在没有更新时采用请求值。SDK 根据请求 ID 关联错误，迟到失败不会取消后续配置变更。保留乐观目标值和 300 ms 延迟 loading；配置变更没有固定超时，对应 RPC 结束前持续等待并阻止下一次变更。session 创建仍为 30 秒超时。
 5. session / 配置错误保留连接并展示错误；连接关闭、Disconnect、Chat 返回操作回到连接页，销毁草稿与 session 监听器。连接页内存中的地址和 token 保留。
 
-Zed 此 revision 使用 `acp_v2`，本仓库共享 ACP SDK 仍有不同的数据形状，例如 prompt capability 的布尔值。这里对照交互语义，以本仓库 proxy/shared 的实际类型为准。未复制 Zed v2 的 wire schema，也未新增独立的协议实现。
+Zed 此 revision 使用 `acp_v2`；此实现使用仓库已有 ACP SDK 的 v1 schema 和官方 JSON-RPC 实现。这里对照交互语义，以 SDK 实际类型为准，不复制 Zed v2 的 wire schema。
 
-`state/optimistic-change.ts` 抽出单次乐观变更的生命周期：接收发送函数、响应式确认条件和错误回调，管理临时目标值、延迟 loading、超时及销毁。`state/composer.ts` 负责 ACP 字段映射和目标值的显示覆盖；服务端数据始终单独保留，因此失败时也能保留等待期间收到的其他配置更新。
+`state/optimistic-change.ts` 抽出单次乐观 RPC 变更的生命周期：接收 RPC Promise、当前值检查和错误回调，管理临时目标值、延迟 loading 及销毁；当前值检查仅用于跳过重复选择，操作由对应 Promise 的成功或失败结束。`state/composer.ts` 负责 ACP 字段映射和目标值的显示覆盖；服务端数据始终单独保留，因此失败时也能保留等待期间收到的其他配置更新。
+
+本次 RPC 行为另对照本地 Zed `347f171a3f`：`agent_servers/src/acp/v1.rs` 的 `ConfigOptions::set_config_option` 使用响应中的配置；`agent_ui/src/config_options.rs` 的 `set_config_option_and_default` 明确处理规范化选择；`AcpSessionModes::set_mode` 在成功响应后不覆盖期间收到的 mode 通知。NSH 的乐观显示由输入区覆盖层承担，确认后的状态保存在共享 client 中。
 
 ## 验证范围
 
-`node tests/connection.mjs` 覆盖连接、跳转、断开、草稿、命令、配置确认 / 拒绝、旧 mode、无配置以及 session 失败；mock 明确拒绝 prompt。独立的乐观变更用例通过手动时钟验证延迟 loading、超时、取消、销毁和过期请求失败隔离。
-`--target android` 在连接的 Android 设备上运行同一组交互（手动时钟用例除外）。这些测试使用 mock proxy，真实 agent 的差异需要后续联调。
+`node tests/connection.mjs` 覆盖连接、跳转、断开、草稿、命令、配置确认 / 拒绝、旧 mode、无配置以及 session 失败；mock 明确拒绝 prompt。独立的乐观变更用例通过手动时钟验证延迟 loading、超过 15 秒仍等待响应并阻止再次变更、取消、销毁和过期请求失败隔离。
+`--target android` 在连接的 Android 设备上运行同一组交互（手动时钟用例除外）。UI 测试使用 ACP mock endpoint；`node --test nsh-client/tests/direct-client.mjs` 另外覆盖请求关联、纯响应确认、断线清理，以及通过真实 `--acp` proxy 与 SDK agent 子进程联调本机文件和终端能力。真实产品 agent 和真机仍需各自联调。

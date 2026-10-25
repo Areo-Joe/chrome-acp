@@ -39,10 +39,9 @@ export function createComposer(connection: Connection) {
     send: (target) => target.legacy
       ? client.setSessionMode(String(target.value))
       : client.setConfigOption(target.id, target.value),
-    isConfirmed: (target) => target.legacy
+    isCurrent: (target) => target.legacy
       ? modes()?.currentModeId === target.value
       : options()?.find((option) => option.id === target.id)?.currentValue === target.value,
-    timeoutMessage: "The agent did not confirm the configuration change.",
     onError: (reason) => fail(reason instanceof Error ? reason.message : "Cannot change configuration."),
   });
   const pending = () => change.target()?.id ?? null;

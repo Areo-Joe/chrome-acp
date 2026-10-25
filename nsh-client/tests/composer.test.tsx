@@ -4,6 +4,7 @@ async function chat(token = "valid") {
   const app = await open("../App.tsx", { network: "live" });
   await app.type("id:ws-address", "ws://127.0.0.1:19437");
   await app.type("id:token", token);
+  await app.type("id:working-directory", "/workspace");
   await app.press("id:connect");
   await app.waitFor("id:message-input");
   return app;
@@ -102,5 +103,56 @@ test("rejected configuration retains the confirmed value and connection", async 
   expect(app.texts()).toContain("Configuration rejected");
   expect(app.texts()).toContain("Fast");
   expect(app.enabled("id:config-model")).toBe(true);
+  await app.press("id:disconnect");
+});
+
+test("a successful normalized configuration displays the returned value and unlocks selectors", async () => {
+  const app = await chat("config-normalized");
+  await app.waitFor("id:config-model");
+  await app.press("id:config-model");
+  await app.press("id:choice-model-smart");
+  expect(app.texts()).toContain("Smart");
+  await app.waitUntil(() => app.enabled("id:config-model"));
+  expect(app.texts()).toContain("Fast");
+  expect(app.texts()).toContain("On");
+  expect(app.shows("id:session-error")).toBe(false);
+  expect(app.shows("id:config-loading-model")).toBe(false);
+  await app.press("id:disconnect");
+});
+
+test("a successful response can remove the selected option without leaving configuration locked", async () => {
+  const app = await chat("config-removed");
+  await app.waitFor("id:config-model");
+  await app.press("id:config-model");
+  await app.press("id:choice-model-smart");
+  await app.waitFor("id:config-model", { state: "gone" });
+  await app.waitUntil(() => app.enabled("id:config-thinking"));
+  expect(app.texts()).toContain("On");
+  expect(app.shows("id:session-error")).toBe(false);
+  await app.press("id:disconnect");
+});
+
+test("a matching update before RPC rejection keeps selectors pending and reports the failure", async () => {
+  const app = await chat("config-notified-error");
+  await app.waitFor("id:config-model");
+  await app.press("id:config-model");
+  await app.press("id:choice-model-smart");
+  await app.waitFor("id:config-loading-model");
+  expect(app.enabled("id:config-thinking")).toBe(false);
+  await app.waitFor("id:session-error");
+  expect(app.texts()).toContain("Configuration rejected");
+  expect(app.texts()).toContain("Smart");
+  expect(app.enabled("id:config-model")).toBe(true);
+  await app.press("id:disconnect");
+});
+
+test("mode RPC success preserves the agent mode update received while waiting", async () => {
+  const app = await chat("legacy-notified");
+  await app.waitFor("id:config-legacy-mode");
+  await app.press("id:config-legacy-mode");
+  await app.press("id:choice-legacy-mode-code");
+  await app.waitUntil(() => app.enabled("id:config-legacy-mode"));
+  expect(app.texts()).toContain("Plan");
+  expect(app.shows("id:session-error")).toBe(false);
   await app.press("id:disconnect");
 });

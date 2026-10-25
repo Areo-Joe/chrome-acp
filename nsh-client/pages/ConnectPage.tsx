@@ -1,13 +1,14 @@
 import { Input, Scroll, signal, Text, View } from "nsh";
 import { Button, Keyboard } from "nsh/base";
-import { connectionUrl, type Connection } from "../state/connection";
+import { connectionUrl, workingDirectory, type Connection } from "../state/connection";
 
 export function ConnectPage(props: { connection: Connection }) {
   const address = signal("");
   const token = signal("");
+  const directory = signal("");
   const connection = props.connection;
   const active = () => connection.state() === "connecting" || connection.state() === "connected";
-  const canConnect = () => !active() && connectionUrl(address()) !== null;
+  const canConnect = () => !active() && connectionUrl(address()) !== null && workingDirectory(directory()) !== null;
   const status = () => ({
     disconnected: "Disconnected",
     connecting: "Connecting…",
@@ -48,12 +49,25 @@ export function ConnectPage(props: { connection: Connection }) {
               class="h-12 rounded-lg border border-border bg-background px-4 text-base text-foreground placeholder:text-muted-foreground"
             />
           </View>
+          <View class="gap-2">
+            <Text class="text-sm font-medium text-foreground">Working directory</Text>
+            <Input
+              testID="working-directory"
+              value={directory()}
+              readonly={active()}
+              onChange={(value) => directory.set(value)}
+              placeholder="/path/to/project on the proxy machine"
+              autoCapitalize="none"
+              autoCorrect={false}
+              class="h-12 rounded-lg border border-border bg-background px-4 text-base text-foreground placeholder:text-muted-foreground"
+            />
+          </View>
           <Button
             testID="connect"
             disabled={!canConnect()}
             onPress={() => {
               Keyboard.dismiss();
-              connection.connect(address(), token());
+              connection.connect(address(), token(), directory());
             }}
             class="h-12 items-center justify-center rounded-lg bg-primary active:bg-primary/90 disabled:opacity-40"
           >
@@ -74,6 +88,9 @@ export function ConnectPage(props: { connection: Connection }) {
             </If>
             <If when={address().trim().length > 0 && !connectionUrl(address())}>
               <Text class="text-sm text-red-500">Enter a valid ws:// or wss:// address.</Text>
+            </If>
+            <If when={directory().trim().length > 0 && !workingDirectory(directory())}>
+              <Text class="text-sm text-red-500">Enter an absolute working directory on the proxy machine.</Text>
             </If>
             <If when={active()}>
               <Button

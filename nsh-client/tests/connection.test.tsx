@@ -6,6 +6,7 @@ async function form(token: string) {
   const app = await open("../App.tsx", { network: "live" });
   await app.type("id:ws-address", ADDRESS);
   await app.type("id:token", token);
+  await app.type("id:working-directory", "/workspace");
   expect(app.value("id:ws-address")).toBe(ADDRESS);
   expect(app.value("id:token")).toBe(token);
   return app;
@@ -19,7 +20,7 @@ test("invalid addresses keep Connect disabled", async () => {
   expect(app.texts()).toContain("Enter a valid ws:// or wss:// address.");
 });
 
-test("waits for agent status, prevents duplicate connects, and disconnects", async () => {
+test("waits for ACP initialization, prevents duplicate connects, and disconnects", async () => {
   const app = await form("valid");
   await app.press("id:connect");
   expect(app.enabled("id:connect")).toBe(false);
@@ -57,11 +58,31 @@ test("agent initialization failure releases the form", async () => {
   expect(app.enabled("id:connect")).toBe(true);
 });
 
-test("server disconnect returns the page to Disconnected", async () => {
+test("a legacy proxy reports the required --acp mode immediately", async () => {
+  const app = await form("legacy-proxy");
+  await app.press("id:connect");
+  await app.waitFor("id:connection-error");
+  expect(app.texts()).toContain("Start the proxy with --acp to connect this client.");
+  expect(app.enabled("id:connect")).toBe(true);
+});
+
+test("server failure returns to the connection form with its close reason", async () => {
   const app = await form("drop");
   await app.press("id:connect");
   await app.waitFor("text:Disconnect");
-  await app.waitFor("text:Disconnected");
+  await app.waitFor("text:Connection failed");
+  expect(app.texts()).toContain("Server stopped");
+  expect(app.enabled("id:connect")).toBe(true);
+});
+
+test("connecting requires an absolute working directory", async () => {
+  const app = await open("../App.tsx");
+  await app.type("id:ws-address", ADDRESS);
+  expect(app.enabled("id:connect")).toBe(false);
+  await app.type("id:working-directory", "relative/project");
+  expect(app.enabled("id:connect")).toBe(false);
+  await app.clear("id:working-directory");
+  await app.type("id:working-directory", "/workspace");
   expect(app.enabled("id:connect")).toBe(true);
 });
 

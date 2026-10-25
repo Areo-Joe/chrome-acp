@@ -39,55 +39,85 @@ server.on("connection", (socket, request) => {
   const token = url.searchParams.get("token");
   if (token === "invalid") return socket.close(4001, "Unauthorized: Invalid token");
   const options = configOptions();
-  const send = (type, payload) => {
-    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, payload }));
+  const send = (message) => {
+    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ jsonrpc: "2.0", ...message }));
   };
+  const result = (id, value) => send({ id, result: value });
+  const error = (id, message) => send({ id, error: { code: -32603, message } });
+  const update = (value) => send({ method: "session/update", params: { sessionId: "test-session", update: value } });
   socket.on("message", (data) => {
     const message = JSON.parse(data.toString());
-    if (message.type === "ping") return send("pong");
-    if (message.type === "disconnect") return socket.close();
-    if (message.type === "new_session") {
-      if (token === "session-error") return send("error", { message: "Session creation failed" });
-      // Exercise commands arriving before the session/new response, as real agents do.
-      send("session_update", { sessionId: "test-session", update: {
-        sessionUpdate: "available_commands_update", availableCommands: commands,
-      } });
-      return send("session_created", {
+    assert.equal(message.jsonrpc, "2.0");
+    assert.equal("type" in message, false, "Legacy proxy envelopes must never be sent");
+    if (message.method === "session/new") {
+      assert.equal(message.params.cwd, "/workspace");
+      assert.deepEqual(message.params.mcpServers, []);
+      if (token === "session-error") return error(message.id, "Session creation failed");
+      update({ sessionUpdate: "available_commands_update", availableCommands: commands });
+      return result(message.id, {
         sessionId: "test-session",
-        ...(token === "legacy" ? { modes: {
-          currentModeId: "ask", availableModes: [{ id: "ask", name: "Ask" }, { id: "code", name: "Code" }],
+        ...(token.startsWith("legacy") ? { modes: {
+          currentModeId: "ask", availableModes: [{ id: "ask", name: "Ask" }, { id: "code", name: "Code" }, { id: "plan", name: "Plan" }],
         } } : token === "empty" ? {} : { configOptions: options }),
       });
     }
-    if (message.type === "set_config_option") {
+    if (message.method === "session/set_config_option") {
       assert.notEqual(token, "legacy");
-      const option = options.find((option) => option.id === message.payload.configId);
+      const option = options.find((option) => option.id === message.params.configId);
       assert.ok(option, "Unknown config ID");
-      if (token === "config-error") return send("error", { message: "Configuration rejected" });
+      if (typeof message.params.value === "boolean") assert.equal(message.params.type, "boolean");
+      if (token === "config-error") return error(message.id, "Configuration rejected");
+      if (token === "config-normalized" || token === "config-removed") {
+        later(() => {
+          options.find((option) => option.id === "thinking").currentValue = true;
+          result(message.id, { configOptions: token === "config-removed" ? options.filter((entry) => entry.id !== "model") : options });
+        }, 500);
+        return;
+      }
+      if (token === "config-notified-error") {
+        later(() => {
+          option.currentValue = message.params.value;
+          update({ sessionUpdate: "config_option_update", configOptions: options });
+        }, 100);
+        later(() => error(message.id, "Configuration rejected"), 900);
+        return;
+      }
       if (token === "config-error-updated") {
         later(() => {
           options.find((option) => option.id === "thinking").currentValue = true;
-          send("config_options_changed", { configOptions: options });
+          update({ sessionUpdate: "config_option_update", configOptions: options });
         }, 100);
-        later(() => send("error", { message: "Configuration rejected" }), 400);
+        later(() => error(message.id, "Configuration rejected"), 400);
         return;
       }
       later(() => {
-        option.currentValue = message.payload.value;
-        send("config_options_changed", { configOptions: options });
+        option.currentValue = message.params.value;
+        // The RPC response alone is authoritative; no companion notification.
+        result(message.id, { configOptions: options });
       }, 1200);
       return;
     }
-    if (message.type === "set_session_mode") {
-      assert.equal(token, "legacy");
-      return send("mode_changed", { modeId: message.payload.modeId });
+    if (message.method === "session/set_mode") {
+      assert.ok(token.startsWith("legacy"));
+      if (token === "legacy-notified") {
+        update({ sessionUpdate: "current_mode_update", currentModeId: "plan" });
+        later(() => result(message.id, {}), 500);
+        return;
+      }
+      return result(message.id, {});
     }
-    assert.equal(message.type, "connect", "Only initialization/configuration is allowed; never send a prompt");
+    assert.equal(message.method, "initialize", "Only initialization/configuration is allowed; never send a prompt");
+    assert.equal(message.params.protocolVersion, 1);
+    assert.deepEqual(message.params.clientCapabilities.session.configOptions.boolean, {});
     connects++;
     if (token === "pending") return;
+    if (token === "legacy-proxy") {
+      socket.send(JSON.stringify({ type: "error", payload: { message: "Unknown message type" } }));
+      return;
+    }
     later(() => {
-      if (token === "agent-error") send("error", { message: "Agent unavailable" });
-      else send("status", { connected: true });
+      if (token === "agent-error") error(message.id, "Agent unavailable");
+      else result(message.id, { protocolVersion: 1, agentCapabilities: {}, agentInfo: { name: "mock", version: "1" } });
       if (token === "drop") later(() => socket.close(1011, "Server stopped"), 750);
     }, 1000);
   });

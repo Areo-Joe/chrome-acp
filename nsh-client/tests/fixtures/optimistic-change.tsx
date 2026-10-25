@@ -7,7 +7,7 @@ function App() {
   const error = signal("none");
   const sends = signal(0);
   const change = createOptimisticChange<{ value: string; outcome: string }>({
-    isConfirmed: (target) => confirmed() === target.value,
+    isCurrent: (target) => confirmed() === target.value,
     onError: (reason) => error.set(reason instanceof Error ? reason.message : String(reason)),
     send: (target) => {
       sends.update((count) => count + 1);
@@ -15,10 +15,15 @@ function App() {
       if (target.outcome === "late-error") {
         return new Promise((_, reject) => setTimeout(() => reject(new Error("Old rejection")), 1000));
       }
-      if (target.outcome !== "silent") {
-        setTimeout(() => confirmed.set(target.value), target.outcome === "fast" ? 50 : 1000);
+      if (target.outcome === "notified-error") {
+        setTimeout(() => confirmed.set(target.value), 50);
+        return new Promise((_, reject) => setTimeout(() => reject(new Error("Rejected after notification")), 1000));
       }
-      return Promise.resolve();
+      if (target.outcome === "silent") return new Promise(() => {});
+      return new Promise<void>((resolve) => setTimeout(() => {
+        confirmed.set(target.outcome === "normalized" ? "Other" : target.value);
+        resolve();
+      }, target.outcome === "fast" ? 50 : target.outcome === "long" ? 16000 : 1000));
     },
   });
   return (
@@ -30,10 +35,13 @@ function App() {
       <Text>Error: {error()}</Text>
       <Text>Sends: {sends()}</Text>
       <Button testID="slow" onPress={() => change.start({ value: "Smart", outcome: "slow" })}><Text>Slow</Text></Button>
+      <Button testID="long" onPress={() => change.start({ value: "Smart", outcome: "long" })}><Text>Long</Text></Button>
       <Button testID="fast" onPress={() => change.start({ value: "Smart", outcome: "fast" })}><Text>Fast</Text></Button>
       <Button testID="silent" onPress={() => change.start({ value: "Smart", outcome: "silent" })}><Text>Silent</Text></Button>
       <Button testID="reject" onPress={() => change.start({ value: "Smart", outcome: "reject" })}><Text>Reject</Text></Button>
       <Button testID="late-error" onPress={() => change.start({ value: "Smart", outcome: "late-error" })}><Text>Late error</Text></Button>
+      <Button testID="normalized" onPress={() => change.start({ value: "Smart", outcome: "normalized" })}><Text>Normalized</Text></Button>
+      <Button testID="notified-error" onPress={() => change.start({ value: "Smart", outcome: "notified-error" })}><Text>Notified error</Text></Button>
       <Button testID="expert" onPress={() => change.start({ value: "Expert", outcome: "silent" })}><Text>Expert</Text></Button>
       <Button testID="same" onPress={() => change.start({ value: "Fast", outcome: "silent" })}><Text>Same</Text></Button>
       <Button testID="confirm" onPress={() => confirmed.set("Smart")}><Text>Confirm</Text></Button>

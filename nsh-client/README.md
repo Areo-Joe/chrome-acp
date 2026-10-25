@@ -17,10 +17,17 @@ at ports 8790 / 8791, using the next available port when needed.
 
 ## Connection screen
 
-Enter a WS/WSS proxy URL and an optional token, then press Connect. A bare server
+Start the proxy in direct ACP mode:
+
+```sh
+acp-proxy --acp /path/to/agent
+```
+
+Enter a WS/WSS proxy URL, an optional token, and the absolute working directory
+on the proxy machine, then press Connect. A bare server
 address such as `ws://host:9315` uses `/ws`; explicit paths and query parameters
 are preserved. The token follows the Web client's query-token authentication.
-Connected is shown only after the proxy confirms its ACP agent initialization.
+Connected is shown only after the agent answers ACP `initialize`.
 The screen supports loading, cancellation, disconnect, errors and a 30-second
 connection timeout. Inputs are locked while connecting/connected, and Connect is
 disabled for invalid addresses or an active connection. Settings are held in memory only.
@@ -31,19 +38,40 @@ drafts, slash-command completion and argument hints. Configuration
 selectors follow the agent’s current options (including grouped selects and
 booleans), with legacy mode fallback. Selections display the target immediately;
 a spinner appears after 300 ms while waiting for agent confirmation. Configuration
-changes run one at a time. Rejection or a 15-second timeout reveals the latest
+changes run one at a time until their RPC response settles. Success displays the
+returned state even when the agent normalizes a value or removes an option;
+matching notifications alone do not finish a pending RPC. A mode notification
+received while waiting takes precedence over the requested mode on success.
+Configuration changes have no fixed timeout; selectors stay pending until the
+RPC succeeds, fails, or the connection closes. Rejection reveals the latest
 confirmed value and an error without dropping the connection. Disconnect or Back returns to the
 connection form. Sending is disabled; no prompts are sent. See
 [the Zed comparison](docs/ZED_COMPOSER.md) for the source references and deferred features.
 
-The app imports the existing `packages/shared/src/acp/client.ts` directly. Run
+The app uses `packages/shared/src/acp/direct-client.ts`: the ACP SDK client and
+its WebSocket transport send standard JSON-RPC objects without legacy proxy
+message envelopes. Configuration requests await their own RPC result, so a late
+error cannot reject an unrelated change. File and terminal requests remain owned
+by the proxy. Use `--acp`; the default proxy protocol is used by the existing Web
+client and Chrome extension. Run
 `pnpm install` from the repository root before type checking or connection tests.
-For protocol/UI tests (a local mock proxy, no real agent):
+For protocol/UI tests (a local ACP mock endpoint):
 
 ```sh
 node tests/connection.mjs                  # headless, including timeout
 node tests/connection.mjs --target android # device, with mock-proxy USB forwarding
 ```
+
+From the repository root, using Node.js 26:
+
+```sh
+pnpm run build:proxy
+node --test nsh-client/tests/direct-client.mjs
+```
+
+The Node tests also exercise a real `--acp` proxy and an SDK agent subprocess,
+including local file writes and terminal execution. The interactive tests keep
+prompt sending disabled.
 
 The device runner uses NSH's standard test host; `just android` uses our custom
 Kotlin/Compose host. After device tests, use `just android` to reopen this app.
