@@ -1,5 +1,5 @@
-import { cleanup, Text, View } from "nsh";
-import { Button, Keyboard, KeyboardAvoidingView } from "nsh/base";
+import { cleanup, Keyboard, Text, View } from "nsh";
+import { Button } from "nsh/base";
 import { Composer } from "../components/Composer";
 import { createComposer } from "../state/composer";
 import type { Connection } from "../state/connection";
@@ -9,7 +9,7 @@ export function ChatPage(props: { connection: Connection }) {
   cleanup(() => composer.dispose());
 
   return (
-    <KeyboardAvoidingView testID="chat-page" class="flex-1 bg-background">
+    <View testID="chat-page" class="flex-1 bg-background pb-[env(keyboard-inset-height)]">
       <View class="flex-row items-center justify-between border-b border-border px-4 py-3">
         <View class="gap-1">
           <Text class="text-lg font-semibold text-foreground">Chat</Text>
@@ -28,6 +28,6 @@ export function ChatPage(props: { connection: Connection }) {
         <Text class="text-sm text-muted-foreground">Write a draft below to get started.</Text>
       </View>
       <Composer state={composer} />
-    </KeyboardAvoidingView>
+    </View>
   );
 }

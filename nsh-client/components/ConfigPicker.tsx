@@ -1,5 +1,5 @@
-import { Input, signal, Text, View } from "nsh";
-import { Keyboard, Menu, MenuItem } from "nsh/base";
+import { Keyboard, signal, Text, View } from "nsh";
+import { Input, Menu, MenuItem } from "nsh/base";
 import type { Choice } from "../state/composer";
 import { Icon } from "./Icon";
 

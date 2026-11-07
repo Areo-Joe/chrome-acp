@@ -85,7 +85,7 @@ The test proxy binds port 19437; it must be free.
 ## Pinned toolchain
 
 The exact `nsh-platform-macos` dependency in `native-host/Cargo.toml` is the single
-NSH version declaration (currently `=0.2.0`). `Cargo.lock` pins the macOS SDK's
+NSH version declaration (currently `=0.3.0`). `Cargo.lock` pins the macOS SDK's
 resolved dependencies. `nsh-toolchain.sha256` records the SHA-256 checksums of
 the official distribution archives for the supported development machines.
 
@@ -143,8 +143,7 @@ Android requires JDK 17, Android SDK platform 37 / build tools / platform-tools,
 and a USB-debuggable device or emulator. On macOS the recipe locates JDK 17;
 elsewhere set `JAVA_HOME`. Set `ANDROID_HOME` / `ANDROID_SDK_ROOT` for a custom SDK
 location (the recipe defaults to `~/Library/Android/sdk`). Gradle is pinned by its
-wrapper. The pinned AARs retain the upstream 16 KB alignment issue previously
-observed; this toolchain change does not rebuild those libraries.
+wrapper. The pinned AARs' native libraries are aligned for 16 KB pages.
 
 ## Layout and Android Studio
 

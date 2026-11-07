@@ -1,5 +1,5 @@
-import { cleanup, Input, Scroll, signal, Text, View, type YNode } from "nsh";
-import { Button } from "nsh/base";
+import { cleanup, Scroll, signal, Text, View, type YNode } from "nsh";
+import { Button, Input } from "nsh/base";
 import { commandHint, commandMatches, configChoices, type ComposerState } from "../state/composer";
 import { ConfigPicker } from "./ConfigPicker";
 import { Icon } from "./Icon";

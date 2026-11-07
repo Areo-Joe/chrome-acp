@@ -1,5 +1,5 @@
-import { Input, Scroll, signal, Text, View } from "nsh";
-import { Button, Keyboard } from "nsh/base";
+import { Keyboard, Scroll, signal, Text, View } from "nsh";
+import { Button, Input } from "nsh/base";
 import { connectionUrl, workingDirectory, type Connection } from "../state/connection";
 
 export function ConnectPage(props: { connection: Connection }) {

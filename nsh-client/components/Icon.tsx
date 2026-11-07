@@ -1,5 +1,4 @@
-import { Canvas, type CanvasRenderingContext2D } from "nsh";
-import { colorScheme } from "nsh/device";
+import { Canvas, colorScheme, type CanvasRenderingContext2D } from "nsh";
 
 type IconName = "chevron-down" | "arrow-up";
 
