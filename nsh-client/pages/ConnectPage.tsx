@@ -3,7 +3,7 @@ import { Button, Keyboard } from "nsh/base";
 import { connectionUrl, workingDirectory, type Connection } from "../state/connection";
 
 export function ConnectPage(props: { connection: Connection }) {
-  const address = signal("");
+  const address = signal("ws://127.0.0.1:9315/acp");
   const token = signal("");
   const directory = signal("");
   const connection = props.connection;
@@ -28,7 +28,7 @@ export function ConnectPage(props: { connection: Connection }) {
               value={address()}
               readonly={active()}
               onChange={(value) => address.set(value)}
-              placeholder="ws://192.168.1.100:9315/ws"
+              placeholder="ws://192.168.1.100:9315/acp"
               keyboardType="url"
               autoCapitalize="none"
               autoCorrect={false}

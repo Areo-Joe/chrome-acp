@@ -1,9 +1,10 @@
 import { expect, open, test } from "nsh/test";
 
-const ADDRESS = "ws://127.0.0.1:19437";
+const ADDRESS = "ws://127.0.0.1:19437/acp";
 
 async function form(token: string) {
   const app = await open("../App.tsx", { network: "live" });
+  await app.clear("id:ws-address");
   await app.type("id:ws-address", ADDRESS);
   await app.type("id:token", token);
   await app.type("id:working-directory", "/workspace");
@@ -14,7 +15,9 @@ async function form(token: string) {
 
 test("invalid addresses keep Connect disabled", async () => {
   const app = await open("../App.tsx");
+  expect(app.value("id:ws-address")).toBe("ws://127.0.0.1:9315/acp");
   expect(app.enabled("id:connect")).toBe(false);
+  await app.clear("id:ws-address");
   await app.type("id:ws-address", "https://example.com");
   expect(app.enabled("id:connect")).toBe(false);
   expect(app.texts()).toContain("Enter a valid ws:// or wss:// address.");
@@ -36,11 +39,11 @@ test("waits for ACP initialization, prevents duplicate connects, and disconnects
   expect(app.enabled("id:ws-address")).toBe(true);
 });
 
-test("authentication failure stays visible and permits retry", async () => {
+test("a rejected handshake stays visible and permits retry", async () => {
   const app = await form("invalid");
   await app.press("id:connect");
   await app.waitFor("id:connection-error");
-  expect(app.texts()).toContain("Unauthorized: Invalid token");
+  expect(app.texts()).toContain("Could not open the connection. Check the address and token, and that the agent can start.");
   expect(app.enabled("id:connect")).toBe(true);
   await app.clear("id:token");
   await app.type("id:token", "valid");
@@ -58,11 +61,11 @@ test("agent initialization failure releases the form", async () => {
   expect(app.enabled("id:connect")).toBe(true);
 });
 
-test("a legacy proxy reports the required --acp mode immediately", async () => {
+test("a legacy proxy is reported immediately", async () => {
   const app = await form("legacy-proxy");
   await app.press("id:connect");
   await app.waitFor("id:connection-error");
-  expect(app.texts()).toContain("Start the proxy with --acp to connect this client.");
+  expect(app.texts()).toContain("This server uses the legacy proxy protocol. Connect to the ACP CLI, or start the proxy with --acp.");
   expect(app.enabled("id:connect")).toBe(true);
 });
 
@@ -77,6 +80,7 @@ test("server failure returns to the connection form with its close reason", asyn
 
 test("connecting requires an absolute working directory", async () => {
   const app = await open("../App.tsx");
+  await app.clear("id:ws-address");
   await app.type("id:ws-address", ADDRESS);
   expect(app.enabled("id:connect")).toBe(false);
   await app.type("id:working-directory", "relative/project");

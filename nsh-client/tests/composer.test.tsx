@@ -2,7 +2,8 @@ import { expect, open, test } from "nsh/test";
 
 async function chat(token = "valid") {
   const app = await open("../App.tsx", { network: "live" });
-  await app.type("id:ws-address", "ws://127.0.0.1:19437");
+  await app.clear("id:ws-address");
+  await app.type("id:ws-address", "ws://127.0.0.1:19437/acp");
   await app.type("id:token", token);
   await app.type("id:working-directory", "/workspace");
   await app.press("id:connect");

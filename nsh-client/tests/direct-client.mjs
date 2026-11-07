@@ -32,7 +32,7 @@ async function mock(t, handle) {
       else assert.fail(`Unexpected method ${message.method}`);
     });
   });
-  const client = new DirectACPClient({ proxyUrl: `ws://127.0.0.1:${server.address().port}/ws?existing=1`, cwd: '/workspace', token: 'token' });
+  const client = new DirectACPClient({ proxyUrl: `ws://127.0.0.1:${server.address().port}/acp?existing=1`, cwd: '/workspace', token: 'token' });
   t.after(() => client.disconnect());
   return client;
 }
@@ -136,6 +136,17 @@ test('NSH client connects through the real --acp proxy and retains proxy-owned f
   assert.equal(await readFile(join(dir, 'proxy-capabilities.txt'), 'utf8'), 'true:local terminal');
 });
 
+test('an HTTP rejection before the upgrade reports an error state', { timeout: 10000 }, async (t) => {
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0, verifyClient: (_info, done) => done(false, 401) });
+  await once(server, 'listening');
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const client = new DirectACPClient({ proxyUrl: `ws://127.0.0.1:${server.address().port}/acp`, cwd: '/workspace', token: 'wrong' });
+  const states = [];
+  client.setConnectionStateHandler((state, reason) => states.push([state, reason]));
+  await assert.rejects(client.connect(), /Could not open the connection/);
+  assert.deepEqual(states.at(-1), ['error', 'Could not open the connection. Check the address and token, and that the agent can start.']);
+});
+
 test('legacy proxy envelopes fail immediately instead of creating a protocol-error loop', { timeout: 10000 }, async (t) => {
   let requests = 0;
   const client = await mock(t, (message, socket) => {
@@ -143,7 +154,7 @@ test('legacy proxy envelopes fail immediately instead of creating a protocol-err
     socket.send(JSON.stringify({ type: 'error', payload: { message: 'Unknown message type' } }));
     return true;
   });
-  await assert.rejects(client.connect(), /Start the proxy with --acp/);
+  await assert.rejects(client.connect(), /legacy proxy protocol/);
   assert.equal(requests, 1);
 });
 

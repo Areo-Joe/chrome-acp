@@ -19,7 +19,7 @@ Zed 发送按钮：上下文加载中显示 loading；生成中且草稿为空�
 
 ## 协议与生命周期
 
-1. 通过共享 `DirectACPClient` 和 ACP SDK 的 WebSocket transport 发送 `initialize`，等待匹配的 JSON-RPC 响应后进入 Chat。proxy 以 `--acp` 启动，不使用旧版消息包装。
+1. 通过共享 `DirectACPClient` 和 ACP SDK 的 WebSocket transport 发送 `initialize`，等待匹配的 JSON-RPC 响应后进入 Chat。服务端是 Rust CLI 的 `/acp` 端点（或 Node proxy 的 `--acp` 模式），只透传标准 JSON-RPC，不使用旧版消息包装。
 2. 连接页要求填写 proxy 所在机器上的绝对工作目录，作为 `session/new.cwd`；会话创建等待其 RPC 响应取得 ID 和配置，不发送 prompt。
 3. `DirectACPClient` 在会话创建期间有界缓冲提前到达的 `session/update`，按 session ID 应用命令更新，并消费后续命令、配置和 mode 通知。
 4. 配置变更发送 `session/set_config_option`，boolean 请求带 `type: "boolean"`；旧 mode 发送 `session/set_mode`。等待对应 RPC 响应结束乐观变更：成功时展示响应的实际值，即使值被规范化或选项被移除，也立即结束等待。期间的匹配通知只更新服务端状态，不提前确认 RPC；后续失败仍可展示。mode 请求期间收到的权威通知会保留，空成功响应只在没有更新时采用请求值。SDK 根据请求 ID 关联错误，迟到失败不会取消后续配置变更。保留乐观目标值和 300 ms 延迟 loading；配置变更没有固定超时，对应 RPC 结束前持续等待并阻止下一次变更。session 创建仍为 30 秒超时。

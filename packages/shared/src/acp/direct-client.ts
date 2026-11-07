@@ -61,6 +61,17 @@ export class DirectACPClient {
     const Socket = function (address: string) {
       const socket = new WebSocket(address);
       owner.socket = socket;
+      let opened = false;
+      socket.addEventListener("open", () => { opened = true; });
+      // The server answers a bad token or a failed agent spawn with an HTTP
+      // status before the upgrade, which WebSocket does not expose. Record it
+      // on "error" too: the SDK closes the connection from that event, before "close".
+      const failedBeforeOpen = () => {
+        if (owner.socket === socket && !opened && !owner.closeMessage) {
+          owner.closeMessage = "Could not open the connection. Check the address and token, and that the agent can start.";
+        }
+      };
+      socket.addEventListener("error", failedBeforeOpen);
       socket.addEventListener("message", (event) => {
         const data = (event as Event & { data: unknown }).data;
         if (typeof data !== "string") return;
@@ -70,12 +81,13 @@ export class DirectACPClient {
           // Reject the legacy envelope before the SDK answers it with another
           // protocol error, which the old proxy would answer in turn.
           event.stopImmediatePropagation();
-          owner.closeMessage = "Start the proxy with --acp to connect this client.";
+          owner.closeMessage = "This server uses the legacy proxy protocol. Connect to the ACP CLI, or start the proxy with --acp.";
           owner.connection?.close(new Error(owner.closeMessage));
         }
       });
       socket.onclose = (event) => {
-        if (owner.socket === socket) owner.closeMessage = event.reason || (event.code === 4001 ? "Unauthorized: Invalid token" : undefined);
+        failedBeforeOpen();
+        if (owner.socket === socket && !owner.closeMessage) owner.closeMessage = event.reason || undefined;
       };
       return socket;
     } as unknown as WebSocketConstructor;

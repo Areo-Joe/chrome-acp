@@ -11,7 +11,12 @@ const { WebSocketServer, WebSocket } = require("ws");
 const root = fileURLToPath(new URL("../", import.meta.url));
 const args = process.argv.slice(2);
 const android = args.includes("android");
-const server = new WebSocketServer({ host: "127.0.0.1", port: 19437 });
+// Like the Rust CLI, reject a wrong path or token with an HTTP status before the upgrade.
+const server = new WebSocketServer({ host: "127.0.0.1", port: 19437, verifyClient: ({ req }, done) => {
+  const url = new URL(req.url, "http://localhost");
+  if (url.pathname !== "/acp") return done(false, 404);
+  done(url.searchParams.get("token") !== "invalid", 401);
+} });
 await once(server, "listening");
 let connects = 0;
 const timers = new Set();
@@ -34,10 +39,7 @@ function configOptions() {
   ];
 }
 server.on("connection", (socket, request) => {
-  const url = new URL(request.url, "http://localhost");
-  assert.equal(url.pathname, "/ws");
-  const token = url.searchParams.get("token");
-  if (token === "invalid") return socket.close(4001, "Unauthorized: Invalid token");
+  const token = new URL(request.url, "http://localhost").searchParams.get("token");
   const options = configOptions();
   const send = (message) => {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ jsonrpc: "2.0", ...message }));

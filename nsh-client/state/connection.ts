@@ -13,7 +13,6 @@ export function connectionUrl(address: string): string | null {
   try {
     const url = new URL(address.trim());
     if (!(["ws:", "wss:"].includes(url.protocol)) || !url.hostname || url.username || url.password || url.hash) return null;
-    if (url.pathname === "/") url.pathname = "/ws";
     return url.toString();
   } catch {
     return null;

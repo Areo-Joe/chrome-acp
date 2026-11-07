@@ -17,16 +17,21 @@ at ports 8790 / 8791, using the next available port when needed.
 
 ## Connection screen
 
-Start the proxy in direct ACP mode:
+Start the Rust CLI from the `refactor/rust_cli` branch. It relays each WebSocket
+connection to a new agent process over stdin/stdout and prints its auth token:
 
 ```sh
-acp-proxy --acp /path/to/agent
+cargo run --manifest-path cli/Cargo.toml -- --port 9315 -- dsh --profile acp
 ```
 
-Enter a WS/WSS proxy URL, an optional token, and the absolute working directory
-on the proxy machine, then press Connect. A bare server
-address such as `ws://host:9315` uses `/ws`; explicit paths and query parameters
-are preserved. The token follows the Web client's query-token authentication.
+Enter a WS/WSS server URL, the token, and the absolute working directory on the
+server machine, then press Connect. The address defaults to
+`ws://127.0.0.1:9315/acp` and is used as entered, including its path and query
+parameters; use `ws://host:9315/ws` for the Node proxy's `--acp` mode. The token is
+sent as the `token` query parameter: NSH and browsers cannot set an
+`Authorization` handshake header. The server rejects a wrong token or a failed
+agent spawn before the upgrade, which the app reports as a connection it could
+not open. The agent's stdout must carry only ACP JSON lines.
 Connected is shown only after the agent answers ACP `initialize`.
 The screen supports loading, cancellation, disconnect, errors and a 30-second
 connection timeout. Inputs are locked while connecting/connected, and Connect is
@@ -51,9 +56,9 @@ connection form. Sending is disabled; no prompts are sent. See
 The app uses `packages/shared/src/acp/direct-client.ts`: the ACP SDK client and
 its WebSocket transport send standard JSON-RPC objects without legacy proxy
 message envelopes. Configuration requests await their own RPC result, so a late
-error cannot reject an unrelated change. File and terminal requests remain owned
-by the proxy. Use `--acp`; the default proxy protocol is used by the existing Web
-client and Chrome extension. Run
+error cannot reject an unrelated change. The client advertises no file or
+terminal capabilities; the Rust CLI relays them unchanged, so the agent uses its
+own, while the Node proxy's `--acp` mode serves them locally. Run
 `pnpm install` from the repository root before type checking or connection tests.
 For protocol/UI tests (a local ACP mock endpoint):
 
