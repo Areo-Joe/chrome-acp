@@ -1,6 +1,29 @@
 import { batch, signal, type Signal } from "nsh";
-import type { ContentBlock, PromptResponse, SessionUpdate } from "@agentclientprotocol/sdk";
+import {
+  RequestError,
+  type ContentBlock,
+  type PromptResponse,
+  type RequestPermissionOutcome,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
+  type SessionUpdate,
+} from "@agentclientprotocol/sdk";
 import type { AcpClient } from "../acp/client";
+import {
+  applyToolCallPatch,
+  createToolCallState,
+  fromReported,
+  hasDiff,
+  patchFromToolCall,
+  patchFromUpdate,
+  permissionStatus,
+  statusAfterPermissionGrant,
+  toolStatus,
+  withLegacyStatus,
+  type PermissionRequest,
+  type ToolCallPatch,
+  type ToolCallState,
+} from "./tool-call";
 
 export type UserEntry = {
   kind: "user";
@@ -24,7 +47,16 @@ export type AssistantChunk = {
 
 export type AssistantEntry = { kind: "assistant"; key: string; chunks: Signal<AssistantChunk[]> };
 
-export type ThreadEntry = UserEntry | AssistantEntry;
+export type ToolCallEntry = {
+  kind: "tool";
+  key: string;
+  id: string;
+  state: Signal<ToolCallState>;
+  expanded: Signal<boolean>;
+  rawInputExpanded: Signal<boolean>;
+};
+
+export type ThreadEntry = UserEntry | AssistantEntry | ToolCallEntry;
 
 /** `copy` offers to copy the message, which Zed does for refusals and agent errors. */
 export type ThreadError = { title: string; message: string; copy: boolean };
@@ -32,6 +64,7 @@ export type ThreadError = { title: string; message: string; copy: boolean };
 /** How often streamed text is revealed, and how long the pending text takes to show. */
 const REVEAL_TICK_MS = 16;
 const REVEAL_TARGET_MS = 200;
+const PERMISSION_OPTION_KINDS: readonly string[] = ["allow_once", "allow_always", "reject_once", "reject_always"];
 
 /** Structural equality where key order doesn't matter and `null` equals a missing field, as parsed blocks differ in both. */
 function sameValue(left: unknown, right: unknown): boolean {
@@ -95,6 +128,7 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
   let running: { id: number; done: Promise<void> } | null = null;
   let reveal: { chunk: AssistantChunk; perTick: number; timer: ReturnType<typeof setInterval> } | null = null;
   let autoExpanded: AssistantChunk | null = null;
+  let permissionIds = 0;
   let disposed = false;
 
   const nextKey = (prefix: string) => `${prefix}-${++keys}`;
@@ -222,6 +256,165 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
     chunk.userToggled = open;
   }
 
+  function findToolCall(id: string): ToolCallEntry | undefined {
+    const list = entries();
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      const entry = list[index];
+      if (entry.kind === "tool" && entry.id === id) return entry;
+    }
+    return undefined;
+  }
+
+  const toolCalls = () => entries().filter((entry): entry is ToolCallEntry => entry.kind === "tool");
+
+  /** An edit's card opens when a new diff arrives: one unlike the diff it replaces, or in place of other content. */
+  function setToolCall(entry: ToolCallEntry, next: ToolCallState) {
+    const previous = entry.state().content;
+    const opensDiff = next.content !== previous && next.content.some((content, index) => {
+      if (content.type !== "diff") return false;
+      const old = previous[index];
+      return old?.type !== "diff" || old.path !== content.path
+        || (old.oldText ?? null) !== (content.oldText ?? null) || old.newText !== content.newText;
+    });
+    entry.state.set(next);
+    if (opensDiff) entry.expanded.set(true);
+  }
+
+  function pushToolCall(id: string, patch: ToolCallPatch): ToolCallEntry {
+    const state = createToolCallState(patch);
+    const entry: ToolCallEntry = {
+      kind: "tool", key: nextKey("tool"), id,
+      state: signal(state), expanded: signal(hasDiff(state)), rawInputExpanded: signal(false),
+    };
+    pushEntry(entry);
+    return entry;
+  }
+
+  function patchToolCall(entry: ToolCallEntry, patch: ToolCallPatch) {
+    const { state, detached } = applyToolCallPatch(entry.state(), patch);
+    setToolCall(entry, state);
+    detached?.respond({ outcome: "cancelled" });
+  }
+
+  /** Answers the tool call's permission request, if it has one, and forgets it. */
+  function takePermission(entry: ToolCallEntry): PermissionRequest | null {
+    const request = entry.state().authorization;
+    if (request) entry.state.set({ ...entry.state(), authorization: null });
+    return request;
+  }
+
+  function cancelPermissionRequest(id: number) {
+    const entry = toolCalls().find((call) => call.state().authorization?.id === id);
+    if (!entry) return;
+    batch(() => {
+      const request = takePermission(entry);
+      entry.state.set({ ...entry.state(), localStatus: "canceled" });
+      request?.respond({ outcome: "cancelled" });
+    });
+  }
+
+  function cancelPermissionRequests() {
+    for (const entry of toolCalls()) {
+      const id = entry.state().authorization?.id;
+      if (id !== undefined) cancelPermissionRequest(id);
+    }
+  }
+
+  /** Tool calls still waiting or running are canceled, and their permission requests answered. */
+  function markPendingToolCallsCanceled() {
+    for (const entry of toolCalls()) {
+      const status = toolStatus(entry.state());
+      if (status !== "pending" && status !== "waiting_for_confirmation" && status !== "in_progress") continue;
+      const request = takePermission(entry);
+      entry.state.set({ ...entry.state(), localStatus: "canceled" });
+      request?.respond({ outcome: "cancelled" });
+    }
+  }
+
+  /**
+   * The agent's `session/request_permission`: shows its tool call waiting for
+   * a choice. A newer request for the same tool call replaces this one, and a
+   * request the agent withdraws cancels the tool call.
+   */
+  function requestPermission(request: RequestPermissionRequest, abort: AbortSignal): Promise<RequestPermissionResponse> {
+    if (disposed) return Promise.resolve({ outcome: { outcome: "cancelled" } });
+    if (request.options.some((option) => !PERMISSION_OPTION_KINDS.includes(option.kind))) {
+      return Promise.reject(RequestError.invalidParams("unsupported permission option kind"));
+    }
+    const update = request.toolCall;
+    const existing = findToolCall(update.toolCallId);
+    if (!existing && update.title == null) {
+      return Promise.reject(RequestError.invalidParams({ toolCall: "a new tool call needs a title" }));
+    }
+    const id = ++permissionIds;
+    return new Promise((resolve, reject) => {
+      let answered = false;
+      const onAbort = () => {
+        reject(abort.reason);
+        cancelPermissionRequest(id);
+      };
+      const respond = (outcome: RequestPermissionOutcome) => {
+        if (answered) return;
+        answered = true;
+        abort.removeEventListener("abort", onAbort);
+        resolve({ outcome });
+      };
+      batch(() => {
+        const current = fromReported((existing && permissionStatus(existing.state())) ?? update.status) ?? "pending";
+        const patch = patchFromUpdate(update);
+        const entry = existing ?? pushToolCall(update.toolCallId, {
+          ...patch, kind: patch.kind ?? "other", status: patch.status ?? "pending",
+          content: patch.content ?? [], locations: patch.locations ?? [],
+        });
+        if (existing) patchToolCall(existing, patch);
+        entry.state.set(withLegacyStatus(entry.state(), current));
+        takePermission(entry)?.respond({ outcome: "cancelled" });
+        entry.state.set({ ...entry.state(), authorization: { id, options: request.options, respond } });
+        syncAutoExpandedThought();
+      });
+      if (abort.aborted) onAbort();
+      else abort.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  /** Whether the latest turn waits on the user: a tool call since the last user message awaits permission. */
+  function waitingForConfirmation(): boolean {
+    const list = entries();
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      const entry = list[index];
+      if (entry.kind === "user") return false;
+      if (entry.kind === "tool" && entry.state().authorization) return true;
+    }
+    return false;
+  }
+
+  /** The tool call waiting longest for permission, and how many wait. */
+  function awaitingPermission(): { entry: ToolCallEntry; count: number } | null {
+    let first: { entry: ToolCallEntry; id: number } | null = null;
+    let count = 0;
+    for (const entry of toolCalls()) {
+      const request = entry.state().authorization;
+      if (!request) continue;
+      count += 1;
+      if (!first || request.id < first.id) first = { entry, id: request.id };
+    }
+    return first ? { entry: first.entry, count } : null;
+  }
+
+  /** The user's choice for a tool call waiting for permission. */
+  function authorize(entry: ToolCallEntry, optionId: string) {
+    const request = entry.state().authorization;
+    const option = request?.options.find((candidate) => candidate.optionId === optionId);
+    if (!request || !option) return;
+    batch(() => {
+      const rejected = option.kind === "reject_once" || option.kind === "reject_always";
+      const status = rejected ? "rejected" : statusAfterPermissionGrant(permissionStatus(entry.state()));
+      takePermission(entry);
+      entry.state.set({ ...entry.state(), localStatus: status });
+      request.respond({ outcome: "selected", optionId });
+    });
+  }
+
   function handleUpdate(update: SessionUpdate) {
     if (disposed) return;
     batch(() => {
@@ -247,6 +440,26 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
         case "agent_thought_chunk":
           pushAssistantBlock(update.content, update.messageId ?? null, "thought");
           break;
+        case "tool_call": {
+          const existing = findToolCall(update.toolCallId);
+          if (existing) patchToolCall(existing, patchFromToolCall(update));
+          else pushToolCall(update.toolCallId, patchFromToolCall(update));
+          break;
+        }
+        case "tool_call_update": {
+          const existing = findToolCall(update.toolCallId);
+          if (existing) {
+            patchToolCall(existing, patchFromUpdate(update));
+            break;
+          }
+          pushToolCall(update.toolCallId, {
+            title: "Tool call not found",
+            kind: "fetch",
+            status: "failed",
+            content: [{ type: "content", content: { type: "text", text: "Tool call not found" } }],
+          });
+          break;
+        }
         default:
           return;
       }
@@ -262,26 +475,36 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
     }
   }
 
+  /** Drops the refused prompt and what followed, unless a tool already returned output for it. */
   function removeFromLastUserMessage() {
     const list = entries();
     let index = list.length - 1;
     while (index >= 0 && list[index].kind !== "user") index -= 1;
-    if (index >= 0) entries.set(list.slice(0, index));
+    if (index < 0) return;
+    const removed = list.slice(index);
+    const hasToolOutput = removed.some((entry) =>
+      entry.kind === "tool" && toolStatus(entry.state()) === "completed" && entry.state().rawOutput !== undefined);
+    if (hasToolOutput) return;
+    entries.set(list.slice(0, index));
+    for (const entry of removed) if (entry.kind === "tool") takePermission(entry)?.respond({ outcome: "cancelled" });
   }
 
   function settle(id: number, outcome: { response: PromptResponse } | { failure: unknown }) {
     if (disposed) return;
     batch(() => {
+      const isSameTurn = running?.id === id;
       finishTurn(id);
       // A newer turn owns the thread now.
       if (turnId !== id) return;
       flushStreamingText();
       if ("failure" in outcome) {
-        const reason = outcome.failure;
-        error.set(agentError(reason));
+        if (isSameTurn) markPendingToolCallsCanceled();
+        error.set(agentError(outcome.failure));
         return;
       }
-      switch (outcome.response.stopReason) {
+      const stopReason = outcome.response.stopReason;
+      if (isSameTurn && (stopReason === "cancelled" || stopReason === "max_tokens")) markPendingToolCallsCanceled();
+      switch (stopReason) {
         case "max_tokens":
           error.set({
             title: "Output Limit Reached",
@@ -305,9 +528,13 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
   function requestCancellation(): Promise<void> {
     flushStreamingText();
     const turn = running;
-    if (!turn) return Promise.resolve();
+    if (!turn) {
+      cancelPermissionRequests();
+      return Promise.resolve();
+    }
     const notified = client.cancel();
     batch(() => {
+      markPendingToolCallsCanceled();
       running = null;
       generating.set(false);
       autoExpanded = null;
@@ -352,10 +579,13 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
     disposed = true;
     if (reveal) clearInterval(reveal.timer);
     reveal = null;
+    for (const entry of toolCalls()) takePermission(entry)?.respond({ outcome: "cancelled" });
   }
 
   return {
-    entries, generating, error, send, cancel, handleUpdate, toggleThought,
+    entries, generating, error, send, cancel, handleUpdate, toggleThought, requestPermission, authorize, awaitingPermission, waitingForConfirmation,
+    toggleToolCall: (entry: ToolCallEntry) => entry.expanded.set(!entry.expanded()),
+    toggleRawInput: (entry: ToolCallEntry) => entry.rawInputExpanded.set(!entry.rawInputExpanded()),
     dismissError: () => error.set(null),
     dispose,
   };

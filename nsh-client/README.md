@@ -59,7 +59,13 @@ once the agent moves on. Stop sends `session/cancel` and ends the turn at once.
 A refusal removes the refused message and names the agent; output limits and
 failed prompts show an error that can be dismissed, and refusals and failures can
 also be copied. Sending while a turn runs (Zed's queue) is
-deferred: Stop replaces Send until the turn ends. See
+deferred: Stop replaces Send until the turn ends.
+
+Tool calls show in the thread as Zed shows them: a line with the tool's icon and
+title that opens to its input and output, or a card for edits (with their diff),
+commands and tool calls waiting for permission. A permission request lists the
+agent's options; the choice is sent back, and Stop, the agent withdrawing the
+request, or the tool finishing on its own answer it as cancelled. See
 [the Zed comparison](docs/ZED_COMPOSER.md) for the source references and deferred features.
 
 `acp/client.ts` is the app's ACP client: the official ACP SDK (`@agentclientprotocol/sdk`,

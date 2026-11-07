@@ -1,8 +1,10 @@
-import { Clipboard, effect, List, Text, View, type YNode } from "nsh";
+import { Clipboard, effect, List, signal, Text, View, type YNode } from "nsh";
 import { Button, Collapsible, TextView } from "nsh/base";
-import type { AssistantChunk, AssistantEntry, Thread, ThreadEntry, UserEntry } from "../state/thread";
+import type { AssistantChunk, AssistantEntry, Thread, ThreadEntry, ToolCallEntry, UserEntry } from "../state/thread";
 import { Icon } from "./Icon";
 import { Spinner } from "./Spinner";
+import { isHiddenToolCall } from "../state/tool-call";
+import { ToolCallView } from "./ToolCall";
 
 export function ThreadView(props: { thread: Thread }) {
   const thread = props.thread;
@@ -16,6 +18,18 @@ export function ThreadView(props: { thread: Thread }) {
     count = entries.length;
   });
 
+  const shown = () => thread.entries().filter((entry) => entry.kind !== "tool" || !isHiddenToolCall(entry.state()));
+  const viewable = signal<{ keys: Set<string>; first: number } | null>(null);
+  /** Where the tool call awaiting permission is, when it is out of view. */
+  const awaiting = () => {
+    const pending = thread.awaitingPermission();
+    const seen = viewable();
+    if (!pending || !seen || seen.keys.has(pending.entry.key)) return null;
+    const index = shown().indexOf(pending.entry);
+    if (index === -1) return null;
+    return { ...pending, index, above: index < seen.first };
+  };
+
   return (
     <If
       when={thread.entries().length > 0}
@@ -26,37 +40,84 @@ export function ThreadView(props: { thread: Thread }) {
         </View>
       }
     >
+      <>
       <List
         testID="thread"
         ref={(node) => { list = node; }}
-        each={thread.entries()}
+        each={shown()}
         keyExtractor={(entry) => entry.key}
+        onViewableItemsChange={({ viewableItems }) => {
+          const items = viewableItems.filter((token) => token.isViewable);
+          viewable.set({
+            keys: new Set(items.map((token) => token.key)),
+            first: items.reduce((first, token) => Math.min(first, token.index), Infinity),
+          });
+        }}
         maintainVisibleContentPosition={{ autoscrollToBottomThreshold: 48 }}
         keyboardDismissMode="on-drag"
         class="flex-1"
         contentClass="gap-4 px-4 py-4"
         footer={() => (
           <If when={thread.generating()}>
-            <View testID="generating" accessibilityLabel="Generating" class="flex-row items-center px-1 py-2">
-              <Spinner />
-            </View>
+            <If
+              when={thread.waitingForConfirmation()}
+              else={
+                <View testID="generating" accessibilityLabel="Generating" class="flex-row items-center px-1 py-2">
+                  <Spinner />
+                </View>
+              }
+            >
+              <View testID="generating" accessibilityLabel="Awaiting Confirmation" class="flex-row items-center gap-2 px-1 py-2">
+                <View class="w-2 items-center"><Spinner size={8} /></View>
+                <Text numberOfLines={1} class="text-sm text-muted-foreground">Awaiting Confirmation</Text>
+              </View>
+            </If>
           </If>
         )}
       >
         {(entry) => <Entry entry={entry} thread={thread} />}
       </List>
+      <If when={awaiting()}>
+        {(pending) => (
+          <View testID="awaiting-permission" class="mx-2 overflow-hidden rounded-t-md border border-b-0 border-border bg-muted/30">
+            <View class="w-full flex-row items-center justify-between gap-1.5 border-b border-border p-1.5 pl-2">
+              <View class="flex-row items-center gap-1.5">
+                <View class="w-2 items-center"><Spinner size={8} /></View>
+                <Text class="text-sm text-muted-foreground">
+                  {pending().count > 1 ? `Awaiting Confirmation (${pending().count})` : "Awaiting Confirmation"}
+                </Text>
+              </View>
+              <Button
+                testID="scroll-to-permission"
+                accessibilityLabel="Scroll"
+                onPress={() => list?.scrollToIndex({ index: pending().index, animated: true, viewPosition: 0 })}
+                class="flex-row items-center gap-1 rounded-md px-2 py-1 active:bg-muted"
+              >
+                <Text class="text-sm text-foreground">Scroll</Text>
+                <Icon name={pending().above ? "arrow-up" : "arrow-down"} size={12} tone="foreground" />
+              </Button>
+            </View>
+            <ToolCallView entry={() => pending().entry} thread={thread} floating />
+          </View>
+        )}
+      </If>
+      </>
     </If>
   );
 }
 
+/** A row can be given another entry, so the view follows the entry's kind. */
 function Entry(props: { entry: () => ThreadEntry; thread: Thread }) {
+  const entryOf = <K extends ThreadEntry["kind"]>(kind: K) => {
+    const entry = props.entry();
+    return entry.kind === kind ? (entry as Extract<ThreadEntry, { kind: K }>) : null;
+  };
   return (
-    <If
-      when={props.entry().kind === "user"}
-      else={<AssistantMessage entry={() => props.entry() as AssistantEntry} thread={props.thread} />}
-    >
-      <UserMessage entry={() => props.entry() as UserEntry} />
-    </If>
+    <>
+      <If when={entryOf("user")}>{(entry) => <UserMessage entry={entry} />}</If>
+      <If when={entryOf("assistant")}>{(entry) => <AssistantMessage entry={entry} thread={props.thread} />}</If>
+      <If when={entryOf("tool")}>{(entry) => <ToolCallView entry={entry} thread={props.thread} />}</If>
+    </>
   );
 }
 

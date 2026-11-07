@@ -31,7 +31,34 @@ Zed 发送按钮：上下文加载中显示 loading；生成中且草稿为空�
 | 结束 | `acp_thread.rs:7408` | 只有同一轮才回到空闲；`turn_id` 已变则忽略结果；`max_tokens` 显示 Output Limit Reached；`refusal` 删除最后一条用户消息及之后条目，显示 Request Refused，以 agent 名称指明拒绝方（`thread_view.rs:13036`）；失败显示 An Error Happened，信息按 Markdown 渲染（`thread_view.rs:12710`、`:12756`、`:13052`）；都可关闭，拒绝和失败可复制信息，输出上限不可复制 |
 | 停止 | `acp_thread.rs:7588` `cancel`、`:7630` `request_cancellation` | 发 `session/cancel` 通知，立即回到空闲；agent 在回复 `cancelled` 前发来的内容照常显示 |
 
-发送时滚动到底部；之后用户离底部 48 pt 以内才跟随新内容。工具调用、权限请求、计划、图片 / 文件附件、编辑和重发、Queue 暂缓。
+发送时滚动到底部；之后用户离底部 48 pt 以内才跟随新内容。计划、图片 / 文件附件、编辑和重发、Queue 暂缓。
+
+## 工具调用与权限请求
+
+对照同一 revision 的 `acp_thread.rs`（`ToolCall`、`upsert_tool_call`、`update_tool_call`、`request_tool_call_authorization`、`authorize`、`mark_pending_entries_as_canceled`）和 `thread_view.rs:9605` `render_tool_call`；状态在 `state/tool-call.ts`、`state/thread.ts`，界面在 `components/ToolCall.tsx`，权限请求由 `acp/client.ts` 路由到当前会话。
+
+| 行为 | Zed 源码 | NSH 实现 |
+| --- | --- | --- |
+| 状态 | `acp_thread.rs:2120` `ToolCallStatus` | agent 上报的状态之外，本地记录 Waiting for confirmation、Rejected、Canceled；有待决权限请求时为等待确认，否则本地决定优先，再到上报状态，默认 Pending |
+| `tool_call` | `upsert_tool_call` | 已有同 ID（从末尾查找）时整体覆盖全部字段，缺省 kind other、status pending、content / locations 为空；否则新增条目 |
+| `tool_call_update` | `update_tool_call`、`tool_call_index_for_update` | 只改出现的字段，v1 `null` 视为未出现；content 整体替换；ID 不存在时插入一条失败的 “Tool call not found”，不应用更新；上报 completed / failed 时清除并以 cancelled 应答该工具的权限请求，同时清除本地状态 |
+| 标题 | `label_text` | 空白标题回退到工具名，再到 “Tool call”；execute 为纯文本命令；edit 转义 Markdown（至少覆盖 `MarkdownEscaped` 的 `` \ ` * _ [ ^ $ ~ & # + = - < > ``）；execute 命令 12 px 等宽、行高 17 px；其余多行标题取首行加 “…” |
+| 输出 | `ToolCall::content`、`raw_output_text` | 有结构化 content 时显示它，否则显示 raw output：字符串原样，数字 / 布尔转字符串，其余为 JSON 代码块；raw input 同规则 |
+| 权限请求 | `handle_request_permission`（`agent_servers/src/acp/v1.rs`）、`request_tool_call_authorization` | 选项 kind 不是 allow / reject 的 once / always 时以 invalid params 拒绝，不建工具；当前状态取已有工具的本地 / 上报状态，否则取请求里的状态，默认 Pending；按请求更新（新工具须带 title 字段，否则 invalid params），保留当前状态；同一工具已有请求时先以 cancelled 应答旧请求 |
+| 选择 | `authorize`、`status_after_permission_grant` | reject 类选项为 Rejected；allow 类把 Pending 推进为 In Progress，其余保持；应答 `selected` 与 option ID |
+| 撤回 | `cancel_permission_request` | agent 的 `$/cancel_request` 中止请求时，工具标记 Canceled，以 request cancelled 错误应答 |
+| 取消 / 结束 | `request_cancellation`、`cleanup_local_turn`、`truncate_entries` | Stop 把 Pending / 等待确认 / In Progress 的工具标为 Canceled 并以 cancelled 应答其请求；没有运行中的回合时应答全部请求；同一轮以 cancelled、max_tokens 或错误结束时同样处理；拒绝截断时应答被删工具的请求，但最后一条用户消息之后已有完成且有 raw output 的工具时保留历史；会话销毁时全部以 cancelled 应答 |
+| 布局 | `render_tool_call` | 等待确认、edit（或含 diff）、execute 用卡片：圆角边框，失败 / 取消 / 拒绝时虚线，头部着色；其他为一行图标加标题，按 kind 选图标；有内容且不在等待确认时可折叠，等待确认时始终展开；已取消且无非空白内容的工具从列表中移除（`thread_view.rs:7601`） |
+| 展开内容 | `render_tool_call` | 等待确认：content 和可展开的 “View Raw Input”；Rejected 不显示；其余：非 execute / edit / 图片时先显示 “Raw Input:” 与 “Output:”，再显示 content，非卡片底部有收起按钮；edit 每有新 diff 到达时自动展开（`expand_edit_card`、`ViewEvent::NewDiff`）：同一位置原来不是 diff，或路径、旧文本、新文本有变化，都算新 diff（`update_from_prepared`），用户收起后也会再展开 |
+| 状态图标 | `render_tool_call` | 失败 / 取消 / 拒绝显示红色 ×；被取消、diff 无改动的 edit 显示灰色 Interrupted Edit 图标；被取消且已有改动、只有一个位置的 edit，在图标左上角加黄色三角（`render_tool_call_label`）；命令卡片头部不显示状态图标，只以虚线边框表示 |
+| 权限按钮 | `render_permission_buttons_flat` | 卡片底部，上边框分隔，纵向排列；allow once ✓、allow always ✓✓（绿色），reject ×（红色），文字为选项名 |
+| 等待确认浮条 | `render_main_agent_awaiting_permission`、`render_activity_bar`（`thread_view.rs:4699`、`:3990`） | 最早的待决请求所在工具不在视口内时，在消息列表与错误提示之间显示：转圈、“Awaiting Confirmation”（多个时带数量）、指向其方向的 Scroll 按钮；下方是该工具的无边框副本，内容限高 `max-h-40` 可滚动，权限按钮在外，可直接在此作答；滚到该工具后浮条消失 |
+| Diff | `render_diff_editor` | NSH `DiffView`，unified，前后 2 行上下文，按路径高亮；没有改动时不显示，此时只在未失败时保留上边框 |
+| 内容块 | `ContentBlock::render_from_source`、`text_resource_render_mode` | 文本按 Markdown；图片只用 base64 data，格式不支持或数据不合法时显示 “Image content could not be displayed.”；文本资源 Markdown 类型原样显示，其他放进代码块并按 MIME 选高亮语言；二进制资源是图片时显示图片，否则只显示 uri（XSmall、muted，为空不显示）；音频显示 “Audio content is not supported.”，未知类型显示 “Unknown content type is not supported.”；隐藏判断与图片判断都以此为准（`visible_content`） |
+| 图片输出 | `render_image_output` | 最大 384 pt，按比例缩小不放大（scale-down）；卡片内无框，否则左侧边线缩进 |
+| 生成中底栏 | `render_generating`、`is_waiting_for_confirmation` | 从最后一条用户消息往后，有工具在等待确认时，转圈旁显示 “Awaiting Confirmation”；否则只转圈 |
+
+与 Zed 的差异：不声明终端能力，terminal content 显示 “Unsupported tool call content.”，execute 卡片的输出改为头部可展开（Zed 在终端里显示输出，头部无展开按钮）；不提供打开文件或链接（含图片的 “Go to File”、非文件链接的外跳图标）、丢弃中断编辑、停止单个工具、读文件行号和快捷键；头部展开按钮常显（Zed 悬停时才显示，触屏没有悬停）；文件类工具不按扩展名换图标；diff 改动时不提供逐块 Keep / Reject；生成中底栏不显示耗时和 token 数，文字没有省略号动画；图片加载完成前先按 384 pt 正方形（不超过容器宽度）占位。
 
 ## 协议与生命周期
 
@@ -49,5 +76,5 @@ Zed 此 revision 使用 `acp_v2`；此实现使用 nsh-client 自己依赖的 AC
 
 ## 验证范围
 
-`node tests/connection.mjs` 覆盖连接、跳转、断开、草稿、命令、配置确认 / 拒绝、旧 mode、无配置以及 session 失败；`tests/thread.test.tsx` 用 mock 按 prompt 文本编排的回合覆盖流式回复与思考展开、回显去重、停止、拒绝、输出上限和失败。独立的乐观变更用例通过手动时钟验证延迟 loading、超过 15 秒仍等待响应并阻止再次变更、取消、销毁和过期请求失败隔离。
+`node tests/connection.mjs` 覆盖连接、跳转、断开、草稿、命令、配置确认 / 拒绝、旧 mode、无配置以及 session 失败；`tests/thread.test.tsx` 用 mock 按 prompt 文本编排的回合覆盖流式回复与思考展开、回显去重、停止、拒绝、输出上限和失败；`tests/tools.test.tsx` 覆盖工具状态与展开 / 收起、权限允许与拒绝、edit diff 自动展开、停止时取消等待中的请求、agent 撤回请求、工具完成时自动应答、视口外请求的等待确认浮条，以及未知工具更新。mock 记录每个权限请求的应答，由测试核对。独立的乐观变更用例通过手动时钟验证延迟 loading、超过 15 秒仍等待响应并阻止再次变更、取消、销毁和过期请求失败隔离。
 `--target android` 在连接的 Android 设备上运行同一组交互（手动时钟用例除外）。UI 测试使用 ACP mock endpoint；`node --test tests/acp-client.mjs` 另外覆盖请求关联、纯响应确认、断线清理和非 ACP 服务端的拒绝。真实产品 agent 和真机仍需各自联调。

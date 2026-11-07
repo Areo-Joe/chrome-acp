@@ -29,6 +29,7 @@ export class AcpClient {
   private onModes?: (modes: acp.SessionModeState | null) => void;
   private onCommands?: (commands: acp.AvailableCommand[]) => void;
   private onUpdate?: (update: acp.SessionUpdate) => void;
+  private onPermission?: (request: acp.RequestPermissionRequest, signal: AbortSignal) => Promise<acp.RequestPermissionResponse>;
 
   constructor(settings: AcpClientSettings) { this.settings = settings; }
 
@@ -54,6 +55,8 @@ export class AcpClient {
   }
   /** Updates of the session's conversation (messages, thoughts, tool calls), in arrival order. */
   setSessionUpdateHandler(handler: AcpClient["onUpdate"]) { this.onUpdate = handler; }
+  /** Answers the session's permission requests; `signal` aborts when the agent withdraws one. Without a handler they are cancelled. */
+  setPermissionHandler(handler: AcpClient["onPermission"]) { this.onPermission = handler; }
 
   async connect(): Promise<void> {
     if (this.connection) throw new Error("Already connected");
@@ -105,8 +108,11 @@ export class AcpClient {
         this.earlyUpdates.push(params);
       }
     });
-    // The client does not yet expose a permission UI.
-    app.onRequest(acp.methods.client.session.requestPermission, () => ({ outcome: { outcome: "cancelled" } }));
+    app.onRequest(acp.methods.client.session.requestPermission, ({ params, signal }) => {
+      if (params.sessionId !== this.sessionId) throw acp.RequestError.sessionNotFound(params.sessionId);
+      if (!this.onPermission) return { outcome: { outcome: "cancelled" } };
+      return this.onPermission(params, signal);
+    });
     const connection = app.connect(createWebSocketStream(url.toString(), { WebSocket: Socket, cookies: "omit" }));
     this.connection = connection;
     connection.closed.then(() => {

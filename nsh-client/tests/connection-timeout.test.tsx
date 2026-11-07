@@ -2,7 +2,7 @@ import { expect, open, test } from "nsh/test";
 
 // Manual clocks are supported by the headless engine; keep this out of device tests.
 test("a silent server times out instead of leaving Connect stuck", async () => {
-  const app = await open("../App.tsx", { network: "live", clock: {} });
+  const app = await open("../App.tsx", { width: 360, height: 640, network: "live", clock: {} });
   await app.clear("id:ws-address");
   await app.type("id:ws-address", "ws://127.0.0.1:19437/acp");
   await app.type("id:token", "pending");

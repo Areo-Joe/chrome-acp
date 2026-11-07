@@ -1,7 +1,7 @@
 import { expect, open, test } from "nsh/test";
 
 async function chat(token = "valid") {
-  const app = await open("../App.tsx", { network: "live" });
+  const app = await open("../App.tsx", { width: 360, height: 640, network: "live" });
   await app.clear("id:ws-address");
   await app.type("id:ws-address", "ws://127.0.0.1:19437/acp");
   await app.type("id:token", token);

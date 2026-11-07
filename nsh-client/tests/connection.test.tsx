@@ -3,7 +3,7 @@ import { expect, open, test } from "nsh/test";
 const ADDRESS = "ws://127.0.0.1:19437/acp";
 
 async function form(token: string) {
-  const app = await open("../App.tsx", { network: "live" });
+  const app = await open("../App.tsx", { width: 360, height: 640, network: "live" });
   await app.clear("id:ws-address");
   await app.type("id:ws-address", ADDRESS);
   await app.type("id:token", token);
@@ -14,7 +14,7 @@ async function form(token: string) {
 }
 
 test("invalid addresses keep Connect disabled", async () => {
-  const app = await open("../App.tsx");
+  const app = await open("../App.tsx", { width: 360, height: 640 });
   expect(app.value("id:ws-address")).toBe("ws://127.0.0.1:9315/acp");
   expect(app.enabled("id:connect")).toBe(false);
   await app.clear("id:ws-address");
@@ -79,7 +79,7 @@ test("server failure returns to the connection form with its close reason", asyn
 });
 
 test("connecting requires an absolute working directory", async () => {
-  const app = await open("../App.tsx");
+  const app = await open("../App.tsx", { width: 360, height: 640 });
   await app.clear("id:ws-address");
   await app.type("id:ws-address", ADDRESS);
   expect(app.enabled("id:connect")).toBe(false);

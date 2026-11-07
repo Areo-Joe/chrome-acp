@@ -38,6 +38,7 @@ export function createComposer(connection: Connection) {
   let sessionTimer: ReturnType<typeof setTimeout> | undefined;
   const thread = createThread(client, { agentName: () => client.agentInfo?.title ?? client.agentInfo?.name ?? "The agent" });
   client.setSessionUpdateHandler(thread.handleUpdate);
+  client.setPermissionHandler(thread.requestPermission);
   const change = createOptimisticChange<{ id: string; value: string | boolean; legacy: boolean }>({
     send: (target) => target.legacy
       ? client.setSessionMode(String(target.value))
@@ -116,6 +117,7 @@ export function createComposer(connection: Connection) {
     change.dispose();
     thread.dispose();
     client!.setSessionUpdateHandler(undefined);
+    client!.setPermissionHandler(undefined);
     client!.setSessionCreatedHandler(() => {});
     client!.setConfigOptionsChangedHandler(() => {});
     client!.setSessionModesChangedHandler(() => {});
