@@ -1,10 +1,11 @@
-use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::extract::{Query, State};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
+use serde::Deserialize;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -15,17 +16,18 @@ pub struct AppState {
     pub token: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub(crate) struct AuthQuery {
+    token: Option<String>,
+}
+
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
-    headers: HeaderMap,
+    Query(query): Query<AuthQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     if let Some(expected_token) = &state.token {
-        let authorized = headers
-            .get(header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .is_some_and(|token| token == expected_token);
+        let authorized = query.token.as_deref() == Some(expected_token.as_str());
 
         if !authorized {
             return Err((StatusCode::UNAUTHORIZED, "Unauthorized".to_string()));
