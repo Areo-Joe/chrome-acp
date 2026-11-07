@@ -1,0 +1,12 @@
+{
+  "name": "nsh-client",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.14.0",
+  "dependencies": {
+    "@agentclientprotocol/sdk": "2.4.0"
+  },
+  "devDependencies": {
+    "ws": "^8.22.1"
+  }
+}

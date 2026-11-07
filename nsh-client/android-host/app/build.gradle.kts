@@ -33,9 +33,9 @@ val bundleNsh = tasks.register<BundleNsh>("bundleNsh") {
     environment("NSH_RUNTIME", nshToolchain.resolve("runtime").absolutePath)
     inputs.files(fileTree(nshClient) {
         include("**/*.tsx", "**/*.ts", "nsh.json")
-        exclude("**/*.test.*", ".nsh/**", "native-host/**", "android-host/**", "cli/**")
+        exclude("**/*.test.*", ".nsh/**", "native-host/**", "android-host/**", "cli/**", "node_modules/**")
     })
-    inputs.files(fileTree(nshClient.resolve("../packages/shared/src/acp")) { include("**/*.ts") })
+    inputs.file(nshClient.resolve("pnpm-lock.yaml"))
     inputs.file(nshExecutable)
     inputs.files(nshAar)
     outputDirectory.set(layout.buildDirectory.dir("generated/nshAssets"))

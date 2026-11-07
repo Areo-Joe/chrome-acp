@@ -11,7 +11,7 @@ async function chat(token = "valid") {
   return app;
 }
 
-test("drafts support multiline and advertised slash commands without sending", async () => {
+test("drafts support multiline and advertised slash commands", async () => {
   const app = await chat();
   await app.waitFor("id:config-model");
   await app.type("id:message-input", "/re");
@@ -23,7 +23,7 @@ test("drafts support multiline and advertised slash commands without sending", a
   await app.type("id:message-input", "src\nSecond line");
   expect(app.value("id:message-input")).toBe("/review src\nSecond line");
   expect(app.shows("id:command-review")).toBe(false);
-  expect(app.enabled("id:send-message")).toBe(false);
+  expect(app.enabled("id:send-message")).toBe(true);
   await app.press("id:disconnect");
   expect(app.value("id:token")).toBe("valid");
 });
@@ -76,14 +76,17 @@ test("agents without config options can expose the legacy mode selector", async 
   await app.press("id:disconnect");
 });
 
-test("agents without selectors still allow a draft", async () => {
+test("agents without selectors still allow a message", async () => {
   const app = await chat("empty");
   await app.waitFor("id:session-loading", { state: "gone" });
   expect(app.shows("id:config-model")).toBe(false);
   expect(app.shows("id:config-legacy-mode")).toBe(false);
-  await app.type("id:message-input", "Hello");
-  expect(app.value("id:message-input")).toBe("Hello");
   expect(app.enabled("id:send-message")).toBe(false);
+  await app.type("id:message-input", "  ");
+  expect(app.enabled("id:send-message")).toBe(false);
+  await app.type("id:message-input", "Hello");
+  expect(app.value("id:message-input")).toBe("  Hello");
+  expect(app.enabled("id:send-message")).toBe(true);
   await app.back();
   expect(app.enabled("id:connect")).toBe(true);
 });

@@ -1,7 +1,8 @@
 import { effect, signal, untracked } from "nsh";
-import type { AvailableCommand, SessionConfigOption, SessionModeState } from "../../packages/shared/src/acp/types";
+import type { AvailableCommand, SessionConfigOption, SessionModeState } from "@agentclientprotocol/sdk";
 import type { Connection } from "./connection";
 import { createOptimisticChange } from "./optimistic-change";
+import { createThread } from "./thread";
 
 export type Choice = { value: string | boolean; name: string; description?: string | null; group?: string };
 
@@ -35,6 +36,8 @@ export function createComposer(connection: Connection) {
   const modes = signal<SessionModeState | null>(null);
   let disposed = false;
   let sessionTimer: ReturnType<typeof setTimeout> | undefined;
+  const thread = createThread(client, { agentName: () => client.agentInfo?.title ?? client.agentInfo?.name ?? "The agent" });
+  client.setSessionUpdateHandler(thread.handleUpdate);
   const change = createOptimisticChange<{ id: string; value: string | boolean; legacy: boolean }>({
     send: (target) => target.legacy
       ? client.setSessionMode(String(target.value))
@@ -45,6 +48,21 @@ export function createComposer(connection: Connection) {
     onError: (reason) => fail(reason instanceof Error ? reason.message : "Cannot change configuration."),
   });
   const pending = () => change.target()?.id ?? null;
+
+  /** Sends the draft without trailing whitespace, as Zed's message editor does; a blank draft sends nothing. */
+  function submit() {
+    if (disposed || phase() !== "ready" || thread.generating()) return;
+    const text = draft().trimEnd();
+    if (!text.trim()) return;
+    draft.set("");
+    void thread.send([{ type: "text", text }]);
+  }
+
+  function stop() {
+    if (disposed) return;
+    thread.dismissError();
+    void thread.cancel();
+  }
 
   function selectedValue(id: string, confirmed: string | boolean) {
     const target = change.target();
@@ -96,13 +114,15 @@ export function createComposer(connection: Connection) {
     disposed = true;
     if (sessionTimer !== undefined) clearTimeout(sessionTimer);
     change.dispose();
+    thread.dispose();
+    client!.setSessionUpdateHandler(undefined);
     client!.setSessionCreatedHandler(() => {});
     client!.setConfigOptionsChangedHandler(() => {});
     client!.setSessionModesChangedHandler(() => {});
     client!.setAvailableCommandsChangedHandler(() => {});
   }
 
-  return { phase, error, draft, commands, options, modes, pending, slow: change.slow, selectedValue, choose, dispose };
+  return { phase, error, draft, commands, options, modes, pending, slow: change.slow, thread, submit, stop, selectedValue, choose, dispose };
 }
 
 export type ComposerState = ReturnType<typeof createComposer>;

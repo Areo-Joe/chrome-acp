@@ -1,6 +1,5 @@
 import { signal } from "nsh";
-import { DirectACPClient } from "../../packages/shared/src/acp/direct-client";
-import type { ConnectionState } from "../../packages/shared/src/acp/types";
+import { AcpClient, type ConnectionState } from "../acp/client";
 
 const CONNECT_TIMEOUT_MS = 30_000;
 
@@ -22,7 +21,7 @@ export function connectionUrl(address: string): string | null {
 export function createConnection() {
   const state = signal<ConnectionState>("disconnected");
   const error = signal<string | null>(null);
-  let client: DirectACPClient | null = null;
+  let client: AcpClient | null = null;
   let timeout: ReturnType<typeof setTimeout> | undefined;
 
   function clearTimeoutHandle() {
@@ -44,15 +43,15 @@ export function createConnection() {
 
   function connect(address: string, token: string, directory: string) {
     if (client || state() === "connecting" || state() === "connected") return;
-    const proxyUrl = connectionUrl(address);
+    const url = connectionUrl(address);
     const cwd = workingDirectory(directory);
-    if (!proxyUrl || !cwd) {
-      finish("error", !proxyUrl ? "Enter a valid ws:// or wss:// address." : "Enter an absolute working directory on the proxy machine.");
+    if (!url || !cwd) {
+      finish("error", !url ? "Enter a valid ws:// or wss:// address." : "Enter an absolute working directory on the server machine.");
       return;
     }
     error.set(null);
     state.set("connecting");
-    const attempt = new DirectACPClient({ proxyUrl, cwd, token: token.trim() || undefined });
+    const attempt = new AcpClient({ url, cwd, token: token.trim() || undefined });
     client = attempt;
     attempt.setConnectionStateHandler((next, message) => {
       if (client !== attempt) return;
@@ -62,7 +61,7 @@ export function createConnection() {
       } else if (next === "error") {
         finish("error", message || "Connection failed.");
       } else if (next === "disconnected") {
-        if (state() === "connecting") finish("error", "The proxy did not connect to an agent.");
+        if (state() === "connecting") finish("error", "The server did not connect to an agent.");
         else finish("disconnected");
       }
     });
@@ -72,7 +71,7 @@ export function createConnection() {
       else error.set(message); // Session/config errors do not close a healthy transport.
     });
     timeout = setTimeout(() => {
-      if (client === attempt) finish("error", "Connection timed out. Check the address, token and proxy.");
+      if (client === attempt) finish("error", "Connection timed out. Check the address, token and server.");
     }, CONNECT_TIMEOUT_MS);
     void attempt.connect().catch((reason: unknown) => {
       if (client === attempt) finish("error", reason instanceof Error ? reason.message : "Connection failed.");

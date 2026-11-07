@@ -56,7 +56,7 @@ export function ConnectPage(props: { connection: Connection }) {
               value={directory()}
               readonly={active()}
               onChange={(value) => directory.set(value)}
-              placeholder="/path/to/project on the proxy machine"
+              placeholder="/path/to/project on the server machine"
               autoCapitalize="none"
               autoCorrect={false}
               class="h-12 rounded-lg border border-border bg-background px-4 text-base text-foreground placeholder:text-muted-foreground"
@@ -90,7 +90,7 @@ export function ConnectPage(props: { connection: Connection }) {
               <Text class="text-sm text-red-500">Enter a valid ws:// or wss:// address.</Text>
             </If>
             <If when={directory().trim().length > 0 && !workingDirectory(directory())}>
-              <Text class="text-sm text-red-500">Enter an absolute working directory on the proxy machine.</Text>
+              <Text class="text-sm text-red-500">Enter an absolute working directory on the server machine.</Text>
             </If>
             <If when={active()}>
               <Button

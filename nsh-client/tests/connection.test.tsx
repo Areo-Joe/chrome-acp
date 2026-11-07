@@ -61,11 +61,11 @@ test("agent initialization failure releases the form", async () => {
   expect(app.enabled("id:connect")).toBe(true);
 });
 
-test("a legacy proxy is reported immediately", async () => {
-  const app = await form("legacy-proxy");
+test("a server that does not speak ACP is reported immediately", async () => {
+  const app = await form("not-acp");
   await app.press("id:connect");
   await app.waitFor("id:connection-error");
-  expect(app.texts()).toContain("This server uses the legacy proxy protocol. Connect to the ACP CLI, or start the proxy with --acp.");
+  expect(app.texts()).toContain("This server does not speak ACP. Connect to an ACP WebSocket endpoint.");
   expect(app.enabled("id:connect")).toBe(true);
 });
 

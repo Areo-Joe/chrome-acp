@@ -98,14 +98,29 @@ export function Composer(props: { state: ComposerState }) {
               />
             </If>
           </View>
-          <Button
-            testID="send-message"
-            disabled
-            accessibilityLabel="Send message (not enabled yet)"
-            class="h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary disabled:opacity-30"
+          <If
+            when={state.thread.generating()}
+            else={
+              <Button
+                testID="send-message"
+                disabled={state.phase() !== "ready" || !state.draft().trim()}
+                accessibilityLabel="Send message"
+                onPress={() => state.submit()}
+                class="h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary disabled:opacity-30"
+              >
+                <Icon name="arrow-up" tone="primary-foreground" />
+              </Button>
+            }
           >
-            <Icon name="arrow-up" primaryForeground />
-          </Button>
+            <Button
+              testID="stop-generation"
+              accessibilityLabel="Stop generation"
+              onPress={() => state.stop()}
+              class="h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-500/15 active:bg-red-500/25"
+            >
+              <Icon name="square" size={16} tone="destructive" />
+            </Button>
+          </If>
         </View>
       </View>
     </View>

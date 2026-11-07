@@ -1,0 +1,2 @@
+# A workspace of its own: nsh-client does not share the repository's packages or lockfile.
+packages: []

@@ -1,13 +1,11 @@
 // Run from any directory: node nsh-client/tests/connection.mjs
-// Uses the workspace's existing ws dependency; run pnpm install first.
+// Run pnpm install in nsh-client first.
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
+import { WebSocket, WebSocketServer } from "ws";
 
-const require = createRequire(new URL("../../packages/proxy-server/package.json", import.meta.url));
-const { WebSocketServer, WebSocket } = require("ws");
 const root = fileURLToPath(new URL("../", import.meta.url));
 const args = process.argv.slice(2);
 const android = args.includes("android");
@@ -47,10 +45,55 @@ server.on("connection", (socket, request) => {
   const result = (id, value) => send({ id, result: value });
   const error = (id, message) => send({ id, error: { code: -32603, message } });
   const update = (value) => send({ method: "session/update", params: { sessionId: "test-session", update: value } });
+  const text = (sessionUpdate, value, messageId) => update({ sessionUpdate, content: { type: "text", text: value }, ...(messageId ? { messageId } : {}) });
+  let cancelled = false;
+  // Scripted turns, chosen by the prompt's text.
+  function prompt(message) {
+    assert.equal(message.params.sessionId, "test-session");
+    assert.equal(message.params.prompt.length, 1);
+    assert.equal(message.params.prompt[0].type, "text");
+    const input = message.params.prompt[0].text;
+    const stop = (stopReason) => result(message.id, { stopReason });
+    cancelled = false;
+    switch (input) {
+      case "hello":
+        text("user_message_chunk", input);
+        text("agent_thought_chunk", "Considering the **greeting**", "m1");
+        later(() => {
+          text("agent_message_chunk", "Hello", "m1");
+          text("agent_message_chunk", " there, how can I help?", "m1");
+          later(() => stop("end_turn"), 300);
+        }, 300);
+        return;
+      case "slow": {
+        let index = 0;
+        const tick = () => {
+          if (cancelled) {
+            text("agent_message_chunk", " [late]");
+            return stop("cancelled");
+          }
+          text("agent_message_chunk", `${index++ ? " " : ""}word${index}`);
+          later(tick, 150);
+        };
+        return tick();
+      }
+      case "refuse":
+        text("agent_message_chunk", "Partial answer");
+        return later(() => stop("refusal"), 200);
+      case "limit":
+        text("agent_message_chunk", "Truncated answer");
+        return later(() => stop("max_tokens"), 200);
+      case "fail":
+        return later(() => error(message.id, "Model unavailable"), 200);
+      default:
+        text("agent_message_chunk", `Echo: ${input.replaceAll(" ", "·")}`);
+        return later(() => stop("end_turn"), 100);
+    }
+  }
   socket.on("message", (data) => {
     const message = JSON.parse(data.toString());
     assert.equal(message.jsonrpc, "2.0");
-    assert.equal("type" in message, false, "Legacy proxy envelopes must never be sent");
+    assert.equal("type" in message, false, "Only JSON-RPC objects are sent");
     if (message.method === "session/new") {
       assert.equal(message.params.cwd, "/workspace");
       assert.deepEqual(message.params.mcpServers, []);
@@ -108,18 +151,25 @@ server.on("connection", (socket, request) => {
       }
       return result(message.id, {});
     }
-    assert.equal(message.method, "initialize", "Only initialization/configuration is allowed; never send a prompt");
+    if (message.method === "session/prompt") return prompt(message);
+    if (message.method === "session/cancel") {
+      assert.equal(message.id, undefined, "session/cancel is a notification");
+      assert.equal(message.params.sessionId, "test-session");
+      cancelled = true;
+      return;
+    }
+    assert.equal(message.method, "initialize", `Unexpected method ${message.method}`);
     assert.equal(message.params.protocolVersion, 1);
     assert.deepEqual(message.params.clientCapabilities.session.configOptions.boolean, {});
     connects++;
     if (token === "pending") return;
-    if (token === "legacy-proxy") {
+    if (token === "not-acp") {
       socket.send(JSON.stringify({ type: "error", payload: { message: "Unknown message type" } }));
       return;
     }
     later(() => {
       if (token === "agent-error") error(message.id, "Agent unavailable");
-      else result(message.id, { protocolVersion: 1, agentCapabilities: {}, agentInfo: { name: "mock", version: "1" } });
+      else result(message.id, { protocolVersion: 1, agentCapabilities: {}, agentInfo: { name: "mock", title: "Mock Agent", version: "1" } });
       if (token === "drop") later(() => socket.close(1011, "Server stopped"), 750);
     }, 1000);
   });
@@ -128,9 +178,9 @@ let code = 0;
 try {
   if (android) {
     const forward = spawnSync("adb", ["reverse", "tcp:19437", "tcp:19437"], { stdio: "inherit" });
-    assert.equal(forward.status, 0, "Could not forward the mock proxy port to Android");
+    assert.equal(forward.status, 0, "Could not forward the mock server port to Android");
   }
-  const files = ["tests/connection.test.tsx", "tests/composer.test.tsx"];
+  const files = ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx"];
   if (!android) files.push("tests/connection-timeout.test.tsx", "tests/optimistic-change.test.tsx");
   for (const file of files) {
     const child = spawn(`${root}.nsh/toolchain/bin/nsh`, ["test", file, ...args], { cwd: root, stdio: "inherit" });

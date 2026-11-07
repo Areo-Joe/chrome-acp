@@ -2,6 +2,7 @@ import { Keyboard, signal, Text, View } from "nsh";
 import { Input, Menu, MenuItem } from "nsh/base";
 import type { Choice } from "../state/composer";
 import { Icon } from "./Icon";
+import { Spinner } from "./Spinner";
 
 type Props = {
   id: string;
@@ -41,14 +42,7 @@ export function ConfigPicker(props: Props) {
         >
           <Text numberOfLines={1} class="text-xs font-medium text-foreground" style={{ lineHeight: 16 }}>{current()}</Text>
           <If when={props.busy}>
-            <View
-              testID={`config-loading-${props.id}`}
-              pointerEvents="none"
-              class="border-muted-foreground"
-              style={{ width: 14, height: 14, flexShrink: 0, borderWidth: 2, borderRadius: 7,
-                borderTopColor: "transparent", animationName: "spin", animationDuration: 800,
-                animationTimingFunction: "linear", animationIterationCount: "infinite" }}
-            />
+            <Spinner testID={`config-loading-${props.id}`} />
           </If>
           <If when={!props.busy}><Icon name="chevron-down" size={14} /></If>
         </View>
@@ -100,7 +94,7 @@ export function ConfigPicker(props: Props) {
               </View>
               <View class="w-4 items-center">
                 <If when={choice().value === props.value}>
-                  <Icon name="check" size={16} foreground />
+                  <Icon name="check" size={16} tone="foreground" />
                 </If>
               </View>
             </MenuItem>

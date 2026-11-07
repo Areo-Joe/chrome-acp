@@ -1,6 +1,7 @@
 import { cleanup, Keyboard, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import { Composer } from "../components/Composer";
+import { ThreadErrorCallout, ThreadView } from "../components/Thread";
 import { createComposer } from "../state/composer";
 import type { Connection } from "../state/connection";
 
@@ -23,10 +24,8 @@ export function ChatPage(props: { connection: Connection }) {
           <Text class="text-xs text-foreground">Disconnect</Text>
         </Button>
       </View>
-      <View class="flex-1 items-center justify-center gap-2 px-6">
-        <Text class="text-xl font-semibold text-foreground">New chat</Text>
-        <Text class="text-sm text-muted-foreground">Write a draft below to get started.</Text>
-      </View>
+      <ThreadView thread={composer.thread} />
+      <ThreadErrorCallout thread={composer.thread} />
       <Composer state={composer} />
     </View>
   );
