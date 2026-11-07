@@ -1,15 +1,16 @@
+mod acp;
+
 use clap::Parser;
 
-use axum::{Router, routing::get};
+use axum::{Router, routing::any};
 
-/// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
     #[arg(long, default_value_t = 9315)]
-    port: usize,
+    port: u16,
 
-    #[arg(last = true)]
+    #[arg(last = true, required = true)]
     agent: Vec<String>,
 }
 
@@ -19,9 +20,11 @@ async fn main() {
 
     let args = Args::parse();
 
-    let app = Router::new().route("/", get(|| async { "Hello, World!" }));
+    let app = Router::new()
+        .route("/acp", any(acp::ws_handler))
+        .with_state(args.agent);
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", args.port))
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", args.port))
         .await
         .unwrap();
 
