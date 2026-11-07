@@ -1,20 +1,39 @@
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
+pub struct AppState {
+    pub agent: Vec<String>,
+    pub token: Option<String>,
+}
+
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
-    State(agent): State<Vec<String>>,
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let mut command = Command::new(&agent[0]);
-    command.args(&agent[1..]);
+    if let Some(expected_token) = &state.token {
+        let authorized = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .is_some_and(|token| token == expected_token);
+
+        if !authorized {
+            return Err((StatusCode::UNAUTHORIZED, "Unauthorized".to_string()));
+        }
+    }
+
+    let mut command = Command::new(&state.agent[0]);
+    command.args(&state.agent[1..]);
 
     let mut child = command
         .process_group(0)
