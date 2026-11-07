@@ -33,6 +33,9 @@ test("configuration selectors show the target immediately while waiting for conf
   await app.waitFor("id:config-model");
   await app.press("id:config-model");
   await app.waitFor("id:choice-model-smart");
+  expect(app.shows("text:Provider")).toBe(true);
+  expect(app.shows("label:Fast, selected")).toBe(true);
+  expect(app.shows("label:Smart")).toBe(true);
   await app.press("id:choice-model-smart");
   expect(app.texts()).toContain("Smart");
   expect(app.shows("text:Updating…")).toBe(false);

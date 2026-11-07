@@ -1,36 +1,25 @@
-import { Canvas, colorScheme, type CanvasRenderingContext2D } from "nsh";
+import { colorScheme, Image } from "nsh";
+import arrowUp from "../icons/arrow-up.svg";
+import check from "../icons/check.svg";
+import chevronDown from "../icons/chevron-down.svg";
 
-type IconName = "chevron-down" | "arrow-up";
+const icons = { "chevron-down": chevronDown, "arrow-up": arrowUp, check };
 
-function line(context: CanvasRenderingContext2D, points: number[]) {
-  context.beginPath();
-  context.moveTo(points[0], points[1]);
-  for (let index = 2; index < points.length; index += 2) context.lineTo(points[index], points[index + 1]);
-  context.stroke();
-}
-
-export function Icon(props: { name: IconName; size?: number; primaryForeground?: boolean }) {
+export function Icon(props: { name: keyof typeof icons; size?: number; foreground?: boolean; primaryForeground?: boolean }) {
+  const dark = () => colorScheme() === "dark";
   return (
-    <Canvas
+    <Image
+      src={icons[props.name]}
       pointerEvents="none"
-      style={{ width: props.size ?? 18, height: props.size ?? 18, flexShrink: 0 }}
-      draw={(context, { width }) => {
-        context.scale(width / 20, width / 20);
-        context.strokeStyle = props.primaryForeground
-          ? colorScheme() === "dark" ? "#171717" : "#fafafa"
-          : colorScheme() === "dark" ? "#a3a3a3" : "#737373";
-        context.lineWidth = 1.7;
-        context.lineCap = "round";
-        context.lineJoin = "round";
-        switch (props.name) {
-          case "chevron-down":
-            line(context, [5, 8, 10, 13, 15, 8]);
-            break;
-          case "arrow-up":
-            line(context, [10, 16, 10, 4]);
-            line(context, [5, 9, 10, 4, 15, 9]);
-            break;
-        }
+      style={{
+        width: props.size ?? 18,
+        height: props.size ?? 18,
+        flexShrink: 0,
+        tintColor: props.primaryForeground
+          ? dark() ? "#171717" : "#fafafa"
+          : props.foreground
+            ? dark() ? "#fafafa" : "#0a0a0a"
+            : dark() ? "#a3a3a3" : "#737373",
       }}
     />
   );

@@ -149,6 +149,7 @@ wrapper. The pinned AARs' native libraries are aligned for 16 KB pages.
 
 - `App.tsx`: connection-driven navigation.
 - `pages/`, `components/`: Connect / Chat pages and the bottom composer.
+- `icons/`: SVG icons from the official [Lucide](https://lucide.dev) 1.67.0 release, unmodified, with its license.
 - `state/`: connection and ACP session/configuration state.
 - `native-host/`: Rust/AppKit host; connects to the dev server when given a URL.
 - `android-host/`: Kotlin/Compose host embedding NshView with AndroidView.
