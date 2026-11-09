@@ -93,7 +93,7 @@ The mock server binds port 19437; it must be free.
 ## Pinned toolchain
 
 The exact `nsh-platform-macos` dependency in `native-host/Cargo.toml` is the single
-NSH version declaration (currently `=0.3.0`). `Cargo.lock` pins the macOS SDK's
+NSH version declaration (currently `=0.4.0`). `Cargo.lock` pins the macOS SDK's
 resolved dependencies. `nsh-toolchain.sha256` records the SHA-256 checksums of
 the official distribution archives for the supported development machines.
 

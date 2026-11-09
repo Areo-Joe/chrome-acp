@@ -146,7 +146,7 @@ function Header(props: { state: () => ToolCallState; view: () => Layout; onToggl
         </If>
         <If
           when={label().markdown}
-          else={<Text numberOfLines={1} class={`shrink grow text-[13px] ${tone()}`}>{label().text}</Text>}
+          else={<Text style={{ numberOfLines: 1 }} class={`shrink grow text-[13px] ${tone()}`}>{label().text}</Text>}
         >
           <View class="h-5 shrink grow justify-center overflow-hidden">
             <TextView markdown={label().text} class={`text-[13px] ${tone()}`} classes={{ paragraph: "my-0" }} />
@@ -186,7 +186,7 @@ function CommandHeader(props: { state: () => ToolCallState; view: () => Layout; 
           </If>
         </View>
       </View>
-      <Text selectable class="font-mono text-xs leading-[17px] text-foreground">{command()}</Text>
+      <Text style={{ userSelect: "text" }} class="font-mono text-xs leading-[17px] text-foreground">{command()}</Text>
     </View>
   );
 }
@@ -376,9 +376,9 @@ function ImageOutput(props: { src: string; card: () => boolean }) {
       <Image
         src={props.src}
         accessibilityLabel="Image"
-        resizeMode="scale-down"
-        onLoad={(natural) => size.set(natural)}
+        onLoad={({ size: natural }) => size.set(natural)}
         style={{
+          objectFit: "scale-down",
           width: width(),
           maxWidth: "100%",
           aspectRatio: size() ? size()!.width / Math.max(size()!.height, 1) : 1,
@@ -399,13 +399,13 @@ function BlockOutput(props: { block: ContentBlock; box: () => string; card: () =
       if (view.uri === "") return null;
       return (
         <View class={props.box()}>
-          <Text numberOfLines={1} class="text-xs text-muted-foreground">{view.uri}</Text>
+          <Text style={{ numberOfLines: 1 }} class="text-xs text-muted-foreground">{view.uri}</Text>
         </View>
       );
     case "link":
       return (
         <View class="ml-1.5 overflow-hidden border-l border-border pl-2.5">
-          <Text numberOfLines={1} class="text-sm text-muted-foreground">
+          <Text style={{ numberOfLines: 1 }} class="text-sm text-muted-foreground">
             {view.uri.startsWith("file://") ? view.uri.slice("file://".length) : view.uri}
           </Text>
         </View>

@@ -1,4 +1,4 @@
-import { cleanup, Scroll, signal, Text, View, type YNode } from "nsh";
+import { cleanup, Scroll, signal, Text, View, type InputRef } from "nsh";
 import { Button, Input } from "nsh/base";
 import { commandHint, commandMatches, configChoices, type ComposerState } from "../state/composer";
 import { ConfigPicker } from "./ConfigPicker";
@@ -9,7 +9,7 @@ export function Composer(props: { state: ComposerState }) {
   const contentHeight = signal(80);
   const composing = signal(false);
   const complete = signal(true);
-  let input: YNode | undefined;
+  let input: InputRef | undefined;
   let focusTimer: ReturnType<typeof setTimeout> | undefined;
   const suggestions = () => complete() && !composing() ? commandMatches(state.draft(), state.commands()) : [];
   const hint = () => composing() ? null : commandHint(state.draft(), state.commands());
@@ -57,9 +57,9 @@ export function Composer(props: { state: ComposerState }) {
             testID="message-input"
             ref={(node) => { input = node; }}
             value={state.draft()}
-            onChange={(value) => { state.draft.set(value); complete.set(true); }}
+            onChange={({ value }) => { state.draft.set(value); complete.set(true); }}
             onCompositionChange={({ composing: active }) => composing.set(active)}
-            onContentSizeChange={({ height }) => contentHeight.set(Math.max(80, Math.ceil(height)))}
+            onContentSizeChange={({ size }) => contentHeight.set(Math.max(80, Math.ceil(size.height)))}
             multiline
             submitBehavior="newline"
             placeholder="Message the agent…"

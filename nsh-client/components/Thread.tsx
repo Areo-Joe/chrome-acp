@@ -1,4 +1,4 @@
-import { Clipboard, effect, List, signal, Text, View, type YNode } from "nsh";
+import { Clipboard, effect, List, signal, Text, View, type ListRef } from "nsh";
 import { Button, Collapsible, TextView } from "nsh/base";
 import type { AssistantChunk, AssistantEntry, Thread, ThreadEntry, ToolCallEntry, UserEntry } from "../state/thread";
 import { Icon } from "./Icon";
@@ -8,7 +8,7 @@ import { ToolCallView } from "./ToolCall";
 
 export function ThreadView(props: { thread: Thread }) {
   const thread = props.thread;
-  let list: YNode | undefined;
+  let list: ListRef | undefined;
   let count = 0;
   // Like Zed, a sent message scrolls the conversation to its end.
   effect(() => {
@@ -69,7 +69,7 @@ export function ThreadView(props: { thread: Thread }) {
             >
               <View testID="generating" accessibilityLabel="Awaiting Confirmation" class="flex-row items-center gap-2 px-1 py-2">
                 <View class="w-2 items-center"><Spinner size={8} /></View>
-                <Text numberOfLines={1} class="text-sm text-muted-foreground">Awaiting Confirmation</Text>
+                <Text style={{ numberOfLines: 1 }} class="text-sm text-muted-foreground">Awaiting Confirmation</Text>
               </View>
             </If>
           </If>
@@ -124,7 +124,7 @@ function Entry(props: { entry: () => ThreadEntry; thread: Thread }) {
 function UserMessage(props: { entry: () => UserEntry }) {
   return (
     <View testID="user-message" class="rounded-lg border border-border bg-muted/30 px-3 py-3">
-      <Text selectable class="text-base text-foreground">{props.entry().markdown()}</Text>
+      <Text style={{ userSelect: "text" }} class="text-base text-foreground">{props.entry().markdown()}</Text>
     </View>
   );
 }

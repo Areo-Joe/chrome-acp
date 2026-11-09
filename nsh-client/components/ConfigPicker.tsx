@@ -31,7 +31,7 @@ export function ConfigPicker(props: Props) {
     <Menu
       popupClass="max-w-80 rounded-xl border border-border bg-background p-2"
       backdropClass="bg-black/40"
-      onOpenChange={(open) => { search.set(""); if (open) Keyboard.dismiss(); }}
+      onOpenChange={({ open }) => { search.set(""); if (open) Keyboard.dismiss(); }}
       trigger={
         <View
           role="button"
@@ -40,7 +40,7 @@ export function ConfigPicker(props: Props) {
           accessibilityLabel={`${props.name}: ${current()}`}
           class="h-9 flex-row items-center justify-center gap-2 rounded-lg border border-border px-3"
         >
-          <Text numberOfLines={1} class="text-xs font-medium text-foreground" style={{ lineHeight: 16 }}>{current()}</Text>
+          <Text class="text-xs font-medium text-foreground" style={{ numberOfLines: 1, lineHeight: 16 }}>{current()}</Text>
           <If when={props.busy}>
             <Spinner testID={`config-loading-${props.id}`} />
           </If>
@@ -59,7 +59,7 @@ export function ConfigPicker(props: Props) {
           testID={`search-${props.id}`}
           placeholder="Search options…"
           value={search()}
-          onChange={(value) => search.set(value)}
+          onChange={({ value }) => search.set(value)}
           autoCorrect={false}
           autoCapitalize="none"
           class="mx-2 mb-2 h-10 rounded-lg border border-border px-3 text-sm text-foreground placeholder:text-muted-foreground"

@@ -40,8 +40,8 @@ export function Icon(props: { name: IconName; size?: number; tone?: keyof typeof
   return (
     <Image
       src={icons[props.name]}
-      pointerEvents="none"
       style={{
+        pointerEvents: "none",
         width: props.size ?? 18,
         height: props.size ?? 18,
         flexShrink: 0,

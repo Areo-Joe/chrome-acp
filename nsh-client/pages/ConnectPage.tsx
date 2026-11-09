@@ -27,7 +27,7 @@ export function ConnectPage(props: { connection: Connection }) {
               testID="ws-address"
               value={address()}
               readonly={active()}
-              onChange={(value) => address.set(value)}
+              onChange={({ value }) => address.set(value)}
               placeholder="ws://192.168.1.100:9315/acp"
               keyboardType="url"
               autoCapitalize="none"
@@ -41,7 +41,7 @@ export function ConnectPage(props: { connection: Connection }) {
               testID="token"
               value={token()}
               readonly={active()}
-              onChange={(value) => token.set(value)}
+              onChange={({ value }) => token.set(value)}
               placeholder="Enter your token"
               masked
               autoCapitalize="none"
@@ -55,7 +55,7 @@ export function ConnectPage(props: { connection: Connection }) {
               testID="working-directory"
               value={directory()}
               readonly={active()}
-              onChange={(value) => directory.set(value)}
+              onChange={({ value }) => directory.set(value)}
               placeholder="/path/to/project on the server machine"
               autoCapitalize="none"
               autoCorrect={false}
