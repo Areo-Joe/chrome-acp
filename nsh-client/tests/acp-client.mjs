@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { WebSocketServer } from 'ws';
-import { AcpClient } from '../acp/client.ts';
+import { AcpClient, DEFAULT_ACP_PROTOCOL_MODE } from '../acp/client.ts';
 const options = () => [
   { id: 'model', name: 'Model', type: 'select', currentValue: 'fast', options: [{ value: 'fast', name: 'Fast' }, { value: 'smart', name: 'Smart' }] },
   { id: 'thinking', name: 'Thinking', type: 'boolean', currentValue: false },
@@ -29,11 +29,18 @@ async function mock(t, handle) {
   return client;
 }
 
+test('auto is explicitly unimplemented before opening a connection', async () => {
+  assert.equal(DEFAULT_ACP_PROTOCOL_MODE, 'v1');
+  const client = new AcpClient({ url: 'invalid', cwd: '/workspace', protocolMode: 'auto' });
+  await assert.rejects(client.connect(), /ACP protocol mode 'auto' is unimplemented/);
+});
+
 test('ACP initialization, cwd, early commands, boolean discriminator, and response-only config confirmation', { timeout: 10000 }, async (t) => {
   const client = await mock(t, (message, socket, send, request) => {
     assert.equal(new URL(request.url, 'http://localhost').searchParams.get('token'), 'token');
     assert.equal(new URL(request.url, 'http://localhost').searchParams.get('existing'), '1');
     if (message.method === 'initialize') {
+      assert.equal(message.params.protocolVersion, 1);
       assert.equal(message.params.clientInfo.name, 'nsh-client');
       assert.deepEqual(message.params.clientCapabilities, { session: { configOptions: { boolean: {} } } });
     }

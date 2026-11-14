@@ -75,6 +75,11 @@ requests await their own RPC result, so a late error cannot reject an unrelated
 change. The client advertises no file or terminal capabilities, so the agent uses
 its own.
 
+Protocol selection is `"v1" | "auto"`, with `DEFAULT_ACP_PROTOCOL_MODE = "v1"`.
+`AcpClientSettings.protocolMode` can override it. `auto` is TODO / unimplemented
+and fails before opening a connection. Current implementation and Zed comparisons
+target ACP v1; v2 negotiation and fallback are deferred.
+
 `nsh-client` is a pnpm project of its own, with its own `package.json` and
 lockfile, outside the repository's workspace. Run `pnpm install` in `nsh-client/`
 (Node.js 26) before type checking, building or testing. For protocol/UI tests

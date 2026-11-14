@@ -2,11 +2,14 @@ import * as acp from "@agentclientprotocol/sdk";
 import { createWebSocketStream, type WebSocketConstructor } from "@agentclientprotocol/sdk/experimental/ws-client";
 
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
+export type AcpProtocolMode = "v1" | "auto";
+export const DEFAULT_ACP_PROTOCOL_MODE: AcpProtocolMode = "v1";
 
 export interface AcpClientSettings {
   url: string;
   cwd: string;
   token?: string;
+  protocolMode?: AcpProtocolMode;
 }
 
 /** ACP v1 over WebSocket. RPC correlation and cancellation belong to the SDK. */
@@ -60,6 +63,11 @@ export class AcpClient {
 
   async connect(): Promise<void> {
     if (this.connection) throw new Error("Already connected");
+    const protocolMode = this.settings.protocolMode ?? DEFAULT_ACP_PROTOCOL_MODE;
+    if (protocolMode === "auto") {
+      // TODO: Match Zed's acp-beta negotiation: try v2, fall back to v1 only on version incompatibility.
+      throw new Error("ACP protocol mode 'auto' is unimplemented.");
+    }
     this.closeMessage = undefined;
     this.onState?.("connecting");
     const url = new URL(this.settings.url);
