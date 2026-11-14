@@ -1,0 +1,1337 @@
+{
+  "reference": {
+    "zedRevision": "62682ebde9e70b8a77a95863a2b16e9d59bf65eb",
+    "rustSdk": "5.0.0",
+    "schema": "1.15.1",
+    "serde": "1.0.229",
+    "serdeJson": "1.0.151",
+    "serdeWith": "3.22.0",
+    "features": [
+      "unstable"
+    ]
+  },
+  "cases": [
+    {
+      "name": "empty response",
+      "operation": "session/load",
+      "input": {},
+      "expected": {}
+    },
+    {
+      "name": "nullable response",
+      "operation": "session/load",
+      "input": null,
+      "expected": {}
+    },
+    {
+      "name": "scalar response is invalid",
+      "operation": "session/load",
+      "input": false,
+      "error": true
+    },
+    {
+      "name": "optional fields fall back independently",
+      "operation": "session/load",
+      "input": {
+        "configOptions": "invalid",
+        "modes": {
+          "currentModeId": 42,
+          "availableModes": "invalid"
+        }
+      },
+      "expected": {}
+    },
+    {
+      "name": "malformed config field retains valid legacy modes",
+      "operation": "session/load",
+      "input": {
+        "configOptions": 42,
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        }
+      },
+      "expected": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        }
+      }
+    },
+    {
+      "name": "empty config list masks modes in the connection",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [],
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        }
+      },
+      "expected": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        },
+        "configOptions": []
+      }
+    },
+    {
+      "name": "full config with valid legacy modes",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "type": "boolean",
+            "id": "thinking",
+            "name": "Thinking",
+            "currentValue": false
+          }
+        ],
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        }
+      },
+      "expected": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        },
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "id": "thinking",
+            "name": "Thinking",
+            "type": "boolean",
+            "currentValue": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty response",
+      "operation": "session/resume",
+      "input": {},
+      "expected": {}
+    },
+    {
+      "name": "nullable response",
+      "operation": "session/resume",
+      "input": null,
+      "expected": {}
+    },
+    {
+      "name": "scalar response is invalid",
+      "operation": "session/resume",
+      "input": false,
+      "error": true
+    },
+    {
+      "name": "optional fields fall back independently",
+      "operation": "session/resume",
+      "input": {
+        "configOptions": "invalid",
+        "modes": {
+          "currentModeId": 42,
+          "availableModes": "invalid"
+        }
+      },
+      "expected": {}
+    },
+    {
+      "name": "malformed config field retains valid legacy modes",
+      "operation": "session/resume",
+      "input": {
+        "configOptions": 42,
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        }
+      },
+      "expected": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        }
+      }
+    },
+    {
+      "name": "empty config list masks modes in the connection",
+      "operation": "session/resume",
+      "input": {
+        "configOptions": [],
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        }
+      },
+      "expected": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        },
+        "configOptions": []
+      }
+    },
+    {
+      "name": "full config with valid legacy modes",
+      "operation": "session/resume",
+      "input": {
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "type": "boolean",
+            "id": "thinking",
+            "name": "Thinking",
+            "currentValue": false
+          }
+        ],
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        }
+      },
+      "expected": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        },
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "id": "thinking",
+            "name": "Thinking",
+            "type": "boolean",
+            "currentValue": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "mixed invalid config entries skipped",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          null,
+          false,
+          {},
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "id": "bad",
+            "name": "Bad",
+            "type": "boolean",
+            "currentValue": "false"
+          },
+          {
+            "type": "boolean",
+            "id": "thinking",
+            "name": "Thinking",
+            "currentValue": false
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "id": "thinking",
+            "name": "Thinking",
+            "type": "boolean",
+            "currentValue": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "flat choices reject the whole selector on invalid item",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              },
+              null
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": []
+      }
+    },
+    {
+      "name": "group choices skip invalid inner items",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "group": "provider",
+                "name": "Provider",
+                "options": [
+                  null,
+                  {
+                    "value": "fast",
+                    "name": "Fast",
+                    "description": "",
+                    "_meta": {
+                      "x": null
+                    }
+                  }
+                ],
+                "_meta": {
+                  "group": [
+                    true
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "group": "provider",
+                "name": "Provider",
+                "options": [
+                  {
+                    "value": "fast",
+                    "name": "Fast",
+                    "description": "",
+                    "_meta": {
+                      "x": null
+                    }
+                  }
+                ],
+                "_meta": {
+                  "group": [
+                    true
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "group options required when absent",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "group": "provider",
+                "name": "Provider"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": []
+      }
+    },
+    {
+      "name": "group options default when malformed but present",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "group": "provider",
+                "name": "Provider",
+                "options": false
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "group": "provider",
+                "name": "Provider",
+                "options": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "mixed groups and flat choices drop the selector",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              },
+              {
+                "group": "provider",
+                "name": "Provider",
+                "options": []
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": []
+      }
+    },
+    {
+      "name": "ungrouped variant wins ambiguous choices",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "group": "provider",
+                "name": "Both",
+                "options": []
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Both"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "metadata and custom category retained",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ],
+            "category": "_custom",
+            "description": "",
+            "_meta": {
+              "x": [
+                null,
+                true
+              ]
+            }
+          }
+        ],
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        },
+        "_meta": {
+          "response": true
+        }
+      },
+      "expected": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        },
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "description": "",
+            "category": "_custom",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ],
+            "_meta": {
+              "x": [
+                null,
+                true
+              ]
+            }
+          }
+        ],
+        "_meta": {
+          "response": true
+        }
+      }
+    },
+    {
+      "name": "unknown fields stripped and optional errors default",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast",
+                "description": {},
+                "_meta": false
+              }
+            ],
+            "unknown": "ignored",
+            "category": 42,
+            "description": false,
+            "_meta": []
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "numeric tags select known enum indices",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "type": 0,
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "type": 1,
+            "id": "thinking",
+            "name": "Thinking",
+            "currentValue": false
+          },
+          {
+            "type": 2,
+            "id": "thinking",
+            "name": "Thinking",
+            "currentValue": false
+          },
+          {
+            "type": "future",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "id": "thinking",
+            "name": "Thinking",
+            "type": "boolean",
+            "currentValue": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "config type is required",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": []
+      }
+    },
+    {
+      "name": "invalid mode entries skipped",
+      "operation": "session/load",
+      "input": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            false,
+            {},
+            {
+              "id": "ask",
+              "name": "Ask"
+            },
+            {
+              "id": 42,
+              "name": "Bad"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "modes list is required",
+      "operation": "session/load",
+      "input": {
+        "modes": {
+          "currentModeId": "ask"
+        }
+      },
+      "expected": {}
+    },
+    {
+      "name": "mode list defaults when malformed but present",
+      "operation": "session/load",
+      "input": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": false
+        }
+      },
+      "expected": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": []
+        }
+      }
+    },
+    {
+      "name": "positional response and mode structs",
+      "operation": "session/load",
+      "input": [
+        [
+          "ask",
+          [
+            [
+              "ask",
+              "Ask",
+              "",
+              {
+                "x": 1
+              }
+            ],
+            null
+          ],
+          {
+            "state": true
+          }
+        ],
+        null,
+        {
+          "response": true
+        }
+      ],
+      "expected": {
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {
+                "x": 1
+              }
+            }
+          ],
+          "_meta": {
+            "state": true
+          }
+        },
+        "_meta": {
+          "response": true
+        }
+      }
+    },
+    {
+      "name": "flattened config struct rejects positional sequences",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          [
+            "id",
+            "Name",
+            null,
+            null,
+            {
+              "type": "boolean",
+              "currentValue": true
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "configOptions": []
+      }
+    },
+    {
+      "name": "unknown category strings preserved",
+      "operation": "session/load",
+      "input": {
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ],
+            "category": "future"
+          },
+          {
+            "type": "boolean",
+            "id": "thinking",
+            "name": "Thinking",
+            "currentValue": false,
+            "category": ""
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "future",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "id": "thinking",
+            "name": "Thinking",
+            "category": "",
+            "type": "boolean",
+            "currentValue": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "required new-session identity",
+      "operation": "session/new",
+      "input": {},
+      "error": true
+    },
+    {
+      "name": "required new-session identity",
+      "operation": "session/new",
+      "input": null,
+      "error": true
+    },
+    {
+      "name": "required new-session identity",
+      "operation": "session/new",
+      "input": false,
+      "error": true
+    },
+    {
+      "name": "new-session decodes common state",
+      "operation": "session/new",
+      "input": {
+        "sessionId": "s",
+        "configOptions": [
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          false,
+          {
+            "type": "boolean",
+            "id": "thinking",
+            "name": "Thinking",
+            "currentValue": false
+          }
+        ],
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        }
+      },
+      "expected": {
+        "sessionId": "s",
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        },
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "id": "thinking",
+            "name": "Thinking",
+            "type": "boolean",
+            "currentValue": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "new-session positional response",
+      "operation": "session/new",
+      "input": [
+        "s",
+        {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        },
+        [
+          {
+            "type": "boolean",
+            "id": "thinking",
+            "name": "Thinking",
+            "currentValue": false
+          }
+        ],
+        {}
+      ],
+      "expected": {
+        "sessionId": "s",
+        "modes": {
+          "currentModeId": "ask",
+          "availableModes": [
+            {
+              "id": "ask",
+              "name": "Ask",
+              "description": "",
+              "_meta": {}
+            }
+          ],
+          "_meta": {
+            "mode": true
+          }
+        },
+        "configOptions": [
+          {
+            "id": "thinking",
+            "name": "Thinking",
+            "type": "boolean",
+            "currentValue": false
+          }
+        ],
+        "_meta": {}
+      }
+    },
+    {
+      "name": "config response requires field",
+      "operation": "session/set_config_option",
+      "input": {},
+      "error": true
+    },
+    {
+      "name": "config response requires field",
+      "operation": "session/set_config_option",
+      "input": null,
+      "error": true
+    },
+    {
+      "name": "config response requires field",
+      "operation": "session/set_config_option",
+      "input": false,
+      "error": true
+    },
+    {
+      "name": "required config list defaults or skips",
+      "operation": "session/set_config_option",
+      "input": {
+        "configOptions": null
+      },
+      "expected": {
+        "configOptions": []
+      }
+    },
+    {
+      "name": "required config list defaults or skips",
+      "operation": "session/set_config_option",
+      "input": {
+        "configOptions": false
+      },
+      "expected": {
+        "configOptions": []
+      }
+    },
+    {
+      "name": "required config list defaults or skips",
+      "operation": "session/set_config_option",
+      "input": {
+        "configOptions": "invalid"
+      },
+      "expected": {
+        "configOptions": []
+      }
+    },
+    {
+      "name": "required config list defaults or skips",
+      "operation": "session/set_config_option",
+      "input": {
+        "configOptions": []
+      },
+      "expected": {
+        "configOptions": []
+      }
+    },
+    {
+      "name": "required config list defaults or skips",
+      "operation": "session/set_config_option",
+      "input": {
+        "configOptions": [
+          false,
+          {
+            "type": "select",
+            "id": "model",
+            "name": "Model",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "type": "boolean",
+            "id": "thinking",
+            "name": "Thinking",
+            "currentValue": false
+          }
+        ]
+      },
+      "expected": {
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": "fast",
+            "options": [
+              {
+                "value": "fast",
+                "name": "Fast"
+              }
+            ]
+          },
+          {
+            "id": "thinking",
+            "name": "Thinking",
+            "type": "boolean",
+            "currentValue": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "positional config response",
+      "operation": "session/set_config_option",
+      "input": [
+        [
+          {
+            "type": "boolean",
+            "id": "thinking",
+            "name": "Thinking",
+            "currentValue": false
+          }
+        ],
+        {
+          "x": true
+        }
+      ],
+      "expected": {
+        "configOptions": [
+          {
+            "id": "thinking",
+            "name": "Thinking",
+            "type": "boolean",
+            "currentValue": false
+          }
+        ],
+        "_meta": {
+          "x": true
+        }
+      }
+    }
+  ]
+}

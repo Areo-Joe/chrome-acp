@@ -8,6 +8,9 @@ import { WebSocket, WebSocketServer } from "ws";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const args = process.argv.slice(2);
+const fileIndex = args.indexOf("--file");
+const selectedFile = fileIndex === -1 ? undefined : args.splice(fileIndex, 2)[1];
+if (fileIndex !== -1) assert.ok(selectedFile, "--file requires a test file");
 const android = args.includes("android");
 // Like the Rust CLI, reject a wrong path or token with an HTTP status before the upgrade.
 const server = new WebSocketServer({ host: "127.0.0.1", port: 19437, verifyClient: ({ req }, done) => {
@@ -45,10 +48,27 @@ server.on("connection", (socket, request) => {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ jsonrpc: "2.0", ...message }));
   };
   const result = (id, value) => send({ id, result: value });
-  const error = (id, message) => send({ id, error: { code: -32603, message } });
+  const error = (id, message, code = -32603) => send({ id, error: { code, message } });
   const update = (value) => send({ method: "session/update", params: { sessionId: "test-session", update: value } });
   const text = (sessionUpdate, value, messageId) => update({ sessionUpdate, content: { type: "text", text: value }, ...(messageId ? { messageId } : {}) });
   let cancelled = false;
+  let authenticated = false;
+  let authCalls = 0;
+  let newSessions = 0;
+  let loads = 0;
+  let closes = 0;
+  let promptCalls = 0;
+  let staleConfigurationReply = null;
+  const authMethods = token === "auth-none" ? [] : token === "auth-terminal-only"
+    ? [{ type: "terminal", id: "terminal-login", name: "Terminal sign-in" }]
+    : token === "auth-legacy" ? [{ id: "legacy-login", name: "Terminal sign-in", _meta: { "terminal-auth": { label: "Login", command: "agent" } } }]
+    : [
+      { id: "browser-login", name: "Browser sign-in", description: "Continue in your browser" },
+      ...(token === "auth-single" ? [] : [
+        { id: "reject-login", name: "Rejected login" },
+        { type: "terminal", id: "terminal-login", name: "Terminal sign-in" },
+      ]),
+    ];
   let onCancel = null;
   // Permission requests sent to the client, and how each was answered (an option ID, "cancelled", or "error:<code>").
   let requests = 0;
@@ -76,6 +96,14 @@ server.on("connection", (socket, request) => {
     assert.equal(message.params.prompt.length, 1);
     assert.equal(message.params.prompt[0].type, "text");
     const input = message.params.prompt[0].text;
+    promptCalls++;
+    if (input === "needs-auth" && !authenticated) return error(message.id, "Credentials expired", -32000);
+    if (input === "auth-status") {
+      staleConfigurationReply?.();
+      staleConfigurationReply = null;
+      text("agent_message_chunk", `Auth calls: ${authCalls}; New sessions: ${newSessions}; Restores: ${loads}; Prompts: ${promptCalls}${token.startsWith("auth-close-") ? `; Closes: ${closes}` : ""}`);
+      return result(message.id, { stopReason: "end_turn" });
+    }
     const stop = (stopReason) => result(message.id, { stopReason });
     cancelled = false;
     onCancel = null;
@@ -236,22 +264,75 @@ server.on("connection", (socket, request) => {
       return answer(outcome.outcome === "selected" ? outcome.optionId : outcome.outcome);
     }
     if (message.method === "session/new") {
+      newSessions++;
       assert.equal(message.params.cwd, "/workspace");
       assert.deepEqual(message.params.mcpServers, []);
       if (token === "session-error") return error(message.id, "Session creation failed");
+      if (token.startsWith("slow-session-")) return later(() => {
+        if (token.endsWith("error")) error(message.id, "Slow session creation failed");
+        else result(message.id, { sessionId: "test-session", configOptions: options });
+      }, 1200);
+      if (token === "auth-fake") return error(message.id, "Authentication required");
+      if (token.startsWith("auth") && !token.startsWith("auth-slow-") && !token.startsWith("auth-close-") && !["auth-advertised", "auth-agent-logout", "auth-late-config", "auth-prompt", "auth-resume", "auth-no-restore"].includes(token) && !authenticated) {
+        return error(message.id, token === "auth-single" ? "Authentication required" : token === "auth-empty-description" ? "" : "Please **sign in** to continue.", -32000);
+      }
       result(message.id, {
         sessionId: "test-session",
         ...(token.startsWith("legacy") ? { modes: {
           currentModeId: "ask", availableModes: [{ id: "ask", name: "Ask" }, { id: "code", name: "Code" }, { id: "plan", name: "Plan" }],
         } } : token === "empty" ? {} : { configOptions: options }),
       });
-      update({ sessionUpdate: "available_commands_update", availableCommands: commands });
+      update({ sessionUpdate: "available_commands_update", availableCommands: token === "auth-agent-logout" ? [...commands, { name: "logout", description: "Agent logout" }] : commands });
       return;
+    }
+    if (message.method === "authenticate") {
+      assert.ok(token.startsWith("auth"));
+      assert.deepEqual(Object.keys(message.params), ["methodId"]);
+      assert.ok(["browser-login", "reject-login"].includes(message.params.methodId), "Terminal login must never use authenticate");
+      authCalls++;
+      if (token === "auth-drop") return socket.close(1011, "Agent exited during login");
+      return later(() => {
+        if (message.params.methodId === "reject-login") error(message.id, "Login rejected");
+        else { authenticated = true; result(message.id, {}); }
+      }, 1200);
+    }
+    if (message.method === "session/close") {
+      assert.ok(token.startsWith("auth-close-"));
+      assert.equal(authenticated, true);
+      assert.deepEqual(message.params, { sessionId: "test-session" });
+      closes++;
+      text("agent_message_chunk", "Stale before close response.");
+      return later(() => {
+        if (token === "auth-close-error") error(message.id, "Close rejected");
+        else result(message.id, null);
+        text("agent_message_chunk", "Stale after close response.");
+      }, 500);
+    }
+    if (message.method === "session/load" || message.method === "session/resume") {
+      assert.equal(authenticated, true);
+      assert.equal(message.params.sessionId, "test-session");
+      assert.equal(message.params.cwd, "/workspace");
+      assert.deepEqual(message.params.mcpServers, []);
+      assert.equal(message.method, token === "auth-resume" || token === "auth-close-resume" || token.startsWith("auth-slow-resume-") ? "session/resume" : "session/load");
+      if (token.startsWith("auth-close-")) assert.equal(closes, 1, "Reopen must follow old-session release");
+      loads++;
+      if (message.method === "session/load") text("agent_message_chunk", "Restored history.");
+      if (token.startsWith("auth-slow-")) return later(() => {
+        if (token.endsWith("error")) error(message.id, "Slow session restoration failed");
+        else result(message.id, { configOptions: options });
+      }, 1200);
+      return result(message.id, { configOptions: options });
     }
     if (message.method === "session/set_config_option") {
       assert.notEqual(token, "legacy");
       const option = options.find((option) => option.id === message.params.configId);
       assert.ok(option, "Unknown config ID");
+      if (token === "auth-late-config") {
+        const previous = configOptions();
+        previous.find((option) => option.id === message.params.configId).currentValue = message.params.value;
+        staleConfigurationReply = () => result(message.id, { configOptions: previous });
+        return;
+      }
       if (typeof message.params.value === "boolean") assert.equal(message.params.type, "boolean");
       if (token === "config-error") return error(message.id, "Configuration rejected");
       if (token === "config-normalized" || token === "config-removed") {
@@ -313,7 +394,15 @@ server.on("connection", (socket, request) => {
     }
     later(() => {
       if (token === "agent-error") error(message.id, "Agent unavailable");
-      else result(message.id, { protocolVersion: 1, agentCapabilities: {}, agentInfo: { name: "mock", title: "Mock Agent", version: "1" } });
+      else result(message.id, {
+        protocolVersion: 1,
+        agentCapabilities: token.startsWith("auth") ? {
+          loadSession: !token.startsWith("auth-slow-resume-") && !["auth-resume", "auth-close-resume", "auth-no-restore"].includes(token),
+          sessionCapabilities: token === "auth-no-restore" ? {} : { resume: {}, ...(token.startsWith("auth-close-") ? { close: {} } : {}) },
+        } : {},
+        ...(token.startsWith("auth") ? { authMethods } : {}),
+        agentInfo: { name: "mock", title: "Mock Agent", version: "1" },
+      });
       if (token === "drop") later(() => socket.close(1011, "Server stopped"), 750);
     }, 1000);
   });
@@ -324,14 +413,14 @@ try {
     const forward = spawnSync("adb", ["reverse", "tcp:19437", "tcp:19437"], { stdio: "inherit" });
     assert.equal(forward.status, 0, "Could not forward the mock server port to Android");
   }
-  const files = ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/tools.test.tsx"];
-  if (!android) files.push("tests/connection-timeout.test.tsx", "tests/optimistic-change.test.tsx");
+  const files = selectedFile ? [selectedFile] : ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/tools.test.tsx", "tests/authentication.test.tsx"];
+  if (!android && !selectedFile) files.push("tests/connection-timeout.test.tsx", "tests/optimistic-change.test.tsx");
   for (const file of files) {
     const child = spawn(`${root}.nsh/toolchain/bin/nsh`, ["test", file, ...args], { cwd: root, stdio: "inherit" });
     [code] = await once(child, "exit");
     if (code !== 0) break;
   }
-  if (!args.includes("--filter") && code === 0) assert.ok(connects >= 4, "Expected real WebSocket connect handshakes");
+  if (!selectedFile && !args.includes("--filter") && code === 0) assert.ok(connects >= 4, "Expected real WebSocket connect handshakes");
 } finally {
   for (const timer of timers) clearTimeout(timer);
   for (const socket of server.clients) socket.terminate();

@@ -188,7 +188,7 @@ function Thought(props: { chunk: () => AssistantChunk; streaming: () => boolean;
   );
 }
 
-export function ThreadErrorCallout(props: { thread: Thread }) {
+export function ThreadErrorCallout(props: { thread: Thread; onAuthenticate?: () => void }) {
   return (
     <If when={props.thread.error()}>
       {(error) => (
@@ -198,6 +198,11 @@ export function ThreadErrorCallout(props: { thread: Thread }) {
             <Text class="text-sm font-semibold text-foreground">{error().title}</Text>
             <TextView selectable markdown={error().message} class="text-sm text-muted-foreground" />
           </View>
+          <If when={error().authentication && props.onAuthenticate}>
+            <Button testID="authenticate-thread" onPress={() => props.onAuthenticate?.()} class="rounded-md bg-primary px-3 py-2">
+              <Text class="text-sm text-primary-foreground">Authenticate</Text>
+            </Button>
+          </If>
           <If when={error().copy}>
             <Button
               testID="copy-thread-error"

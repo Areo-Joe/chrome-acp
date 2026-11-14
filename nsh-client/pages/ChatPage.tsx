@@ -1,6 +1,7 @@
 import { cleanup, Keyboard, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import { Composer } from "../components/Composer";
+import { Authentication } from "../components/Authentication";
 import { ThreadErrorCallout, ThreadView } from "../components/Thread";
 import { createComposer } from "../state/composer";
 import type { Connection } from "../state/connection";
@@ -24,9 +25,15 @@ export function ChatPage(props: { connection: Connection }) {
           <Text class="text-xs text-foreground">Disconnect</Text>
         </Button>
       </View>
-      <ThreadView thread={composer.thread} />
-      <ThreadErrorCallout thread={composer.thread} />
-      <Composer state={composer} />
+      <If when={composer.phase() === "auth-required" || composer.phase() === "authenticating"} else={
+        <>
+          <ThreadView thread={composer.thread} />
+          <ThreadErrorCallout thread={composer.thread} onAuthenticate={composer.authenticateFailedPrompt} />
+          <Composer state={composer} />
+        </>
+      }>
+        <Authentication state={composer} />
+      </If>
     </View>
   );
 }

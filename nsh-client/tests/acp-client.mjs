@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { WebSocketServer } from 'ws';
-import { AcpClient, DEFAULT_ACP_PROTOCOL_MODE } from '../acp/client.ts';
+import { AcpClient, DEFAULT_ACP_PROTOCOL_MODE, authenticationKind, authenticationRequired } from '../acp/client.ts';
+import { RequestError } from '@agentclientprotocol/sdk';
 const options = () => [
   { id: 'model', name: 'Model', type: 'select', currentValue: 'fast', options: [{ value: 'fast', name: 'Fast' }, { value: 'smart', name: 'Smart' }] },
   { id: 'thinking', name: 'Thinking', type: 'boolean', currentValue: false },
@@ -63,6 +64,388 @@ test('auto is explicitly unimplemented before opening a connection', async () =>
   const client = new AcpClient({ url: 'invalid', cwd: '/workspace', protocolMode: 'auto' });
   await assert.rejects(client.connect(), /ACP protocol mode 'auto' is unimplemented/);
 });
+
+test('authentication errors use their protocol code and Zed description rules', () => {
+  assert.deepEqual(authenticationRequired(new RequestError(-32000, 'Authentication required')), { description: null });
+  assert.deepEqual(authenticationRequired(new RequestError(-32000, 'Sign in again', { ignored: true })), { description: 'Sign in again' });
+  assert.deepEqual(authenticationRequired(new RequestError(-32000, '')), { description: '' });
+  assert.equal(authenticationRequired(new RequestError(-32603, 'Authentication required')), null);
+  assert.equal(authenticationRequired(new Error('Authentication required')), null);
+});
+
+test('terminal auth dispatch matches first-class and legacy Zed definitions', () => {
+  assert.equal(authenticationKind({ type: 'terminal', id: 't', name: 'Terminal' }), 'terminal');
+  const legacy = (value) => ({ id: 'legacy', name: 'Legacy', _meta: { 'terminal-auth': value } });
+  assert.equal(authenticationKind(legacy({ label: '', command: '' })), 'terminal');
+  assert.equal(authenticationKind(legacy({ label: 'Login', command: 'agent', args: ['auth', ''], env: { EMPTY: '' } })), 'terminal');
+  assert.equal(authenticationKind(legacy(['Login', 'agent', [], {}])), 'terminal');
+  for (const value of [null, {}, { label: 'Login', command: 'agent', args: null }, { label: 'Login', command: 'agent', env: null }, { label: 'Login', command: 'agent', args: [false] }]) {
+    assert.equal(authenticationKind(legacy(value)), 'agent');
+  }
+});
+
+test('agent-managed authentication validates advertised methods and sends the exact opaque ID', { timeout: 10000 }, async (t) => {
+  const calls = [];
+  const client = await mock(t, (message, _socket, send) => {
+    if (message.method === 'initialize') { send(message.id, initializedAgent()); return true; }
+    if (message.method === 'authenticate') { calls.push(message.params); send(message.id, {}); return true; }
+  });
+  await client.connect();
+  await assert.rejects(client.authenticate('unknown'), /not supported for agent-managed login/);
+  await assert.rejects(client.authenticate('terminal/opaque'), /not supported for agent-managed login/);
+  assert.deepEqual(calls, []);
+  await client.authenticate('/opaque.login');
+  await client.authenticate('empty');
+  assert.deepEqual(calls, [{ methodId: '/opaque.login' }, { methodId: 'empty' }]);
+  assert.deepEqual(client.authMethods, initializedAgent().authMethods);
+});
+
+test('authentication rejection retains the initialized connection and allows retry', { timeout: 10000 }, async (t) => {
+  let attempts = 0;
+  const client = await mock(t, (message, socket, send) => {
+    if (message.method === 'initialize') { send(message.id, initializedAgent()); return true; }
+    if (message.method !== 'authenticate') return;
+    if (++attempts === 1) socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'Login rejected' } }));
+    else send(message.id, {});
+    return true;
+  });
+  await client.connect();
+  await assert.rejects(client.authenticate('/opaque.login'), /Login rejected/);
+  await client.authenticate('/opaque.login');
+  assert.equal(attempts, 2);
+  assert.deepEqual(client.agentCapabilities, initializedAgent().agentCapabilities);
+});
+
+for (const response of [null, {}, [], [42], false, 42, 'bad', [{}, {}]]) {
+  test(`authenticate response follows the v1 nullable struct rules: ${JSON.stringify(response)}`, { timeout: 10000 }, async (t) => {
+    let attempts = 0;
+    const client = await mock(t, (message, _socket, send) => {
+      if (message.method === 'initialize') { send(message.id, initializedAgent()); return true; }
+      if (message.method === 'authenticate') { send(message.id, ++attempts === 1 ? response : {}); return true; }
+    });
+    await client.connect();
+    const valid = response === null || (typeof response === 'object' && (!Array.isArray(response) || response.length <= 1));
+    if (valid) await client.authenticate('/opaque.login');
+    else await assert.rejects(client.authenticate('/opaque.login'), /Invalid ACP authenticate response/);
+    await client.authenticate('/opaque.login');
+    assert.equal(attempts, 2);
+  });
+}
+
+test('disconnect rejects pending authentication and clears connection data', { timeout: 10000 }, async (t) => {
+  const waiting = Promise.withResolvers();
+  const client = await mock(t, (message, _socket, send) => {
+    if (message.method === 'initialize') { send(message.id, initializedAgent()); return true; }
+    if (message.method === 'authenticate') { waiting.resolve(); return true; }
+  });
+  await client.connect();
+  const rejected = assert.rejects(client.authenticate('/opaque.login'), /connection closed/i);
+  await waiting.promise;
+  client.disconnect();
+  await rejected;
+  assertUninitialized(client);
+});
+
+for (const strategy of ['load', 'resume', 'unsupported']) {
+  test(`post-login restoration uses ${strategy} according to v1 capabilities`, { timeout: 10000 }, async (t) => {
+    const calls = [];
+    const updates = [];
+    const client = await mock(t, (message, socket, send) => {
+      if (message.method === 'initialize') {
+        send(message.id, { protocolVersion: 1, agentCapabilities: { loadSession: strategy === 'load', sessionCapabilities: strategy === 'unsupported' ? {} : { resume: {} } } });
+        return true;
+      }
+      if (message.method !== 'session/load' && message.method !== 'session/resume') return;
+      calls.push(message);
+      socket.send(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 's', update: {
+        sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'History before response' },
+      } } }));
+      send(message.id, { configOptions: options() });
+      return true;
+    });
+    client.setSessionUpdateHandler((update) => updates.push(update));
+    await client.connect();
+    if (strategy === 'unsupported') {
+      await assert.rejects(client.restoreSession('s'), /Loading or resuming sessions is not supported/);
+      assert.deepEqual(calls, []);
+    } else {
+      assert.equal(await client.restoreSession('s'), 's');
+      assert.equal(calls[0].method, strategy === 'load' ? 'session/load' : 'session/resume');
+      assert.deepEqual(calls[0].params, { sessionId: 's', cwd: '/workspace', mcpServers: [] });
+      assert.equal(updates[0].content.text, 'History before response');
+      assert.deepEqual(client.configOptions, options());
+    }
+  });
+}
+
+for (const strategy of ['load', 'resume']) {
+  test(`failed ${strategy} recovery unregisters its session and can be retried with the known ID`, { timeout: 10000 }, async (t) => {
+    let attempts = 0;
+    let created = 0;
+    const client = await mock(t, (message, _socket, send) => {
+      if (message.method === 'initialize') {
+        send(message.id, { protocolVersion: 1, agentCapabilities: { loadSession: strategy === 'load', sessionCapabilities: { resume: {} } } });
+        return true;
+      }
+      if (message.method !== `session/${strategy}`) return;
+      assert.equal(message.params.sessionId, 's');
+      send(message.id, ++attempts === 1 ? false : null);
+      return true;
+    });
+    client.setSessionCreatedHandler(() => created++);
+    await client.connect();
+    await assert.rejects(client.restoreSession('s'), /Invalid ACP session\/(load|resume) response/);
+    assert.equal(created, 0);
+    await assert.rejects(client.prompt([{ type: 'text', text: 'not loaded' }]), /No active session/);
+    assert.equal(await client.restoreSession('s'), 's');
+    assert.equal(created, 1);
+    assert.equal(client.configOptions, null);
+  });
+}
+
+for (const strategy of ['load', 'resume']) {
+  for (const failure of ['rpc', 'malformed']) {
+    test(`failed ${strategy} ${failure} drains replay before an immediate same-ID retry`, { timeout: 10000 }, async (t) => {
+      let attempts = 0;
+      const updates = [];
+      const client = await mock(t, (message, socket, send) => {
+        if (message.method === 'initialize') {
+          send(message.id, { protocolVersion: 1, agentCapabilities: { loadSession: strategy === 'load', sessionCapabilities: { resume: {} } } });
+          return true;
+        }
+        if (message.method !== `session/${strategy}`) return;
+        const notify = (update) => socket.send(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 's', update } }));
+        if (++attempts === 1) {
+          // One transport burst makes these queued replay messages, rather
+          // than notifications arriving from the network after cleanup ends.
+          socket._socket.cork();
+          if (failure === 'rpc') socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'Replay failed' } }));
+          else send(message.id, false);
+          // Already-received old replay must finish before the failure reaches
+          // the caller, which immediately registers a replacement under this ID.
+          notify({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'old replay' } });
+          notify({ sessionUpdate: 'config_option_update', configOptions: options() });
+          notify({ sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'stale', description: 'Old command' }] });
+          socket._socket.uncork();
+        } else {
+          notify({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'new replay' } });
+          send(message.id, {});
+        }
+        return true;
+      });
+      client.setSessionUpdateHandler((update) => updates.push(update.content.text));
+      await client.connect();
+      await assert.rejects(client.restoreSession('s'), failure === 'rpc' ? /Replay failed/ : /Invalid ACP/);
+      updates.length = 0;
+      assert.equal(await client.restoreSession('s'), 's');
+      assert.deepEqual(updates, ['new replay']);
+      assert.equal(client.configOptions, null);
+      assert.deepEqual(client.availableCommands, []);
+    });
+  }
+}
+
+for (const strategy of ['load', 'resume']) {
+  test(`disconnect during failed ${strategy} replay cannot clear a new connection's state`, { timeout: 10000 }, async (t) => {
+    let reconnected;
+    let release;
+    const pendingNew = Promise.withResolvers();
+    const client = await mock(t, (message, socket, send) => {
+      if (message.method === 'initialize') {
+        send(message.id, { protocolVersion: 1, agentCapabilities: { loadSession: strategy === 'load', sessionCapabilities: { resume: {} } } });
+        return true;
+      }
+      if (message.method === `session/${strategy}`) {
+        socket._socket.cork();
+        send(message.id, false);
+        socket.send(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: {
+          sessionId: 's', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'disconnect during drain' } },
+        } }));
+        socket._socket.uncork();
+        return true;
+      }
+      if (message.method === 'session/new') {
+        release = () => send(message.id, { sessionId: 'replacement', configOptions: options() });
+        pendingNew.resolve();
+        return true;
+      }
+    });
+    client.setSessionUpdateHandler(() => {
+      client.disconnect();
+      reconnected = client.connect().then(() => client.createSession());
+    });
+    await client.connect();
+    await assert.rejects(client.restoreSession('s'), /Invalid ACP/);
+    assert.ok(reconnected, 'the old replay was drained before the failure settled');
+    await pendingNew.promise;
+    await assert.rejects(client.createSession(), /Session creation already in progress/);
+    release();
+    assert.equal(await reconnected, 'replacement');
+    assert.deepEqual(client.configOptions, options());
+  });
+}
+
+for (const strategy of ['load', 'resume']) {
+  for (const outcome of ['success', 'error', 'malformed']) {
+    test(`late configuration ${outcome} cannot change the ${strategy} session's new owner`, { timeout: 10000 }, async (t) => {
+      const waiting = Promise.withResolvers();
+      let release;
+      const restored = options(); restored[1].currentValue = true;
+      const client = await mock(t, (message, socket, send) => {
+        if (message.method === 'initialize') {
+          send(message.id, { protocolVersion: 1, agentCapabilities: { loadSession: strategy === 'load', sessionCapabilities: { resume: {} } }, authMethods: [{ id: 'login', name: 'Login' }] });
+          return true;
+        }
+        if (message.method === 'session/set_config_option') {
+          release = () => {
+            if (outcome === 'error') socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'Old change rejected' } }));
+            else if (outcome === 'malformed') send(message.id, {});
+            else { const old = options(); old[0].currentValue = 'smart'; send(message.id, { configOptions: old }); }
+          };
+          waiting.resolve();
+          return true;
+        }
+        if (message.method === 'authenticate') { send(message.id, {}); return true; }
+        if (message.method === `session/${strategy}`) { send(message.id, { configOptions: restored }); return true; }
+      });
+      const changes = [];
+      client.setConfigOptionsChangedHandler((value) => { if (value) changes.push(value); });
+      await client.connect(); await client.createSession();
+      const old = client.setConfigOption('model', 'smart');
+      const settled = outcome === 'success' ? old : assert.rejects(old, outcome === 'error' ? /Old change rejected/ : /Invalid ACP session\/set_config_option response/);
+      await waiting.promise;
+      await client.authenticate('login');
+      await client.restoreSession('s');
+      assert.deepEqual(client.configOptions, restored);
+      release(); await settled;
+      assert.deepEqual(client.configOptions, restored);
+      assert.deepEqual(changes, [options(), restored]);
+      assert.equal(client.sessionModes, null);
+    });
+  }
+}
+
+// Reopening an existing v1 thread waits for its release before reusing the ID.
+for (const strategy of ['load', 'resume']) {
+  for (const outcome of ['unsupported', 'success', 'error', 'malformed']) {
+    test(`${strategy} drains the previous session after close ${outcome}`, { timeout: 10000 }, async (t) => {
+      const warnings = t.mock.method(console, 'warn', () => {});
+      const closing = Promise.withResolvers();
+      const calls = [];
+      const updates = [];
+      let release;
+      const client = await mock(t, (message, socket, send) => {
+        const notify = (text) => socket.send(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: {
+          sessionId: 's', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } },
+        } }));
+        if (message.method === 'initialize') {
+          send(message.id, { protocolVersion: 1, agentCapabilities: { loadSession: strategy === 'load', sessionCapabilities: {
+            resume: {}, ...(outcome === 'unsupported' ? {} : { close: {} }),
+          } } });
+          return true;
+        }
+        calls.push(message.method);
+        if (message.method === 'session/close') {
+          assert.deepEqual(message.params, { sessionId: 's' });
+          notify('stale before close response');
+          release = () => {
+            if (outcome === 'error') socket.send(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'Close rejected' } }));
+            else send(message.id, outcome === 'malformed' ? false : null);
+            notify('stale after close response');
+          };
+          closing.resolve();
+          return true;
+        }
+        if (message.method === `session/${strategy}`) {
+          notify('new history');
+          send(message.id, { configOptions: options() });
+          notify('current update');
+          return true;
+        }
+      });
+      client.setSessionUpdateHandler((update) => updates.push(update.content.text));
+      await client.connect(); await client.createSession();
+      const restore = client.restoreSession('s');
+      if (outcome !== 'unsupported') {
+        await closing.promise;
+        assert.deepEqual(calls, ['session/new', 'session/close']);
+        await assert.rejects(client.prompt([{ type: 'text', text: 'not registered' }]), /No active session/);
+        await assert.rejects(client.restoreSession('s'), /Session creation already in progress/);
+        release();
+      }
+      assert.equal(await restore, 's');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.deepEqual(updates, ['new history', 'current update']);
+      assert.deepEqual(calls, ['session/new', ...(outcome === 'unsupported' ? [] : ['session/close']), `session/${strategy}`]);
+      assert.equal(warnings.mock.calls.some(({ arguments: args }) => args[0] === 'ACP session release failed:'), ['error', 'malformed'].includes(outcome));
+    });
+  }
+}
+
+test('disconnect during close cannot register the session on another connection', { timeout: 10000 }, async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const closing = Promise.withResolvers();
+  const calls = [];
+  const client = await mock(t, (message, _socket, send) => {
+    calls.push(message.method);
+    if (message.method === 'initialize') {
+      send(message.id, { protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: { close: {} } } });
+      return true;
+    }
+    if (message.method === 'session/close') { closing.resolve(); return true; }
+  });
+  await client.connect(); await client.createSession();
+  const old = assert.rejects(client.restoreSession('s'), /Connection closed/);
+  await closing.promise;
+  client.disconnect();
+  await client.connect();
+  await old;
+  assert.equal(calls.includes('session/load'), false);
+  await assert.rejects(client.prompt([{ type: 'text', text: 'no old session' }]), /No active session/);
+  await client.createSession();
+});
+
+test('release still closes the existing thread when reopening is unsupported', { timeout: 10000 }, async (t) => {
+  const calls = [];
+  const client = await mock(t, (message, _socket, send) => {
+    calls.push(message.method);
+    if (message.method === 'initialize') {
+      send(message.id, { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { close: {} } } });
+      return true;
+    }
+    if (message.method === 'session/close') { send(message.id, {}); return true; }
+  });
+  await client.connect(); await client.createSession();
+  await assert.rejects(client.restoreSession('s'), /Loading or resuming sessions is not supported/);
+  assert.deepEqual(calls, ['initialize', 'session/new', 'session/close']);
+  await assert.rejects(client.prompt([{ type: 'text', text: 'closed' }]), /No active session/);
+});
+
+const sessionReference = JSON.parse(readFileSync(new URL('./fixtures/session-state-v1.json', import.meta.url), 'utf8'));
+for (const { name, operation, input, expected, error } of sessionReference.cases) {
+  test(`Zed v1 ${operation} response: ${name}`, { timeout: 10000 }, async (t) => {
+    const client = await mock(t, (message, _socket, send) => {
+      if (message.method === 'initialize') {
+        send(message.id, { protocolVersion: 1, agentCapabilities: { loadSession: operation !== 'session/resume', sessionCapabilities: { resume: {} } } });
+        return true;
+      }
+      if (message.method === operation) { send(message.id, input); return true; }
+    });
+    await client.connect();
+    if (operation === 'session/set_config_option') await client.createSession();
+    const request = operation === 'session/new' ? client.createSession()
+      : operation === 'session/set_config_option' ? client.setConfigOption('model', 'smart')
+      : client.restoreSession('s');
+    if (error) {
+      await assert.rejects(request, /Invalid ACP session\/(new|load|resume|set_config_option) response/);
+    } else {
+      await request;
+      assert.deepEqual(client.configOptions, expected.configOptions ?? null);
+      assert.deepEqual(client.sessionModes, expected.configOptions !== undefined ? null : expected.modes ?? null);
+    }
+    assert.notEqual(client.agentCapabilities, null, 'session decoding must not destroy the connection');
+  });
+}
 
 test('initialize data is available when connected and survives session creation and session errors', { timeout: 10000 }, async (t) => {
   const response = initializedAgent();

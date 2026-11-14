@@ -89,8 +89,8 @@ against the behavior of Zed's locked Rust schema 1.15.1: omitted or malformed
 optional capability fields receive defaults, invalid auth entries are skipped,
 and valid `_meta` is retained. Missing capability booleans become `false`;
 optional capability objects distinguish absent/null from `{}`. Reconnecting
-starts with cleared data. Login execution and capability-dependent features will
-use this data in subsequent work.
+starts with cleared data. Agent-managed sign-in uses these definitions; other
+capability-dependent features will use this data in subsequent work.
 
 Rust's v1 auth decoder treats the literal `terminal` tag specially. Numeric
 variant index `0` first attempts terminal decoding and may fall back to agent
@@ -102,6 +102,49 @@ The client follows those rules before publishing any initialize data.
 Rust schema used by the local Zed reference; protocol tests compare against
 these results without needing Rust at test time.
 
+Authentication follows Zed's ACP v1 prompt-completion flow. A `session/new`
+authentication-required error (`-32000`) keeps the connection and offers the
+agent's sign-in choices. Merely advertising choices does not trigger sign-in.
+While signing in, choices are replaced by an "Authenticating" indicator; there
+is no fixed sign-in timeout. Failure restores the choices with the agent's error.
+Disconnect ends the attempt and its late result cannot affect another connection.
+Like Zed v1, session creation and load/resume also wait for their RPC result
+without a fixed deadline, including while history is replaying.
+
+For an authentication error during a prompt, the thread shows "Authentication
+Required" with Authenticate, Copy and Dismiss. Authenticate restores the failed
+prompt to the draft and opens the sign-in choices. Success reopens the same
+session, preferring `session/load` over `session/resume` according to advertised
+capabilities. History sent before the load response is received by the registered
+session. The failed prompt is never automatically resent. If neither operation
+is supported, the app reports that explicitly instead of creating another session.
+This recovery path does not yet provide a history browser.
+
+Reopening a session replaces its configuration state even when its ID stays the
+same. An outstanding configuration RPC still resolves or rejects its own caller,
+but cannot publish its old result into the reopened session. Session creation,
+load, resume and configuration responses are decoded using Zed's locked v1
+schema rules, including invalid-entry handling and grouped select options.
+`tests/fixtures/session-state-v1.json` contains 45 Rust reference cases for these
+responses; its companion Rust source records how to reproduce them.
+Before reopening an existing session, the client unregisters its old state,
+awaits `session/close` when advertised, and drains already-received dispatch.
+Like Zed v1, close errors are logged and reopening continues. The known ID is
+registered again only after release finishes, so old notifications cannot enter
+the replacement during cleanup.
+Failed load/resume requests also drain already-received replay before removing
+the session and releasing the operation lock. An immediate same-ID retry cannot
+inherit those queued messages or commands; disconnecting during that drain
+cannot clear a replacement connection's state.
+
+`/login` opens sign-in locally when methods are advertised. `/logout` does the
+same unless the agent advertises its own logout command, which takes precedence.
+First-class terminal methods and valid legacy `terminal-auth` definitions use a
+separate terminal route in Zed. This WebSocket client does not advertise terminal
+authentication or have access to the agent's launch process, so those choices are
+shown as unavailable and are never sent as `authenticate` RPCs. Executing terminal
+sign-in requires a future agent-host integration.
+
 `nsh-client` is a pnpm project of its own, with its own `package.json` and
 lockfile, outside the repository's workspace. Run `pnpm install` in `nsh-client/`
 (Node.js 26) before type checking, building or testing. For protocol/UI tests
@@ -109,6 +152,7 @@ lockfile, outside the repository's workspace. Run `pnpm install` in `nsh-client/
 
 ```sh
 node tests/connection.mjs                  # headless, including timeout
+node tests/connection.mjs --file tests/authentication.test.tsx # authentication UI only
 node tests/connection.mjs --target android # device, with mock-server USB forwarding
 node --test tests/acp-client.mjs           # the ACP client against mock endpoints
 ```

@@ -8,7 +8,7 @@ import {
   type RequestPermissionResponse,
   type SessionUpdate,
 } from "@agentclientprotocol/sdk";
-import type { AcpClient } from "../acp/client";
+import { authenticationRequired, type AcpClient } from "../acp/client";
 import {
   applyToolCallPatch,
   createToolCallState,
@@ -59,7 +59,7 @@ export type ToolCallEntry = {
 export type ThreadEntry = UserEntry | AssistantEntry | ToolCallEntry;
 
 /** `copy` offers to copy the message, which Zed does for refusals and agent errors. */
-export type ThreadError = { title: string; message: string; copy: boolean };
+export type ThreadError = { title: string; message: string; copy: boolean; authentication?: boolean };
 
 /** How often streamed text is revealed, and how long the pending text takes to show. */
 const REVEAL_TICK_MS = 16;
@@ -101,11 +101,12 @@ function blockMarkdown(block: ContentBlock): string {
   }
 }
 
-const agentError = (reason: unknown): ThreadError => ({
-  title: "An Error Happened",
-  message: reason instanceof Error ? reason.message : String(reason),
-  copy: true,
-});
+function agentError(reason: unknown): ThreadError {
+  const auth = authenticationRequired(reason);
+  return auth
+    ? { title: "Authentication Required", message: auth.description ?? "Authentication required", copy: true, authentication: true }
+    : { title: "An Error Happened", message: reason instanceof Error ? reason.message : String(reason), copy: true };
+}
 
 function appendMarkdown(existing: string, block: ContentBlock): string {
   const next = blockMarkdown(block);
@@ -130,6 +131,7 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
   let autoExpanded: AssistantChunk | null = null;
   let permissionIds = 0;
   let disposed = false;
+  let submittedPrompt: ContentBlock[] | null = null;
 
   const nextKey = (prefix: string) => `${prefix}-${++keys}`;
 
@@ -557,6 +559,7 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
       try {
         await cancelled;
         if (disposed || turnId !== id) return;
+        submittedPrompt = [...prompt];
         pushOptimisticUserMessage(prompt);
         const response = await client.prompt(prompt);
         settle(id, { response });
@@ -582,11 +585,25 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
     for (const entry of toolCalls()) takePermission(entry)?.respond({ outcome: "cancelled" });
   }
 
+  function reset() {
+    flushStreamingText();
+    cancelPermissionRequests();
+    turnId += 1;
+    running = null;
+    autoExpanded = null;
+    submittedPrompt = null;
+    entries.set([]);
+    generating.set(false);
+    error.set(null);
+  }
+
   return {
     entries, generating, error, send, cancel, handleUpdate, toggleThought, requestPermission, authorize, awaitingPermission, waitingForConfirmation,
     toggleToolCall: (entry: ToolCallEntry) => entry.expanded.set(!entry.expanded()),
     toggleRawInput: (entry: ToolCallEntry) => entry.rawInputExpanded.set(!entry.rawInputExpanded()),
     dismissError: () => error.set(null),
+    failedPrompt: () => error()?.authentication ? submittedPrompt : null,
+    reset,
     dispose,
   };
 }
