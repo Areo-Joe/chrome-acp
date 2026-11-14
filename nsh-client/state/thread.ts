@@ -124,7 +124,7 @@ let activitySequence = 0;
  * running turn at a time. Mirrors Zed's `AcpThread` for prompt-completion
  * (ACP v1) sessions.
  */
-export function createThread(client: AcpClient, options: { agentName: () => string }) {
+export function createThread(client: AcpClient, options: { agentName: () => string; onStopped?: () => void }) {
   const entries = signal<ThreadEntry[]>([]);
   const generating = signal(false);
   const unsettled = signal(0);
@@ -547,6 +547,9 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
           });
           break;
       }
+      // Ordinary v1 emits Stopped for successful prompt responses, including
+      // refusal/cancelled. RPC failures and max_tokens do not emit it.
+      if (stopReason !== "max_tokens") options.onStopped?.();
     });
   }
 
@@ -639,6 +642,8 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
     toggleToolCall: (entry: ToolCallEntry) => entry.expanded.set(!entry.expanded()),
     toggleRawInput: (entry: ToolCallEntry) => entry.rawInputExpanded.set(!entry.rawInputExpanded()),
     dismissError: () => error.set(null),
+    reportError: (reason: unknown) => error.set(agentError(reason)),
+    cancelForQueue: () => disposed ? Promise.resolve() : requestCancellation(),
     failedPrompt: () => error()?.authentication ? submittedPrompt : null,
     activity, touch, clearActivity: () => activity.set(null),
     idleForRetention: () => !generating() && unsettled() === 0 && awaitingPermission() === null,

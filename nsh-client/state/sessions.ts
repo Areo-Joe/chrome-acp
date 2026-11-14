@@ -2,6 +2,7 @@ import { batch, effect, signal, untracked } from "nsh";
 import { historyInfoPatch, historyTimestamp, type HistorySession } from "../acp/client";
 import type { Connection } from "./connection";
 import { createComposer, type ComposerState } from "./composer";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
 
 export type OpenSession = { key: number; info: HistorySession; composer: ComposerState };
 
@@ -26,6 +27,7 @@ export function createSessions(connection: Connection, settings: { maxIdleRetain
   const patches = new Map<string, Map<keyof HistorySession, { revision: number; value: unknown }>>();
   // Like Zed's draft/metadata stores, these survive a view without retaining its thread.
   const savedDrafts = new Map<string, string>();
+  const savedQueues = new Map<string, ContentBlock[][]>();
   const releasedInfo = new Map<string, HistorySession>();
   let revision = 0;
   let generation = 0;
@@ -113,7 +115,10 @@ export function createSessions(connection: Connection, settings: { maxIdleRetain
       if (active()?.key === key) active.set(views().find((view) => view.key === key)!);
       if (loaded) void load();
     } });
-    if (info) composer.draft.set(savedDrafts.get(info.sessionId) ?? "");
+    if (info) {
+      composer.draft.set(savedDrafts.get(info.sessionId) ?? "");
+      composer.restoreQueue(savedQueues.get(info.sessionId) ?? []);
+    }
     const view = { key, info: details, composer };
     // Zed swaps base_view before retaining the old one. Do not expose a newly
     // added loading view as an inactive retention candidate between these writes.
@@ -127,7 +132,7 @@ export function createSessions(connection: Connection, settings: { maxIdleRetain
   async function remove(row: HistorySession) {
     if (disposed || deleting() !== null || !client!.supportsDelete) return;
     const open = views().find((view) => view.composer.id() === row.sessionId);
-    if (open && (open.composer.thread.generating() || open.composer.phase() !== "ready")) return;
+    if (open && (open.composer.thread.generating() || open.composer.queueLoading() || open.composer.phase() !== "ready")) return;
     deleting.set(row.sessionId);
     open?.composer.phase.set("deleting");
     error.set(null);
@@ -140,6 +145,7 @@ export function createSessions(connection: Connection, settings: { maxIdleRetain
         rows.set(rows().filter((entry) => entry.sessionId !== row.sessionId));
         patches.delete(row.sessionId);
         savedDrafts.delete(row.sessionId);
+        savedQueues.delete(row.sessionId);
         releasedInfo.delete(row.sessionId);
         if (open && active()?.key === open.key) {
           active.set(views().at(-1) ?? null);
@@ -162,6 +168,8 @@ export function createSessions(connection: Connection, settings: { maxIdleRetain
     const snapshot = views().map((view) => ({
       view, id: view.composer.id(), hasThread: view.composer.hasThread(),
       draft: view.composer.draft(), idle: view.composer.thread.idleForRetention(),
+      queued: view.composer.queued().map(entry => entry.content),
+      sending: view.composer.queueLoading(), recovering: view.composer.recoveringQueue(),
       updatedAt: view.composer.thread.activity(),
     }));
     untracked(() => {
@@ -170,11 +178,16 @@ export function createSessions(connection: Connection, settings: { maxIdleRetain
         if (entry.id === null) continue;
         if (entry.draft.length) savedDrafts.set(entry.id, entry.draft);
         else savedDrafts.delete(entry.id);
+        if (entry.queued.length) savedQueues.set(entry.id, entry.queued);
+        else savedQueues.delete(entry.id);
       }
       const candidates = snapshot.filter((entry) => {
         if (entry.view.key === selected) return false;
+        // Like Zed's saved-input/loading guards, keep a pending dispatch or
+        // recovery owner alive. Settled queues can live in the input store.
+        if (entry.sending || entry.recovering) return false;
         // Saved input without a session ID has no independent draft-store key.
-        if (entry.id === null && entry.draft.length > 0) return false;
+        if (entry.id === null && (entry.draft.length > 0 || entry.queued.length > 0)) return false;
         // Zed checks the root thread first: an absent root does not require load.
         if (!entry.hasThread) return true;
         return client!.agentCapabilities?.loadSession === true && entry.idle;
@@ -204,7 +217,7 @@ export function createSessions(connection: Connection, settings: { maxIdleRetain
     supportsHistory: client.supportsHistory, supportsRestore: client.supportsRestore, supportsDelete: client.supportsDelete,
     show: () => { visible.set(true); confirmDelete.set(null); if (!loaded) void load(); },
     canOpen: (row: HistorySession) => client!.supportsRestore || views().some((view) => view.composer.id() === row.sessionId),
-    canDelete: (row: HistorySession) => !views().some((view) => view.composer.id() === row.sessionId && (view.composer.thread.generating() || view.composer.phase() !== "ready")),
+    canDelete: (row: HistorySession) => !views().some((view) => view.composer.id() === row.sessionId && (view.composer.thread.generating() || view.composer.queueLoading() || view.composer.phase() !== "ready")),
     retry: () => { void load(lastMore); },
     refresh: () => { void load(); }, more: () => { void load(true); },
     activate: (view: OpenSession) => { active.set(view); visible.set(false); },

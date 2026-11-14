@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
+import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -13,12 +14,24 @@ const selectedFile = fileIndex === -1 ? undefined : args.splice(fileIndex, 2)[1]
 if (fileIndex !== -1) assert.ok(selectedFile, "--file requires a test file");
 const android = args.includes("android");
 // Like the Rust CLI, reject a wrong path or token with an HTTP status before the upgrade.
-const server = new WebSocketServer({ host: "127.0.0.1", port: 19437, verifyClient: ({ req }, done) => {
+const queueControls = new Map();
+const http = createServer((req, res) => {
+  const url = new URL(req.url, "http://localhost");
+  if (url.pathname !== "/__queue") { res.writeHead(404); res.end(); return; }
+  const control = queueControls.get(url.searchParams.get("token"));
+  if (!control) { res.writeHead(404); res.end("No agent"); return; }
+  const action = url.searchParams.get("action");
+  if (action === "finish") control.finish(url.searchParams.get("id") ?? "test-session", url.searchParams.get("reason") ?? "end_turn");
+  res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+  res.end(JSON.stringify(control.snapshot()));
+});
+const server = new WebSocketServer({ server: http, verifyClient: ({ req }, done) => {
   const url = new URL(req.url, "http://localhost");
   if (url.pathname !== "/acp") return done(false, 404);
   done(url.searchParams.get("token") !== "invalid", 401);
 } });
-await once(server, "listening");
+http.listen(19437, "127.0.0.1");
+await once(http, "listening");
 let connects = 0;
 const timers = new Set();
 // A 1×1 PNG.
@@ -50,6 +63,33 @@ server.on("connection", (socket, request) => {
   const result = (id, value) => send({ id, result: value });
   const error = (id, message, code = -32603) => send({ id, error: { code, message } });
   const update = (value) => send({ method: "session/update", params: { sessionId: "test-session", update: value } });
+
+  const queuePrompts = [];
+  const queueCancels = [];
+  const queuePending = new Map();
+  function finishQueue(id, reason) {
+    const turn = queuePending.get(id);
+    if (!turn) return;
+    queuePending.delete(id);
+    send({ method: "session/update", params: { sessionId: id, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Finished ${turn.input}` } } } });
+    if (reason === "error" || reason === "auth") error(turn.request, reason === "auth" ? "Credentials expired" : "Queue turn failed", reason === "auth" ? -32000 : -32603);
+    else result(turn.request, { stopReason: reason });
+  }
+  const queueControl = {
+    finish: finishQueue,
+    snapshot: () => ({ prompts: queuePrompts, cancels: queueCancels, pending: [...queuePending.keys()] }),
+  };
+  queueControls.set(token, queueControl);
+  socket.on("close", () => { if (queueControls.get(token) === queueControl) queueControls.delete(token); });
+  function queuePrompt(message) {
+    const input = message.params.prompt[0]?.text ?? "";
+    if (!input.startsWith("queue-")) return false;
+    const id = message.params.sessionId;
+    assert.equal(queuePending.has(id), false, "A queued v1 prompt must wait for the cancelled prompt to settle");
+    queuePending.set(id, { request: message.id, input });
+    send({ method: "session/update", params: { sessionId: id, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Running ${input}` } } } });
+    return true;
+  }
   const text = (sessionUpdate, value, messageId) => update({ sessionUpdate, content: { type: "text", text: value }, ...(messageId ? { messageId } : {}) });
   let cancelled = false;
   let authenticated = false;
@@ -99,6 +139,7 @@ server.on("connection", (socket, request) => {
     assert.equal(message.params.prompt[0].type, "text");
     const input = message.params.prompt[0].text;
     promptCalls++;
+    if (queuePrompt(message)) return;
     if (input === "needs-auth" && !authenticated) return error(message.id, "Credentials expired", -32000);
     if (input === "auth-status") {
       staleConfigurationReply?.();
@@ -400,6 +441,7 @@ server.on("connection", (socket, request) => {
     }
     if (message.method === "session/prompt") {
       assert.ok(sessionOptions.has(id));
+      if (queuePrompt(message)) return;
       const input = message.params.prompt[0].text;
       if ((token === "history-usage" || token === "history-retention-usage") && input === "usage-background") {
         send({ method: "session/update", params: { sessionId: "new-1", update: { sessionUpdate: "usage_update", used: 9000, size: 10000, cost: { amount: 12, currency: "credits" } } } });
@@ -440,12 +482,15 @@ server.on("connection", (socket, request) => {
       } else historyText(`Reply in ${id}: ${input}`);
       return result(message.id, { stopReason: "end_turn" });
     }
-    if (message.method === "session/cancel" || message.method === "$/cancel_request") return;
+    if (message.method === "session/cancel") { const turn = queuePending.get(id); if (turn) later(() => { if (queuePending.get(id) === turn) finishQueue(id, "cancelled"); }, 200); return; }
+    if (message.method === "$/cancel_request") return;
     assert.fail(`Unexpected history method ${message.method}`);
   }
   socket.on("message", (data) => {
     const message = JSON.parse(data.toString());
     assert.equal(message.jsonrpc, "2.0");
+    if (message.method === "session/prompt") queuePrompts.push({ sessionId: message.params.sessionId, text: message.params.prompt.map(block => block.text ?? "").join("") });
+    if (message.method === "session/cancel") queueCancels.push(message.params.sessionId);
     assert.equal("type" in message, false, "Only JSON-RPC objects are sent");
     if (message.method === undefined) {
       const answer = waiting.get(message.id);
@@ -575,6 +620,8 @@ server.on("connection", (socket, request) => {
       assert.equal(message.id, undefined, "session/cancel is a notification");
       assert.equal(message.params.sessionId, "test-session");
       cancelled = true;
+      const turn = queuePending.get("test-session");
+      if (turn) later(() => { if (queuePending.get("test-session") === turn) finishQueue("test-session", "cancelled"); }, 200);
       if (onCancel) later(onCancel, 100);
       onCancel = null;
       return;
@@ -615,7 +662,7 @@ try {
     const forward = spawnSync("adb", ["reverse", "tcp:19437", "tcp:19437"], { stdio: "inherit" });
     assert.equal(forward.status, 0, "Could not forward the mock server port to Android");
   }
-  const files = selectedFile ? [selectedFile] : ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/plan.test.tsx", "tests/usage.test.tsx", "tests/tools.test.tsx", "tests/authentication.test.tsx", "tests/sessions.test.tsx", "tests/retention.test.tsx"];
+  const files = selectedFile ? [selectedFile] : ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/plan.test.tsx", "tests/usage.test.tsx", "tests/queue.test.tsx", "tests/tools.test.tsx", "tests/authentication.test.tsx", "tests/sessions.test.tsx", "tests/retention.test.tsx"];
   if (!android && !selectedFile) files.push("tests/connection-timeout.test.tsx", "tests/optimistic-change.test.tsx");
   for (const file of files) {
     const child = spawn(`${root}.nsh/toolchain/bin/nsh`, ["test", file, ...args], { cwd: root, stdio: "inherit" });
@@ -627,6 +674,7 @@ try {
   for (const timer of timers) clearTimeout(timer);
   for (const socket of server.clients) socket.terminate();
   await new Promise((resolve) => server.close(resolve));
+  await new Promise((resolve) => http.close(resolve));
   if (android) spawnSync("adb", ["reverse", "--remove", "tcp:19437"], { stdio: "inherit" });
 }
 process.exitCode = code ?? 1;

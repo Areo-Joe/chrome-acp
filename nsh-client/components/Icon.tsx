@@ -8,22 +8,25 @@ import check from "../icons/check.svg";
 import chevronDown from "../icons/chevron-down.svg";
 import chevronUp from "../icons/chevron-up.svg";
 import circleX from "../icons/circle-x.svg";
+import circle from "../icons/circle.svg";
 import copy from "../icons/copy.svg";
 import fileX from "../icons/file-x.svg";
 import globe from "../icons/globe.svg";
 import hammer from "../icons/hammer.svg";
 import loaderCircle from "../icons/loader-circle.svg";
+import listPlus from "../icons/list-plus.svg";
 import pencil from "../icons/pencil.svg";
 import search from "../icons/search.svg";
 import squareTerminal from "../icons/square-terminal.svg";
 import square from "../icons/square.svg";
 import triangle from "../icons/triangle.svg";
+import trash from "../icons/trash-2.svg";
 import x from "../icons/x.svg";
 
 const icons = {
   "arrow-down": arrowDown, "arrow-right-left": arrowRightLeft, "arrow-up": arrowUp, brain, "check-check": checkCheck, check,
-  "chevron-down": chevronDown, "chevron-up": chevronUp, "circle-x": circleX, copy, "file-x": fileX,
-  globe, hammer, "loader-circle": loaderCircle, pencil, search, "square-terminal": squareTerminal, square, triangle, x,
+  "chevron-down": chevronDown, "chevron-up": chevronUp, "circle-x": circleX, circle, copy, "file-x": fileX,
+  globe, hammer, "loader-circle": loaderCircle, "list-plus": listPlus, pencil, search, "square-terminal": squareTerminal, square, triangle, "trash-2": trash, x,
 };
 
 export type IconName = keyof typeof icons;

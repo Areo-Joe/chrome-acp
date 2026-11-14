@@ -1,0 +1,2130 @@
+{
+  "reference": "Zed 62682ebde9; conversation_view/message_queue.rs; unchanged state machine with data-only QueueEntry",
+  "cases": [
+    {
+      "name": "fifo and fast flag across automatic processing",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "enqueue",
+          "text": "b"
+        },
+        {
+          "op": "stopped"
+        },
+        {
+          "op": "stopped"
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": {
+            "id": 0,
+            "text": "a"
+          }
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 1,
+            "text": "b"
+          }
+        }
+      ]
+    },
+    {
+      "name": "manual stop pauses; explicit enqueue resumes",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "pause"
+        },
+        {
+          "op": "stopped"
+        },
+        {
+          "op": "enqueue",
+          "text": "b"
+        },
+        {
+          "op": "stopped"
+        },
+        {
+          "op": "stopped"
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": {
+            "id": 0,
+            "text": "a"
+          }
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 1,
+            "text": "b"
+          }
+        }
+      ]
+    },
+    {
+      "name": "focused first entry holds automatic processing",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "enqueue",
+          "text": "b"
+        },
+        {
+          "op": "stopped",
+          "flag": true
+        },
+        {
+          "op": "stopped",
+          "flag": false
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": {
+            "id": 0,
+            "text": "a"
+          }
+        }
+      ]
+    },
+    {
+      "name": "fast track absorbs exactly one cancellation",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "enqueue",
+          "text": "b"
+        },
+        {
+          "op": "enqueue",
+          "text": "c"
+        },
+        {
+          "op": "fast",
+          "flag": true
+        },
+        {
+          "op": "stopped"
+        },
+        {
+          "op": "stopped"
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "b"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "absorbing-cancel",
+          "fast": false,
+          "result": {
+            "id": 0,
+            "text": "a"
+          }
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "b"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 1,
+            "text": "b"
+          }
+        }
+      ]
+    },
+    {
+      "name": "paused fast track is an explicit resume",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "enqueue",
+          "text": "b"
+        },
+        {
+          "op": "pause"
+        },
+        {
+          "op": "fast"
+        },
+        {
+          "op": "stopped"
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 0,
+            "text": "a"
+          }
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 1,
+            "text": "b"
+          }
+        }
+      ]
+    },
+    {
+      "name": "send now while paused and idle keeps pause",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "enqueue",
+          "text": "b"
+        },
+        {
+          "op": "pause"
+        },
+        {
+          "op": "now",
+          "id": 1
+        },
+        {
+          "op": "stopped"
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": {
+            "id": 1,
+            "text": "b"
+          }
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "send now from the middle absorbs cancellation",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "enqueue",
+          "text": "b"
+        },
+        {
+          "op": "enqueue",
+          "text": "c"
+        },
+        {
+          "op": "now",
+          "id": 1,
+          "flag": true
+        },
+        {
+          "op": "stopped"
+        },
+        {
+          "op": "stopped"
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "absorbing-cancel",
+          "fast": true,
+          "result": {
+            "id": 1,
+            "text": "b"
+          }
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": {
+            "id": 0,
+            "text": "a"
+          }
+        }
+      ]
+    },
+    {
+      "name": "failed cancel restores stable id order and pauses",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "enqueue",
+          "text": "b"
+        },
+        {
+          "op": "enqueue",
+          "text": "c"
+        },
+        {
+          "op": "now",
+          "id": 1,
+          "flag": true
+        },
+        {
+          "op": "restore",
+          "id": 1,
+          "text": "b"
+        },
+        {
+          "op": "stopped"
+        },
+        {
+          "op": "resume"
+        },
+        {
+          "op": "stopped"
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "absorbing-cancel",
+          "fast": true,
+          "result": {
+            "id": 1,
+            "text": "b"
+          }
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "b"
+            },
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": {
+            "id": 0,
+            "text": "a"
+          }
+        }
+      ]
+    },
+    {
+      "name": "clear preserves pause and never reuses ids",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "pause"
+        },
+        {
+          "op": "clear"
+        },
+        {
+          "op": "enqueue",
+          "text": "b"
+        },
+        {
+          "op": "fast"
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "paused",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 1,
+            "text": "b"
+          }
+        }
+      ]
+    },
+    {
+      "name": "remove does not disable remaining fast track",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "enqueue",
+          "text": "b"
+        },
+        {
+          "op": "remove",
+          "id": 0
+        },
+        {
+          "op": "fast"
+        },
+        {
+          "op": "fast"
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": {
+            "id": 0,
+            "text": "a"
+          }
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 1,
+            "text": "b"
+          }
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "unknown send now leaves processing unchanged",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "pause"
+        },
+        {
+          "op": "now",
+          "id": 9,
+          "flag": true
+        },
+        {
+          "op": "stopped"
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "clear during absorbing cancellation",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "a"
+        },
+        {
+          "op": "enqueue",
+          "text": "b"
+        },
+        {
+          "op": "now",
+          "id": 0,
+          "flag": true
+        },
+        {
+          "op": "clear"
+        },
+        {
+          "op": "stopped"
+        },
+        {
+          "op": "enqueue",
+          "text": "c"
+        },
+        {
+          "op": "stopped"
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "a"
+            },
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "b"
+            }
+          ],
+          "processing": "absorbing-cancel",
+          "fast": true,
+          "result": {
+            "id": 0,
+            "text": "a"
+          }
+        },
+        {
+          "entries": [],
+          "processing": "absorbing-cancel",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 2,
+              "text": "c"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 2,
+            "text": "c"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mixed state trace 1",
+      "commands": [
+        {
+          "op": "remove",
+          "id": 0
+        },
+        {
+          "op": "stopped",
+          "flag": true
+        },
+        {
+          "op": "stopped",
+          "flag": true
+        },
+        {
+          "op": "resume"
+        },
+        {
+          "op": "enqueue",
+          "text": "4"
+        },
+        {
+          "op": "enqueue",
+          "text": "5"
+        },
+        {
+          "op": "fast",
+          "flag": false
+        },
+        {
+          "op": "resume"
+        },
+        {
+          "op": "now",
+          "flag": true,
+          "id": 1
+        },
+        {
+          "op": "enqueue",
+          "text": "9"
+        },
+        {
+          "op": "resume"
+        },
+        {
+          "op": "fast",
+          "flag": false
+        },
+        {
+          "op": "stopped",
+          "flag": true
+        },
+        {
+          "op": "stopped",
+          "flag": false
+        },
+        {
+          "op": "resume"
+        },
+        {
+          "op": "stopped",
+          "flag": true
+        }
+      ],
+      "expected": [
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "4"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "4"
+            },
+            {
+              "id": 1,
+              "text": "5"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "5"
+            }
+          ],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 0,
+            "text": "4"
+          }
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "5"
+            }
+          ],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "absorbing-cancel",
+          "fast": false,
+          "result": {
+            "id": 1,
+            "text": "5"
+          }
+        },
+        {
+          "entries": [
+            {
+              "id": 2,
+              "text": "9"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 2,
+              "text": "9"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 2,
+            "text": "9"
+          }
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "mixed state trace 2",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "0"
+        },
+        {
+          "op": "stopped",
+          "flag": false
+        },
+        {
+          "op": "stopped",
+          "flag": true
+        },
+        {
+          "op": "enqueue",
+          "text": "3"
+        },
+        {
+          "op": "enqueue",
+          "text": "4"
+        },
+        {
+          "op": "pause"
+        },
+        {
+          "op": "enqueue",
+          "text": "6"
+        },
+        {
+          "op": "enqueue",
+          "text": "7"
+        },
+        {
+          "op": "now",
+          "flag": false,
+          "id": 4
+        },
+        {
+          "op": "now",
+          "flag": false,
+          "id": 1
+        },
+        {
+          "op": "resume"
+        },
+        {
+          "op": "enqueue",
+          "text": "11"
+        },
+        {
+          "op": "enqueue",
+          "text": "12"
+        },
+        {
+          "op": "stopped",
+          "flag": false
+        },
+        {
+          "op": "fast",
+          "flag": true
+        },
+        {
+          "op": "stopped",
+          "flag": false
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "0"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 0,
+            "text": "0"
+          }
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "3"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "3"
+            },
+            {
+              "id": 2,
+              "text": "4"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "3"
+            },
+            {
+              "id": 2,
+              "text": "4"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "3"
+            },
+            {
+              "id": 2,
+              "text": "4"
+            },
+            {
+              "id": 3,
+              "text": "6"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "3"
+            },
+            {
+              "id": 2,
+              "text": "4"
+            },
+            {
+              "id": 3,
+              "text": "6"
+            },
+            {
+              "id": 4,
+              "text": "7"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "3"
+            },
+            {
+              "id": 2,
+              "text": "4"
+            },
+            {
+              "id": 3,
+              "text": "6"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": {
+            "id": 4,
+            "text": "7"
+          }
+        },
+        {
+          "entries": [
+            {
+              "id": 2,
+              "text": "4"
+            },
+            {
+              "id": 3,
+              "text": "6"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": {
+            "id": 1,
+            "text": "3"
+          }
+        },
+        {
+          "entries": [
+            {
+              "id": 2,
+              "text": "4"
+            },
+            {
+              "id": 3,
+              "text": "6"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 2,
+              "text": "4"
+            },
+            {
+              "id": 3,
+              "text": "6"
+            },
+            {
+              "id": 5,
+              "text": "11"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 2,
+              "text": "4"
+            },
+            {
+              "id": 3,
+              "text": "6"
+            },
+            {
+              "id": 5,
+              "text": "11"
+            },
+            {
+              "id": 6,
+              "text": "12"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 3,
+              "text": "6"
+            },
+            {
+              "id": 5,
+              "text": "11"
+            },
+            {
+              "id": 6,
+              "text": "12"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": {
+            "id": 2,
+            "text": "4"
+          }
+        },
+        {
+          "entries": [
+            {
+              "id": 5,
+              "text": "11"
+            },
+            {
+              "id": 6,
+              "text": "12"
+            }
+          ],
+          "processing": "absorbing-cancel",
+          "fast": false,
+          "result": {
+            "id": 3,
+            "text": "6"
+          }
+        },
+        {
+          "entries": [
+            {
+              "id": 5,
+              "text": "11"
+            },
+            {
+              "id": 6,
+              "text": "12"
+            }
+          ],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "mixed state trace 3",
+      "commands": [
+        {
+          "op": "enqueue",
+          "text": "0"
+        },
+        {
+          "op": "fast",
+          "flag": false
+        },
+        {
+          "op": "now",
+          "flag": true,
+          "id": 4
+        },
+        {
+          "op": "fast",
+          "flag": false
+        },
+        {
+          "op": "remove",
+          "id": 1
+        },
+        {
+          "op": "remove",
+          "id": 2
+        },
+        {
+          "op": "enqueue",
+          "text": "6"
+        },
+        {
+          "op": "enqueue",
+          "text": "7"
+        },
+        {
+          "op": "clear"
+        },
+        {
+          "op": "resume"
+        },
+        {
+          "op": "resume"
+        },
+        {
+          "op": "resume"
+        },
+        {
+          "op": "enqueue",
+          "text": "12"
+        },
+        {
+          "op": "pause"
+        },
+        {
+          "op": "enqueue",
+          "text": "14"
+        },
+        {
+          "op": "fast",
+          "flag": true
+        }
+      ],
+      "expected": [
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "0"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 0,
+            "text": "0"
+          }
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "6"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 1,
+              "text": "6"
+            },
+            {
+              "id": 2,
+              "text": "7"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 3,
+              "text": "12"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 3,
+              "text": "12"
+            }
+          ],
+          "processing": "paused",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 3,
+              "text": "12"
+            },
+            {
+              "id": 4,
+              "text": "14"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 4,
+              "text": "14"
+            }
+          ],
+          "processing": "absorbing-cancel",
+          "fast": false,
+          "result": {
+            "id": 3,
+            "text": "12"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mixed state trace 4",
+      "commands": [
+        {
+          "op": "now",
+          "flag": false,
+          "id": 1
+        },
+        {
+          "op": "pause"
+        },
+        {
+          "op": "now",
+          "flag": false,
+          "id": 3
+        },
+        {
+          "op": "remove",
+          "id": 2
+        },
+        {
+          "op": "enqueue",
+          "text": "4"
+        },
+        {
+          "op": "enqueue",
+          "text": "5"
+        },
+        {
+          "op": "stopped",
+          "flag": true
+        },
+        {
+          "op": "clear"
+        },
+        {
+          "op": "enqueue",
+          "text": "8"
+        },
+        {
+          "op": "fast",
+          "flag": true
+        },
+        {
+          "op": "now",
+          "flag": true,
+          "id": 3
+        },
+        {
+          "op": "stopped",
+          "flag": false
+        },
+        {
+          "op": "remove",
+          "id": 5
+        },
+        {
+          "op": "remove",
+          "id": 2
+        },
+        {
+          "op": "enqueue",
+          "text": "14"
+        },
+        {
+          "op": "stopped",
+          "flag": false
+        }
+      ],
+      "expected": [
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "paused",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "paused",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "paused",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "4"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "4"
+            },
+            {
+              "id": 1,
+              "text": "5"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 0,
+              "text": "4"
+            },
+            {
+              "id": 1,
+              "text": "5"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 2,
+              "text": "8"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "absorbing-cancel",
+          "fast": false,
+          "result": {
+            "id": 2,
+            "text": "8"
+          }
+        },
+        {
+          "entries": [],
+          "processing": "absorbing-cancel",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": null
+        },
+        {
+          "entries": [
+            {
+              "id": 3,
+              "text": "14"
+            }
+          ],
+          "processing": "auto",
+          "fast": true,
+          "result": null
+        },
+        {
+          "entries": [],
+          "processing": "auto",
+          "fast": false,
+          "result": {
+            "id": 3,
+            "text": "14"
+          }
+        }
+      ]
+    }
+  ]
+}

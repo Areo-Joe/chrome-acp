@@ -58,8 +58,11 @@ revealed smoothly, with the agent's thinking open while it streams and collapsed
 once the agent moves on. Stop sends `session/cancel` and ends the turn at once.
 A refusal removes the refused message and names the agent; output limits and
 failed prompts show an error that can be dismissed, and refusals and failures can
-also be copied. Sending while a turn runs (Zed's queue) is
-deferred: Stop replaces Send until the turn ends.
+also be copied. Sending a nonempty draft while a turn runs adds it to the
+message queue. An empty generating composer shows Stop. Queued messages send
+in FIFO order on ordinary v1 completion; Stop pauses the queue. Each entry can
+be edited, removed or sent immediately after cancellation settles. See
+[the queue comparison](docs/ZED_QUEUE.md) for the state machine and recovery rules.
 
 Tool calls show in the thread as Zed shows them: a line with the tool's icon and
 title that opens to its input and output, or a card for edits (with their diff),

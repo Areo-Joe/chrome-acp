@@ -2,6 +2,7 @@ import { cleanup, Keyboard, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import { Composer } from "../components/Composer";
 import { PlanView } from "../components/Plan";
+import { MessageQueueView } from "../components/MessageQueue";
 import { Authentication } from "../components/Authentication";
 import { SessionHistory } from "../components/SessionHistory";
 import { ThreadErrorCallout, ThreadView } from "../components/Thread";
@@ -28,6 +29,7 @@ function Conversation(props: { composer: ComposerState }) {
           </Button>
         </If>
         <PlanView thread={composer.thread} />
+        <MessageQueueView state={composer} />
         <Composer state={composer} />
       </>
     }>

@@ -1,21 +1,59 @@
-import { cleanup, Scroll, signal, Text, View, type InputRef } from "nsh";
+import { cleanup, effect, keymap, platform, Scroll, signal, Text, View, type InputRef } from "nsh";
 import { Button, Input } from "nsh/base";
 import { commandHint, commandMatches, configChoices, type ComposerState } from "../state/composer";
 import { ConfigPicker } from "./ConfigPicker";
 import { Icon } from "./Icon";
 import { ContextUsageView } from "./ContextUsage";
+import { Spinner } from "./Spinner";
 
 export function Composer(props: { state: ComposerState }) {
   const state = props.state;
   const contentHeight = signal(80);
   const composing = signal(false);
   const complete = signal(true);
+  const focused = signal(false);
   let input: InputRef | undefined;
   let focusTimer: ReturnType<typeof setTimeout> | undefined;
   const suggestions = () => complete() && !composing() ? commandMatches(state.draft(), state.commands()) : [];
   const hint = () => composing() ? null : commandHint(state.draft(), state.commands());
   const busy = () => state.phase() !== "ready" || state.pending() !== null;
   cleanup(() => { if (focusTimer !== undefined) clearTimeout(focusTimer); });
+  let focusVersion = state.focusRequest().version;
+  effect(() => {
+    const request = state.focusRequest();
+    if (request.version === focusVersion) return;
+    focusVersion = request.version;
+    if (focusTimer !== undefined) clearTimeout(focusTimer);
+    focusTimer = setTimeout(() => {
+      input?.focus();
+      if (request.offset !== undefined) input?.setSelection(request.offset, request.offset);
+    }, 0);
+  });
+  effect(() => {
+    if (!focused() && state.queueFocused() === null) return;
+    cleanup(keymap.bind("mod+enter", () => {
+      if (composing()) return;
+      if (state.queueFocused() !== null) state.focusMain();
+      else state.submit();
+    }, { when: "always" }));
+    cleanup(keymap.bind("mod+shift+enter", () => {
+      if (composing()) return;
+      const queued = state.queueFocused();
+      if (queued !== null) state.sendNow(queued);
+      else if (state.draft().trim()) state.sendImmediately();
+    }, { when: "always" }));
+  });
+  effect(() => {
+    if (!focused() || state.draft().trim().length || !state.queued().length) return;
+    cleanup(keymap.bind("up", state.editLastQueued, { when: "always" }));
+  });
+  effect(() => {
+    if (state.queueFocused() === null) return;
+    cleanup(keymap.bind("escape", () => state.focusMain(), { when: "always" }));
+    // Zed's editor::Newline returns immediately in a read-only queue editor.
+    // Consume this before AppKit's editable preview can insert a newline.
+    cleanup(keymap.bind("shift+enter", () => {}, { when: "always" }));
+  });
 
   function chooseCommand(name: string, requiresInput: boolean) {
     const value = `/${name}${requiresInput ? " " : ""}`;
@@ -60,9 +98,12 @@ export function Composer(props: { state: ComposerState }) {
             value={state.draft()}
             onChange={({ value }) => { state.draft.set(value); complete.set(true); }}
             onCompositionChange={({ composing: active }) => composing.set(active)}
+            onFocus={() => { focused.set(true); state.queueFocused.set(null); }}
+            onBlur={() => focused.set(false)}
             onContentSizeChange={({ size }) => contentHeight.set(Math.max(80, Math.ceil(size.height)))}
             multiline
-            submitBehavior="newline"
+            submitBehavior={platform.desktop ? "submit" : "newline"}
+            onSubmit={() => { if (!composing()) state.submit(); }}
             placeholder="Message the agent…"
             class="flex-1 text-base text-foreground placeholder:text-muted-foreground"
             style={{ height: Math.min(144, contentHeight()), paddingTop: 10, paddingBottom: 6, lineHeight: 24, textAlignVertical: "top" }}
@@ -100,17 +141,17 @@ export function Composer(props: { state: ComposerState }) {
             </If>
           </View>
           <ContextUsageView thread={state.thread} />
-          <If
-            when={state.thread.generating()}
+          <If when={state.queueLoading()} else={<If
+            when={state.thread.generating() && !state.draft().trim()}
             else={
               <Button
                 testID="send-message"
                 disabled={state.phase() !== "ready" || !state.draft().trim()}
-                accessibilityLabel="Send message"
+                accessibilityLabel={state.thread.generating() ? "Queue and Send" : "Send message"}
                 onPress={() => state.submit()}
                 class="h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary disabled:opacity-30"
               >
-                <Icon name="arrow-up" tone="primary-foreground" />
+                <Icon name={state.thread.generating() ? "list-plus" : "arrow-up"} tone="primary-foreground" />
               </Button>
             }
           >
@@ -122,6 +163,8 @@ export function Composer(props: { state: ComposerState }) {
             >
               <Icon name="square" size={16} tone="destructive" />
             </Button>
+          </If>}>
+            <View testID="queue-loading" accessibilityLabel="Loading Message Content" class="px-1"><Spinner /></View>
           </If>
         </View>
       </View>

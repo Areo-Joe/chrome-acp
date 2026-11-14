@@ -15,7 +15,7 @@
 | session 运行状态、草稿是否为空、上下文是否加载完成 | `thread_view.rs:6456` | 生成中显示 Stop；空闲时 Send，空白草稿禁用；session 初始化失败可查看错误并断开 |
 | token usage、profile、follow、fast/thinking、自有 skills | `thread_view.rs:5319`、`message_editor.rs:49` | 暂缓；其中部分属于 Zed 的项目或内置 agent 功能，不能假定任意 ACP agent 都会提供 |
 
-Zed 发送按钮：上下文加载中显示 loading；生成中且草稿为空时 Stop；生成中有草稿时 Queue；空闲时 Send，空草稿禁用。NSH 暂不实现 Queue：生成中始终显示 Stop，草稿保留到本轮结束。
+Zed 发送按钮：上下文加载中显示 loading；生成中且草稿为空时 Stop；生成中有草稿时 Queue；空闲时 Send，空草稿禁用。Queue 已按当前 v1 路径实现，见 [发送队列对照](ZED_QUEUE.md)。
 
 ## 发送、流式回复与停止
 
@@ -31,7 +31,7 @@ Zed 发送按钮：上下文加载中显示 loading；生成中且草稿为空�
 | 结束 | `acp_thread.rs:7408` | 只有同一轮才回到空闲；`turn_id` 已变则忽略结果；`max_tokens` 显示 Output Limit Reached；`refusal` 删除最后一条用户消息及之后条目，显示 Request Refused，以 agent 名称指明拒绝方（`thread_view.rs:13036`）；失败显示 An Error Happened，信息按 Markdown 渲染（`thread_view.rs:12710`、`:12756`、`:13052`）；都可关闭，拒绝和失败可复制信息，输出上限不可复制 |
 | 停止 | `acp_thread.rs:7588` `cancel`、`:7630` `request_cancellation` | 发 `session/cancel` 通知，立即回到空闲；agent 在回复 `cancelled` 前发来的内容照常显示 |
 
-发送时滚动到底部；之后用户离底部 48 pt 以内才跟随新内容。计划、图片 / 文件附件、编辑和重发、Queue 暂缓。
+发送时滚动到底部；之后用户离底部 48 pt 以内才跟随新内容。普通 plan、usage 和 Queue 已分别实现；图片 / 文件附件、历史消息编辑和重发仍暂缓。
 
 ## 工具调用与权限请求
 
