@@ -239,13 +239,14 @@ server.on("connection", (socket, request) => {
       assert.equal(message.params.cwd, "/workspace");
       assert.deepEqual(message.params.mcpServers, []);
       if (token === "session-error") return error(message.id, "Session creation failed");
-      update({ sessionUpdate: "available_commands_update", availableCommands: commands });
-      return result(message.id, {
+      result(message.id, {
         sessionId: "test-session",
         ...(token.startsWith("legacy") ? { modes: {
           currentModeId: "ask", availableModes: [{ id: "ask", name: "Ask" }, { id: "code", name: "Code" }, { id: "plan", name: "Plan" }],
         } } : token === "empty" ? {} : { configOptions: options }),
       });
+      update({ sessionUpdate: "available_commands_update", availableCommands: commands });
+      return;
     }
     if (message.method === "session/set_config_option") {
       assert.notEqual(token, "legacy");

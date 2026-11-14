@@ -19,7 +19,6 @@ export class AcpClient {
   private socket: WebSocket | null = null;
   private sessionId: string | null = null;
   private creatingSession = false;
-  private earlyUpdates: acp.SessionNotification[] = [];
   private closeMessage: string | undefined;
   private _agentInfo: acp.Implementation | null = null;
   private _configOptions: acp.SessionConfigOption[] | null = null;
@@ -110,11 +109,12 @@ export class AcpClient {
     } as unknown as WebSocketConstructor;
     const app = acp.client({ name: "nsh-client" });
     app.onNotification(acp.methods.client.session.update, ({ params }) => {
-      if (params.sessionId === this.sessionId) this.applyUpdate(params.update);
-      else if (this.creatingSession) {
-        if (this.earlyUpdates.length === 128) this.earlyUpdates.shift();
-        this.earlyUpdates.push(params);
+      if (params.sessionId !== this.sessionId) {
+        // Like Zed v1, only registered sessions receive notifications.
+        console.warn("Received session notification for unknown session:", params.sessionId);
+        return;
       }
+      this.applyUpdate(params.update);
     });
     app.onRequest(acp.methods.client.session.requestPermission, ({ params, signal }) => {
       if (params.sessionId !== this.sessionId) throw acp.RequestError.sessionNotFound(params.sessionId);
@@ -164,19 +164,16 @@ export class AcpClient {
     try {
       const result = await connection.agent.request(acp.methods.agent.session.new, { cwd: this.settings.cwd, mcpServers: [] });
       if (this.connection !== connection) throw new Error("Connection closed");
-      this.sessionId = result.sessionId;
-      for (const notification of this.earlyUpdates) {
-        if (notification.sessionId === this.sessionId) this.applyUpdate(notification.update);
-      }
       this._configOptions = result.configOptions ?? null;
       this._sessionModes = this._configOptions ? null : result.modes ?? null;
+      // Initialize the response state before registering, as Zed v1 does.
+      this.sessionId = result.sessionId;
       this.onConfig?.(this._configOptions);
       this.onModes?.(this._sessionModes);
       this.onCreated?.(result.sessionId);
       return result.sessionId;
     } finally {
       this.creatingSession = false;
-      this.earlyUpdates = [];
     }
   }
 
@@ -232,7 +229,6 @@ export class AcpClient {
 
   private resetSession(): void {
     this.sessionId = null;
-    this.earlyUpdates = [];
     this._configOptions = null;
     this._sessionModes = null;
     this._availableCommands = [];

@@ -64,11 +64,11 @@ Zed 发送按钮：上下文加载中显示 loading；生成中且草稿为空�
 
 1. 通过 `acp/client.ts` 的 `AcpClient` 和 ACP SDK 的 WebSocket transport 发送 `initialize`，等待匹配的 JSON-RPC 响应后进入 Chat。服务端是 Rust CLI 的 `/acp` 端点，只透传标准 JSON-RPC。
 2. 连接页要求填写服务端所在机器上的绝对工作目录，作为 `session/new.cwd`；会话创建等待其 RPC 响应取得 ID 和配置。
-3. `AcpClient` 在会话创建期间有界缓冲提前到达的 `session/update`，按 session ID 应用命令更新，并消费后续命令、配置和 mode 通知。
+3. 新建会话对齐 Zed v1（本地 revision `62682ebde9` 的 `agent_servers/src/acp/v1.rs`）：收到 `session/new` 响应后，先初始化配置与 mode，再注册 session 并通知 UI。处理 `session/update` 时尚未注册或 ID 不匹配的通知记录警告并忽略，不缓存、不回放；注册后消费命令、配置和 mode 通知。此行为仅针对新建会话，未来 `session/load` 的响应前历史回放须单独实现。
 4. 配置变更发送 `session/set_config_option`，boolean 请求带 `type: "boolean"`；旧 mode 发送 `session/set_mode`。等待对应 RPC 响应结束乐观变更：成功时展示响应的实际值，即使值被规范化或选项被移除，也立即结束等待。期间的匹配通知只更新服务端状态，不提前确认 RPC；后续失败仍可展示。mode 请求期间收到的权威通知会保留，空成功响应只在没有更新时采用请求值。SDK 根据请求 ID 关联错误，迟到失败不会取消后续配置变更。保留乐观目标值和 300 ms 延迟 loading；配置变更没有固定超时，对应 RPC 结束前持续等待并阻止下一次变更。session 创建仍为 30 秒超时。
 5. session / 配置错误保留连接并展示错误；连接关闭、Disconnect、Chat 返回操作回到连接页，销毁草稿与 session 监听器。连接页内存中的地址和 token 保留。
 
-Zed 此 revision 使用 `acp_v2`；此实现使用 nsh-client 自己依赖的 ACP SDK（2.4.0）的 v1 schema 和官方 JSON-RPC 实现。这里对照交互语义，以 SDK 实际类型为准，不复制 Zed v2 的 wire schema。
+当前协议行为以 Zed 的 `agent_servers/src/acp/v1.rs` 和 `AcpThread` 的 prompt-completion 路径为对齐基准。Zed 内部共享的 `acp_v2` 类型不代表连接使用 v2 协议；此实现使用 ACP SDK（2.4.0）的 v1 schema 和官方 JSON-RPC 实现。协议模式默认 `v1`，`auto` 为 TODO / unimplemented。
 
 `state/optimistic-change.ts` 抽出单次乐观 RPC 变更的生命周期：接收 RPC Promise、当前值检查和错误回调，管理临时目标值、延迟 loading 及销毁；当前值检查仅用于跳过重复选择，操作由对应 Promise 的成功或失败结束。`state/composer.ts` 负责 ACP 字段映射和目标值的显示覆盖；服务端数据始终单独保留，因此失败时也能保留等待期间收到的其他配置更新。
 

@@ -35,7 +35,7 @@ test('auto is explicitly unimplemented before opening a connection', async () =>
   await assert.rejects(client.connect(), /ACP protocol mode 'auto' is unimplemented/);
 });
 
-test('ACP initialization, cwd, early commands, boolean discriminator, and response-only config confirmation', { timeout: 10000 }, async (t) => {
+test('ACP initialization, cwd, commands, boolean discriminator, and response-only config confirmation', { timeout: 10000 }, async (t) => {
   const client = await mock(t, (message, socket, send, request) => {
     assert.equal(new URL(request.url, 'http://localhost').searchParams.get('token'), 'token');
     assert.equal(new URL(request.url, 'http://localhost').searchParams.get('existing'), '1');
@@ -46,9 +46,11 @@ test('ACP initialization, cwd, early commands, boolean discriminator, and respon
     }
     if (message.method === 'session/new') {
       assert.equal(message.params.cwd, '/workspace');
+      send(message.id, { sessionId: 's', configOptions: options() });
       socket.send(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 's', update: {
         sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'review', description: 'Review changes' }],
       } } }));
+      return true;
     }
     if (message.method === 'session/set_config_option') {
       assert.equal(message.params.type, 'boolean');
@@ -59,10 +61,61 @@ test('ACP initialization, cwd, early commands, boolean discriminator, and respon
   });
   await client.connect();
   assert.equal(await client.createSession(), 's');
-  assert.equal(client.availableCommands[0].name, 'review');
   await client.setConfigOption('thinking', true);
+  assert.equal(client.availableCommands[0].name, 'review');
   assert.equal(client.configOptions[1].currentValue, true);
 });
+
+for (const legacy of [false, true]) {
+  test(`new ${legacy ? 'mode' : 'config'} session ignores unregistered updates and applies updates immediately after its response`, { timeout: 10000 }, async (t) => {
+    const warnings = t.mock.method(console, 'warn', () => {});
+    const modes = { currentModeId: 'ask', availableModes: [{ id: 'ask', name: 'Ask' }, { id: 'code', name: 'Code' }] };
+    const updated = options(); updated[0].currentValue = 'smart';
+    const received = [];
+    const configurations = [];
+    const modeChanges = [];
+    const commands = [];
+    const events = [];
+    const complete = Promise.withResolvers();
+    const client = await mock(t, (message, socket, send) => {
+      if (message.method !== 'session/new') return;
+      const update = (value, sessionId = 's') => socket.send(JSON.stringify({
+        jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: value },
+      }));
+      const configuration = legacy
+        ? { sessionUpdate: 'current_mode_update', currentModeId: 'code' }
+        : { sessionUpdate: 'config_option_update', configOptions: updated };
+      const command = (name) => ({ sessionUpdate: 'available_commands_update', availableCommands: [{ name, description: name }] });
+      const text = (value) => ({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
+      update(configuration);
+      update(command('early'));
+      update(text('early'));
+      send(message.id, { sessionId: 's', ...(legacy ? { modes } : { configOptions: options() }) });
+      // No timer or client acknowledgement: preserve adjacent wire ordering.
+      update(configuration);
+      update(command('live'));
+      update(text('wrong session'), 'other');
+      update(text('live'));
+      return true;
+    });
+    client.setConfigOptionsChangedHandler((value) => { if (value) { configurations.push(value[0].currentValue); events.push('config'); } });
+    client.setSessionModesChangedHandler((value) => { if (value) { modeChanges.push(value.currentModeId); events.push('mode'); } });
+    client.setAvailableCommandsChangedHandler((value) => { if (value.length) commands.push(value[0].name); });
+    client.setSessionCreatedHandler(() => events.push('created'));
+    client.setSessionUpdateHandler((update) => { received.push(update.content.text); complete.resolve(); });
+    await client.connect();
+    assert.equal(await client.createSession(), 's');
+    await complete.promise;
+    assert.deepEqual(configurations, legacy ? [] : ['fast', 'smart']);
+    assert.deepEqual(modeChanges, legacy ? ['ask', 'code'] : []);
+    assert.deepEqual(commands, ['live']);
+    assert.deepEqual(received, ['live']);
+    assert.deepEqual(events, legacy ? ['mode', 'created', 'mode'] : ['config', 'created', 'config']);
+    assert.equal(warnings.mock.callCount(), 4);
+    assert.equal(client.configOptions?.[0].currentValue, legacy ? undefined : 'smart');
+    assert.equal(client.sessionModes?.currentModeId, legacy ? 'code' : undefined);
+  });
+}
 
 test('late RPC errors reject their original request without cancelling another configuration change', { timeout: 10000 }, async (t) => {
   let previous;
