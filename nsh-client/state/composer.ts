@@ -3,7 +3,7 @@ import type { AvailableCommand, SessionConfigOption, SessionModeState } from "@a
 import type { Connection } from "./connection";
 import { createOptimisticChange } from "./optimistic-change";
 import { createThread } from "./thread";
-import { authenticationKind, authenticationRequired } from "../acp/client";
+import { authenticationKind, authenticationRequired, type AcpClient, type HistorySession } from "../acp/client";
 
 export type Choice = { value: string | boolean; name: string; description?: string | null; group?: string };
 
@@ -26,17 +26,24 @@ export function commandHint(text: string, commands: AvailableCommand[]): string 
   return match ? commands.find((command) => command.name === match[1])?.input?.hint ?? null : null;
 }
 
-export function createComposer(connection: Connection) {
-  const client = connection.getClient();
+export function createComposer(connection: Connection, settings: {
+  client?: AcpClient; session?: HistorySession; onReady?: (id: string) => void;
+} = {}) {
+  const client = settings.client ?? connection.getClient();
   if (!client) throw new Error("Chat requires a connected ACP client");
-  const phase = signal<"loading" | "ready" | "error" | "auth-required" | "authenticating">("loading");
+  const phase = signal<"loading" | "ready" | "error" | "deleting" | "auth-required" | "authenticating">("loading");
   const error = signal<string | null>(null);
   const draft = signal("");
   const commands = signal<AvailableCommand[]>([]);
   const options = signal<SessionConfigOption[] | null>(null);
   const modes = signal<SessionModeState | null>(null);
   let disposed = false;
-  let sessionId: string | null = null;
+  const hasThread = signal(false);
+  let finishDisposed!: () => void;
+  const disposedView = new Promise<null>((resolve) => { finishDisposed = () => resolve(null); });
+  let sessionId: string | null = settings.session?.sessionId ?? null;
+  const sessionKey = signal(sessionId);
+  const resumedWithoutHistory = signal(false);
   let sessionGeneration = 0;
   let authGeneration = 0;
   const authDescription = signal<string | null>(null);
@@ -54,6 +61,11 @@ export function createComposer(connection: Connection) {
     onError: (reason) => fail(reason instanceof Error ? reason.message : "Cannot change configuration."),
   });
   const pending = () => change.target()?.id ?? null;
+  let previousDraft = draft();
+  effect(() => {
+    const next = draft();
+    if (next !== previousDraft) { previousDraft = next; untracked(thread.touch); }
+  });
 
   /** Sends the draft without trailing whitespace, as Zed's message editor does; a blank draft sends nothing. */
   function submit() {
@@ -87,6 +99,7 @@ export function createComposer(connection: Connection) {
     options.set(client!.configOptions);
     modes.set(client!.sessionModes);
     commands.set(client!.availableCommands);
+    if (phase() === "ready") thread.touch();
   }
 
   function fail(message: string) {
@@ -106,19 +119,31 @@ export function createComposer(connection: Connection) {
     if (message) untracked(() => fail(message));
   });
   function startSession(restore = false) {
+    if (disposed) return;
     const generation = ++sessionGeneration;
+    hasThread.set(false);
     phase.set("loading");
     error.set(null);
     // Zed v1 waits for new/load/resume to settle; history replay has no fixed deadline.
-    const request = restore && sessionId ? client!.restoreSession(sessionId) : client!.createSession();
-    void request.then((id) => {
-      if (disposed || generation !== sessionGeneration) return;
+    const request = restore && sessionId !== null ? client!.restoreSession(sessionId) : client!.createSession();
+    // Drop the view's continuation promptly; the connection retains only its
+    // wire operation and release barrier until an abandoned load/new settles.
+    void Promise.race([request, disposedView]).then((id) => {
+      if (disposed || generation !== sessionGeneration || id === null) return;
       sessionId = id;
+      sessionKey.set(id);
+      resumedWithoutHistory.set(restore && client!.resumesWithoutHistory);
+      thread.clearActivity();
       error.set(null);
+      hasThread.set(true);
       phase.set("ready");
       refresh();
+      settings.onReady?.(id);
     }).catch((reason: unknown) => {
       if (disposed || generation !== sessionGeneration) return;
+      // Zed drops the failed load's thread; partial replay is not a usable chat.
+      thread.reset();
+      refresh();
       const auth = authenticationRequired(reason);
       if (auth) requestAuthentication(auth.description);
       else fail(reason instanceof Error ? reason.message : "Cannot create session.");
@@ -172,7 +197,7 @@ export function createComposer(connection: Connection) {
     requestAuthentication();
   }
 
-  startSession();
+  startSession(sessionId !== null);
 
   function choose(id: string, value: string | boolean, legacy = false) {
     if (disposed || phase() !== "ready" || pending()) return;
@@ -181,8 +206,10 @@ export function createComposer(connection: Connection) {
     change.start({ id, value, legacy });
   }
 
-  function dispose() {
+  function dispose(release = false) {
+    if (disposed) return Promise.resolve();
     disposed = true;
+    finishDisposed();
     authGeneration += 1;
     sessionGeneration += 1;
     change.dispose();
@@ -193,13 +220,24 @@ export function createComposer(connection: Connection) {
     client!.setConfigOptionsChangedHandler(() => {});
     client!.setSessionModesChangedHandler(() => {});
     client!.setAvailableCommandsChangedHandler(() => {});
+    if (settings.client) {
+      if (release) return client!.releaseSession();
+      client!.forgetSession();
+    }
+    return Promise.resolve();
   }
 
   return {
     phase, error, draft, commands, options, modes, pending, slow: change.slow, thread, submit, stop, selectedValue, choose, dispose,
     authDescription, pendingAuthMethod, authMethods: () => client!.authMethods,
     agentName: () => client!.agentInfo?.title ?? client!.agentInfo?.name ?? "the agent",
-    authenticate, authenticateFailedPrompt,
+    authenticate, authenticateFailedPrompt, id: sessionKey, resumedWithoutHistory, hasThread,
+    retrySession: () => {
+      if (disposed || phase() !== "error") return;
+      thread.reset();
+      change.cancel();
+      startSession(sessionId !== null);
+    },
   };
 }
 

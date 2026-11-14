@@ -115,6 +115,8 @@ function appendMarkdown(existing: string, block: ContentBlock): string {
   return `${existing}\n\n${next}`;
 }
 
+let activitySequence = 0;
+
 /**
  * The session's conversation: the user's and the agent's messages and one
  * running turn at a time. Mirrors Zed's `AcpThread` for prompt-completion
@@ -123,6 +125,9 @@ function appendMarkdown(existing: string, block: ContentBlock): string {
 export function createThread(client: AcpClient, options: { agentName: () => string }) {
   const entries = signal<ThreadEntry[]>([]);
   const generating = signal(false);
+  const unsettled = signal(0);
+  const activity = signal<number | null>(null);
+  const touch = () => activity.set(++activitySequence);
   const error = signal<ThreadError | null>(null);
   let keys = 0;
   let turnId = 0;
@@ -348,6 +353,7 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
     if (!existing && update.title == null) {
       return Promise.reject(RequestError.invalidParams({ toolCall: "a new tool call needs a title" }));
     }
+    touch();
     const id = ++permissionIds;
     return new Promise((resolve, reject) => {
       let answered = false;
@@ -358,6 +364,7 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
       const respond = (outcome: RequestPermissionOutcome) => {
         if (answered) return;
         answered = true;
+        if (!disposed) touch();
         abort.removeEventListener("abort", onAbort);
         resolve({ outcome });
       };
@@ -420,6 +427,7 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
   function handleUpdate(update: SessionUpdate) {
     if (disposed) return;
     batch(() => {
+      touch();
       switch (update.sessionUpdate) {
         case "user_message_chunk": {
           const messageId = update.messageId ?? null;
@@ -498,6 +506,7 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
       finishTurn(id);
       // A newer turn owns the thread now.
       if (turnId !== id) return;
+      touch();
       flushStreamingText();
       if ("failure" in outcome) {
         if (isSameTurn) markPendingToolCallsCanceled();
@@ -547,6 +556,8 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
   function send(prompt: ContentBlock[]) {
     if (disposed || prompt.length === 0) return Promise.resolve();
     const cancelled = requestCancellation();
+    unsettled.set(unsettled() + 1);
+    touch();
     const id = ++turnId;
     let finished!: () => void;
     const done = new Promise<void>((resolve) => { finished = resolve; });
@@ -566,6 +577,7 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
       } catch (failure) {
         settle(id, { failure });
       } finally {
+        unsettled.set(unsettled() - 1);
         finished();
       }
     })();
@@ -603,6 +615,8 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
     toggleRawInput: (entry: ToolCallEntry) => entry.rawInputExpanded.set(!entry.rawInputExpanded()),
     dismissError: () => error.set(null),
     failedPrompt: () => error()?.authentication ? submittedPrompt : null,
+    activity, touch, clearActivity: () => activity.set(null),
+    idleForRetention: () => !generating() && unsettled() === 0 && awaitingPermission() === null,
     reset,
     dispose,
   };

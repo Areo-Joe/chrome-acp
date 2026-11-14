@@ -1,0 +1,481 @@
+{
+  "reference": "Zed 62682ebde9; schema 1.15.1 with unstable; Rust serde reference",
+  "cases": [
+    {
+      "name": "normal",
+      "input": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "title": "Saved",
+            "updatedAt": "2026-11-09T01:02:03Z",
+            "_meta": {
+              "a": [
+                1
+              ]
+            }
+          }
+        ],
+        "nextCursor": "",
+        "_meta": {
+          "page": 1
+        }
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "title": "Saved",
+            "updatedAt": "2026-11-09T01:02:03Z",
+            "_meta": {
+              "a": [
+                1
+              ]
+            }
+          }
+        ],
+        "nextCursor": "",
+        "_meta": {
+          "page": 1
+        }
+      }
+    },
+    {
+      "name": "null root",
+      "input": null,
+      "error": true
+    },
+    {
+      "name": "missing required list",
+      "input": {},
+      "error": true
+    },
+    {
+      "name": "empty list",
+      "input": {
+        "sessions": []
+      },
+      "expected": {
+        "sessions": []
+      }
+    },
+    {
+      "name": "invalid list defaults",
+      "input": {
+        "sessions": 42
+      },
+      "expected": {
+        "sessions": []
+      }
+    },
+    {
+      "name": "null list defaults",
+      "input": {
+        "sessions": null
+      },
+      "expected": {
+        "sessions": []
+      }
+    },
+    {
+      "name": "invalid entries skipped",
+      "input": {
+        "sessions": [
+          null,
+          42,
+          {},
+          {
+            "sessionId": "s",
+            "cwd": "/workspace"
+          },
+          {
+            "sessionId": "bad",
+            "cwd": false
+          }
+        ]
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace"
+          }
+        ]
+      }
+    },
+    {
+      "name": "all optional fields",
+      "input": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "additionalDirectories": [
+              "/extra",
+              42,
+              null,
+              ""
+            ],
+            "title": "",
+            "updatedAt": "invalid",
+            "archived": true,
+            "_meta": {}
+          }
+        ]
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "additionalDirectories": [
+              "/extra",
+              ""
+            ],
+            "title": "",
+            "updatedAt": "invalid",
+            "archived": true,
+            "_meta": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "invalid optional fields",
+      "input": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "additionalDirectories": {},
+            "title": 42,
+            "updatedAt": false,
+            "_meta": []
+          }
+        ],
+        "nextCursor": 42,
+        "_meta": []
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace"
+          }
+        ]
+      }
+    },
+    {
+      "name": "null optional fields",
+      "input": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "additionalDirectories": null,
+            "title": null,
+            "updatedAt": null,
+            "_meta": null
+          }
+        ],
+        "nextCursor": null
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace"
+          }
+        ]
+      }
+    },
+    {
+      "name": "positional response",
+      "input": [
+        [
+          [
+            "s",
+            "/workspace"
+          ]
+        ],
+        "next",
+        {
+          "x": 1
+        }
+      ],
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace"
+          }
+        ],
+        "nextCursor": "next",
+        "_meta": {
+          "x": 1
+        }
+      }
+    },
+    {
+      "name": "trailing positional defaults",
+      "input": [
+        [
+          [
+            "s",
+            "/workspace",
+            [],
+            "title"
+          ]
+        ]
+      ],
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "title": "title"
+          }
+        ]
+      }
+    },
+    {
+      "name": "overlong response",
+      "input": [
+        [],
+        null,
+        null,
+        null
+      ],
+      "error": true
+    },
+    {
+      "name": "sequence root no list",
+      "input": [],
+      "error": true
+    },
+    {
+      "name": "object root invalid",
+      "input": false,
+      "error": true
+    },
+    {
+      "name": "required cwd missing",
+      "input": {
+        "sessions": [
+          {
+            "sessionId": "s"
+          }
+        ]
+      },
+      "expected": {
+        "sessions": []
+      }
+    },
+    {
+      "name": "required id missing",
+      "input": {
+        "sessions": [
+          {
+            "cwd": "/workspace"
+          }
+        ]
+      },
+      "expected": {
+        "sessions": []
+      }
+    },
+    {
+      "name": "invalid metadata optional",
+      "input": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "_meta": 42
+          }
+        ]
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unicode and opaque paths",
+      "input": {
+        "sessions": [
+          {
+            "sessionId": "",
+            "cwd": "relative",
+            "additionalDirectories": [
+              "相对/路径"
+            ],
+            "title": "会话"
+          }
+        ]
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "",
+            "cwd": "relative",
+            "additionalDirectories": [
+              "相对/路径"
+            ],
+            "title": "会话"
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicates preserved by adapter",
+      "input": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace"
+          },
+          {
+            "sessionId": "s",
+            "cwd": "/workspace"
+          }
+        ]
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace"
+          },
+          {
+            "sessionId": "s",
+            "cwd": "/workspace"
+          }
+        ]
+      }
+    },
+    {
+      "name": "optional null then positional metadata",
+      "input": {
+        "sessions": [
+          [
+            "s",
+            "/workspace",
+            [],
+            null,
+            null,
+            null,
+            {
+              "v": 1
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "_meta": {
+              "v": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "invalid positional entries",
+      "input": {
+        "sessions": [
+          [
+            "s"
+          ],
+          [
+            "s",
+            "/workspace",
+            [],
+            null,
+            null,
+            null,
+            {},
+            1
+          ]
+        ]
+      },
+      "expected": {
+        "sessions": []
+      }
+    },
+    {
+      "name": "valid leap second",
+      "input": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "updatedAt": "2016-12-31T23:59:60Z"
+          }
+        ]
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "updatedAt": "2016-12-31T23:59:60Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "date optional raw string",
+      "input": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "updatedAt": "2026-02-30T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "updatedAt": "2026-02-30T00:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown properties",
+      "input": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace",
+            "future": {
+              "x": 1
+            }
+          }
+        ],
+        "future": true
+      },
+      "expected": {
+        "sessions": [
+          {
+            "sessionId": "s",
+            "cwd": "/workspace"
+          }
+        ]
+      }
+    }
+  ]
+}

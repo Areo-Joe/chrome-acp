@@ -118,7 +118,7 @@ session, preferring `session/load` over `session/resume` according to advertised
 capabilities. History sent before the load response is received by the registered
 session. The failed prompt is never automatically resent. If neither operation
 is supported, the app reports that explicitly instead of creating another session.
-This recovery path does not yet provide a history browser.
+The Sessions screen also provides history browsing and explicit opening of saved sessions.
 
 Reopening a session replaces its configuration state even when its ID stays the
 same. An outstanding configuration RPC still resolves or rejects its own caller,
@@ -145,6 +145,32 @@ authentication or have access to the agent's launch process, so those choices ar
 shown as unavailable and are never sent as `authenticate` RPCs. Executing terminal
 sign-in requires a future agent-host integration.
 
+The **Sessions** screen lists saved sessions when the agent advertises list
+support, with refresh, pagination and retry. It lists across working directories
+by default, as Zed's import flow does. Opening uses the saved session's directory
+and capability-gated additional roots, preferring load over resume. Resume-only
+agents display a notice that earlier messages were not replayed. A failed open
+keeps its target and draft; Retry session never creates a replacement or resends
+input. **New chat** creates another session on the same connection.
+
+Open chats retain separate messages, drafts, configuration and running turns.
+Like Zed, at most five eligible idle background views are retained by default,
+with the oldest local conversation activity evicted first. Views without an
+established thread are eligible regardless of load support; established threads
+require load support and an idle state. Running turns, pending permissions and
+unfinished prompts are protected; established resume-only sessions stay in
+memory. Text drafts and small session metadata outlive an evicted view, so opening
+it again loads history and restores its draft. A pending release blocks same-ID
+reopening until optional close and queued dispatch finish. The state API exposes
+`maxIdleRetainedThreads` to override the default, including zero.
+Switching back selects the existing owner without another load. Session-info
+updates synchronize titles and timestamps; explicit null clears fields and v1
+metadata replaces the previous object. Deletion is offered only when supported,
+requires confirmation, and refreshes after success; busy open chats cannot be
+deleted until their operation finishes. Without history support, Sessions still
+switches among open chats. Open state is retained in memory for this connection;
+the agent owns saved history. See [the Zed v1 session comparison](docs/ZED_SESSIONS.md).
+
 `nsh-client` is a pnpm project of its own, with its own `package.json` and
 lockfile, outside the repository's workspace. Run `pnpm install` in `nsh-client/`
 (Node.js 26) before type checking, building or testing. For protocol/UI tests
@@ -154,7 +180,7 @@ lockfile, outside the repository's workspace. Run `pnpm install` in `nsh-client/
 node tests/connection.mjs                  # headless, including timeout
 node tests/connection.mjs --file tests/authentication.test.tsx # authentication UI only
 node tests/connection.mjs --target android # device, with mock-server USB forwarding
-node --test tests/acp-client.mjs           # the ACP client against mock endpoints
+node --test tests/acp-client.mjs tests/history-client.mjs # protocol and Rust reference cases
 ```
 
 The device runner uses NSH's standard test host; `just android` uses our custom

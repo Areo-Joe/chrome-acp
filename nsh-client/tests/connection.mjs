@@ -251,6 +251,149 @@ server.on("connection", (socket, request) => {
         return later(() => stop("end_turn"), 100);
     }
   }
+  const savedSessions = [
+    { sessionId: "saved-a", cwd: "/other/work", additionalDirectories: ["/extra"], title: "Saved alpha", updatedAt: "2026-11-08T09:00:00Z" },
+    { sessionId: "saved-b", cwd: "/workspace", title: "Saved beta", updatedAt: "2026-11-07T09:00:00Z" },
+  ];
+  const sessionOptions = new Map();
+  const loadAttempts = new Map();
+  let listAttempts = 0;
+  let pageAttempts = 0;
+  let deleteAttempts = 0;
+  const released = new Set();
+  const releaseComplete = new Set();
+  let idlePermissionId = null;
+  function historyRequest(message) {
+    const id = message.params?.sessionId;
+    const info = savedSessions.find((row) => row.sessionId === id);
+    const historyText = (value) => send({ method: "session/update", params: { sessionId: id, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: value } } } });
+    if (message.method === "session/list") {
+      assert.equal(Object.hasOwn(message.params, "cwd"), false);
+      listAttempts++;
+      const page = Object.hasOwn(message.params, "cursor");
+      if (page) assert.equal(message.params.cursor, "");
+      if (token === "history-list-error" && listAttempts === 1) return error(message.id, "History unavailable");
+      if (token === "history-page-error" && page && ++pageAttempts === 1) return error(message.id, "Page unavailable");
+      if (token === "history-info-race" && listAttempts === 4) savedSessions[0].title = "Newer title from list";
+      const rows = structuredClone(page ? savedSessions : savedSessions.slice(0, 1));
+      if (token === "history-info-race" && listAttempts === 3) {
+        send({ method: "session/update", params: { sessionId: "saved-a", update: { sessionUpdate: "session_info_update", title: "Updated during list" } } });
+      }
+      return later(() => result(message.id, { sessions: rows, ...((!page || token === "history-repeated-cursor") && savedSessions.length > 1 ? { nextCursor: "" } : {}) }), token === "history-delayed" ? 900 : 100);
+    }
+    if (message.method === "session/new") {
+      assert.equal(message.params.cwd, "/workspace");
+      if (token.startsWith("history-failed-")) return error(message.id, "Session unavailable");
+      newSessions++;
+      const createdId = `new-${newSessions}`;
+      sessionOptions.set(createdId, configOptions());
+      if (token.startsWith("history-retention")) savedSessions.push({ sessionId: createdId, cwd: "/workspace", title: `New ${newSessions}`, updatedAt: "2026-11-09T12:00:00Z" });
+      const complete = () => result(message.id, { sessionId: createdId, configOptions: sessionOptions.get(createdId) });
+      if (token === "history-retention-pending" && newSessions === 1) return later(complete, 1000);
+      return complete();
+    }
+    if (message.method === "session/close") {
+      assert.ok(token.startsWith("history-retention"));
+      released.add(id);
+      historyText("Old closing output");
+      return later(() => {
+        releaseComplete.add(id);
+        socket._socket.cork();
+        if (token === "history-retention-error") error(message.id, "Release rejected");
+        else result(message.id, {});
+        historyText("Old output after close response");
+        socket._socket.uncork();
+      }, token === "history-retention-blocked" ? 1200 : 50);
+    }
+    if (message.method === "session/load" || message.method === "session/resume") {
+      assert.ok(info);
+      if (released.has(id)) assert.ok(releaseComplete.has(id), "load must wait for the released owner");
+      assert.equal(message.method, ["history-resume", "history-retention-resume"].includes(token) ? "session/resume" : "session/load");
+      assert.equal(message.params.cwd, info.cwd);
+      assert.deepEqual(message.params.mcpServers, []);
+      assert.deepEqual(message.params.additionalDirectories ?? [], token === "history-no-additional" ? [] : info.additionalDirectories ?? []);
+      loads++;
+      const attempt = (loadAttempts.get(id) ?? 0) + 1;
+      loadAttempts.set(id, attempt);
+      if (token === "history-auth" && !authenticated) return error(message.id, "Sign in to open this session", -32000);
+      if (token === "history-load-error" && attempt === 1) {
+        socket._socket.cork();
+        error(message.id, "History replay failed");
+        historyText("Discarded failed replay");
+        socket._socket.uncork();
+        return;
+      }
+      sessionOptions.set(id, configOptions());
+      const complete = () => {
+        if (message.method === "session/load") historyText(`History of ${info.title}`);
+        result(message.id, { configOptions: sessionOptions.get(id) });
+      };
+      if (token === "history-retention-pending" && loads === 1) {
+        historyText("Pending history start");
+        return later(complete, 1000);
+      }
+      return complete();
+    }
+    if (message.method === "session/delete") {
+      deleteAttempts++;
+      if (token === "history-delete-error" && deleteAttempts === 1) return error(message.id, "Deletion rejected");
+      const complete = () => {
+        const index = savedSessions.findIndex((row) => row.sessionId === id);
+        if (index >= 0) savedSessions.splice(index, 1);
+        result(message.id, {});
+      };
+      if (token === "history-delete-pending") return later(complete, 700);
+      return complete();
+    }
+    if (message.method === "authenticate") {
+      assert.equal(message.params.methodId, "browser-login");
+      authenticated = true; authCalls++;
+      return result(message.id, {});
+    }
+    if (message.method === "session/set_config_option") {
+      const configuration = sessionOptions.get(id);
+      configuration.find((option) => option.id === message.params.configId).currentValue = message.params.value;
+      return result(message.id, { configOptions: configuration });
+    }
+    if (message.method === "session/prompt") {
+      assert.ok(sessionOptions.has(id));
+      const input = message.params.prompt[0].text;
+      if (input === "stats") {
+        historyText(`New: ${newSessions}; Loads: ${loads}; Auth: ${authCalls}`);
+      } else if (input === "rename") {
+        const update = { sessionUpdate: "session_info_update", title: "Renamed session", updatedAt: "2026-11-09T12:00:00Z" };
+        Object.assign(info ?? {}, { title: update.title, updatedAt: update.updatedAt });
+        send({ method: "session/update", params: { sessionId: id, update } });
+        historyText("Renamed.");
+      } else if (input === "clear-info") {
+        delete info.title; delete info.updatedAt;
+        send({ method: "session/update", params: { sessionId: id, update: { sessionUpdate: "session_info_update", title: null, updatedAt: null, _meta: {} } } });
+        historyText("Cleared metadata.");
+      } else if (input === "withdraw-permission") {
+        assert.ok(idlePermissionId);
+        send({ method: "$/cancel_request", params: { requestId: idlePermissionId } });
+      } else if (input === "idle-permission" || input === "idle-permission-withdraw") {
+        result(message.id, { stopReason: "end_turn" });
+        const permissionId = `idle-permission-${id}`;
+        idlePermissionId = permissionId;
+        waiting.set(permissionId, () => {
+          if (input === "idle-permission-withdraw") return;
+          send({ method: "session/update", params: { sessionId: id, update: { sessionUpdate: "tool_call_update", toolCallId: "idle-tool", status: "completed" } } });
+          historyText("Permission complete");
+        });
+        send({ id: permissionId, method: "session/request_permission", params: {
+          sessionId: id, toolCall: { toolCallId: "idle-tool", title: "Idle approval" }, options: permissionOptions,
+        } });
+        return;
+      } else if (input === "slow") {
+        historyText("Working in the background");
+        return later(() => { historyText("Background complete"); result(message.id, { stopReason: "end_turn" }); }, token.startsWith("history-retention") ? 2500 : 1800);
+      } else historyText(`Reply in ${id}: ${input}`);
+      return result(message.id, { stopReason: "end_turn" });
+    }
+    if (message.method === "session/cancel" || message.method === "$/cancel_request") return;
+    assert.fail(`Unexpected history method ${message.method}`);
+  }
   socket.on("message", (data) => {
     const message = JSON.parse(data.toString());
     assert.equal(message.jsonrpc, "2.0");
@@ -263,6 +406,8 @@ server.on("connection", (socket, request) => {
       const outcome = message.result.outcome;
       return answer(outcome.outcome === "selected" ? outcome.optionId : outcome.outcome);
     }
+    if (message.method === "$/cancel_request") return;
+    if (token.startsWith("history") && message.method !== "initialize") return historyRequest(message);
     if (message.method === "session/new") {
       newSessions++;
       assert.equal(message.params.cwd, "/workspace");
@@ -396,11 +541,17 @@ server.on("connection", (socket, request) => {
       if (token === "agent-error") error(message.id, "Agent unavailable");
       else result(message.id, {
         protocolVersion: 1,
-        agentCapabilities: token.startsWith("auth") ? {
+        agentCapabilities: token.startsWith("history") ? {
+          loadSession: !["history-resume", "history-retention-resume", "history-failed-resume", "history-list-only"].includes(token),
+          sessionCapabilities: {
+            ...(token === "history-retention-no-list" ? {} : { list: {} }), ...(token.startsWith("history-retention") && token !== "history-retention-no-close" ? { close: {} } : {}), ...(token === "history-no-delete" ? {} : { delete: {} }), ...(token === "history-list-only" ? {} : { resume: {} }),
+            ...(token === "history-no-additional" ? {} : { additionalDirectories: {} }),
+          },
+        } : token.startsWith("auth") ? {
           loadSession: !token.startsWith("auth-slow-resume-") && !["auth-resume", "auth-close-resume", "auth-no-restore"].includes(token),
           sessionCapabilities: token === "auth-no-restore" ? {} : { resume: {}, ...(token.startsWith("auth-close-") ? { close: {} } : {}) },
         } : {},
-        ...(token.startsWith("auth") ? { authMethods } : {}),
+        ...((token.startsWith("auth") || token === "history-auth") ? { authMethods } : {}),
         agentInfo: { name: "mock", title: "Mock Agent", version: "1" },
       });
       if (token === "drop") later(() => socket.close(1011, "Server stopped"), 750);
@@ -413,7 +564,7 @@ try {
     const forward = spawnSync("adb", ["reverse", "tcp:19437", "tcp:19437"], { stdio: "inherit" });
     assert.equal(forward.status, 0, "Could not forward the mock server port to Android");
   }
-  const files = selectedFile ? [selectedFile] : ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/tools.test.tsx", "tests/authentication.test.tsx"];
+  const files = selectedFile ? [selectedFile] : ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/tools.test.tsx", "tests/authentication.test.tsx", "tests/sessions.test.tsx", "tests/retention.test.tsx"];
   if (!android && !selectedFile) files.push("tests/connection-timeout.test.tsx", "tests/optimistic-change.test.tsx");
   for (const file of files) {
     const child = spawn(`${root}.nsh/toolchain/bin/nsh`, ["test", file, ...args], { cwd: root, stdio: "inherit" });
