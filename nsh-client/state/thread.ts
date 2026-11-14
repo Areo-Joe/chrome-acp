@@ -2,6 +2,7 @@ import { batch, signal, type Signal } from "nsh";
 import {
   RequestError,
   type ContentBlock,
+  type Plan,
   type PromptResponse,
   type RequestPermissionOutcome,
   type RequestPermissionRequest,
@@ -129,6 +130,10 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
   const activity = signal<number | null>(null);
   const touch = () => activity.set(++activitySequence);
   const error = signal<ThreadError | null>(null);
+  const plan = signal<Plan | null>(null);
+  const planVisible = signal(false);
+  // View state survives hiding the plan and switching retained conversations.
+  const planExpanded = signal(false);
   let keys = 0;
   let turnId = 0;
   let running: { id: number; done: Promise<void> } | null = null;
@@ -429,6 +434,11 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
     batch(() => {
       touch();
       switch (update.sessionUpdate) {
+        case "plan":
+          plan.set({ entries: update.entries, ...(update._meta == null ? {} : { _meta: update._meta }) });
+          // Zed's legacy plan always becomes visible, including identical updates.
+          planVisible.set(true);
+          break;
         case "user_message_chunk": {
           const messageId = update.messageId ?? null;
           // The prompt is shown before it is sent; some agents echo it back.
@@ -556,6 +566,9 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
   function send(prompt: ContentBlock[]) {
     if (disposed || prompt.length === 0) return Promise.resolve();
     const cancelled = requestCancellation();
+    // AcpThread::run_turn removes completed entries before awaiting cancellation.
+    const previousPlan = plan();
+    if (previousPlan) plan.set({ ...previousPlan, entries: previousPlan.entries.filter((entry) => entry.status !== "completed") });
     unsettled.set(unsettled() + 1);
     touch();
     const id = ++turnId;
@@ -605,12 +618,18 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
     autoExpanded = null;
     submittedPrompt = null;
     entries.set([]);
+    plan.set(null);
+    planVisible.set(false);
+    planExpanded.set(false);
     generating.set(false);
     error.set(null);
   }
 
   return {
     entries, generating, error, send, cancel, handleUpdate, toggleThought, requestPermission, authorize, awaitingPermission, waitingForConfirmation,
+    plan, planVisible, planExpanded,
+    dismissPlan: () => planVisible.set(false),
+    togglePlan: () => planExpanded.set(!planExpanded()),
     toggleToolCall: (entry: ToolCallEntry) => entry.expanded.set(!entry.expanded()),
     toggleRawInput: (entry: ToolCallEntry) => entry.rawInputExpanded.set(!entry.rawInputExpanded()),
     dismissError: () => error.set(null),

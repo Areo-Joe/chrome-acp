@@ -1,0 +1,594 @@
+{
+  "reference": "Zed 62682ebde9; ACP v1 schema 1.15.1; pinned Rust serde (see initialize-v1-reference.rs)",
+  "cases": [
+    {
+      "name": "normal",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ],
+        "_meta": {
+          "plan": [
+            1
+          ]
+        },
+        "extra": 1
+      },
+      "expected": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ],
+        "_meta": {
+          "plan": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "empty",
+      "input": {
+        "entries": []
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "missing entries",
+      "input": {},
+      "error": "missing field `entries`"
+    },
+    {
+      "name": "null entries",
+      "input": {
+        "entries": null
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "non-array entries",
+      "input": {
+        "entries": {}
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "invalid entries",
+      "input": {
+        "entries": [
+          null,
+          42,
+          {},
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ]
+      },
+      "expected": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "entry sequence",
+      "input": {
+        "entries": [
+          [
+            "Task",
+            "low",
+            "completed"
+          ]
+        ]
+      },
+      "expected": {
+        "entries": [
+          {
+            "content": "Task",
+            "priority": "low",
+            "status": "completed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "entry sequence metadata",
+      "input": {
+        "entries": [
+          [
+            "Task",
+            "high",
+            "in_progress",
+            {
+              "entry": true
+            }
+          ]
+        ]
+      },
+      "expected": {
+        "entries": [
+          {
+            "content": "Task",
+            "priority": "high",
+            "status": "in_progress",
+            "_meta": {
+              "entry": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "entry sequence too long",
+      "input": {
+        "entries": [
+          [
+            "Task",
+            "low",
+            "pending",
+            null,
+            0
+          ]
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "entry missing content",
+      "input": {
+        "entries": [
+          {
+            "priority": "low",
+            "status": "pending"
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "entry missing priority",
+      "input": {
+        "entries": [
+          {
+            "content": "Task",
+            "status": "pending"
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "entry missing status",
+      "input": {
+        "entries": [
+          {
+            "content": "Task",
+            "priority": "low"
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "invalid metadata",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending",
+            "_meta": 1
+          }
+        ],
+        "_meta": []
+      },
+      "expected": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "null metadata",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending",
+            "_meta": null
+          }
+        ],
+        "_meta": null
+      },
+      "expected": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "entry metadata",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending",
+            "_meta": {
+              "nested": [
+                1,
+                false,
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending",
+            "_meta": {
+              "nested": [
+                1,
+                false,
+                null
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty content",
+      "input": {
+        "entries": [
+          {
+            "content": "",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ]
+      },
+      "expected": {
+        "entries": [
+          {
+            "content": "",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "plan sequence",
+      "input": [
+        [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ]
+      ],
+      "expected": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "plan sequence metadata",
+      "input": [
+        [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ],
+        {
+          "plan": true
+        }
+      ],
+      "expected": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ],
+        "_meta": {
+          "plan": true
+        }
+      }
+    },
+    {
+      "name": "plan sequence missing entries",
+      "input": [],
+      "error": "invalid length 0, expected struct Plan with 2 elements"
+    },
+    {
+      "name": "plan sequence too long",
+      "input": [
+        [],
+        null,
+        1
+      ],
+      "error": "invalid length 3, expected fewer elements in array"
+    },
+    {
+      "name": "priority \"future\"",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "future",
+            "status": "pending"
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "priority \"cancelled\"",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "cancelled",
+            "status": "pending"
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "priority null",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": null,
+            "status": "pending"
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "priority 42",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": 42,
+            "status": "pending"
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "priority {}",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": {},
+            "status": "pending"
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "priority {\"medium\": null}",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": {
+              "medium": null
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      "expected": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "priority {\"medium\": 1}",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": {
+              "medium": 1
+            },
+            "status": "pending"
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "status \"future\"",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "future"
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "status \"cancelled\"",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "cancelled"
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "status null",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": null
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "status 42",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": 42
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "status {}",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": {}
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    },
+    {
+      "name": "status {\"pending\": null}",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": {
+              "pending": null
+            }
+          }
+        ]
+      },
+      "expected": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "status {\"pending\": 1}",
+      "input": {
+        "entries": [
+          {
+            "content": "**Task**",
+            "priority": "medium",
+            "status": {
+              "pending": 1
+            }
+          }
+        ]
+      },
+      "expected": {
+        "entries": []
+      }
+    }
+  ]
+}

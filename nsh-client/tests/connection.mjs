@@ -58,6 +58,7 @@ server.on("connection", (socket, request) => {
   let loads = 0;
   let closes = 0;
   let promptCalls = 0;
+  let planSent = false;
   let staleConfigurationReply = null;
   const authMethods = token === "auth-none" ? [] : token === "auth-terminal-only"
     ? [{ type: "terminal", id: "terminal-login", name: "Terminal sign-in" }]
@@ -107,6 +108,25 @@ server.on("connection", (socket, request) => {
     const stop = (stopReason) => result(message.id, { stopReason });
     cancelled = false;
     onCancel = null;
+    if (input.startsWith("plan")) {
+      planSent = true;
+      let entries = [
+        { content: "Read **sources**", priority: "low", status: "completed", _meta: { row: 1 } },
+        { content: "Implement `plan`", priority: "medium", status: "in_progress" },
+        { content: "Verify behavior", priority: "high", status: "pending" },
+        { content: "Second active task", priority: "high", status: "in_progress" },
+      ];
+      if (input === "plan-empty") entries = [];
+      if (input === "plan-replace") entries = [{ content: "Replacement", priority: "high", status: "pending" }];
+      if (input === "plan-done") entries = entries.map(entry => ({ ...entry, status: "completed" }));
+      if (input === "plan-pending") entries = entries.map(entry => ({ ...entry, status: "pending" }));
+      update({ sessionUpdate: "plan", entries, _meta: { snapshot: true } });
+      if (input === "plan-fail") return error(message.id, "Plan failed");
+      if (input === "plan-refuse") return stop("refusal");
+      if (input === "plan-limit") return stop("max_tokens");
+      if (input === "plan-slow") { onCancel = () => stop("cancelled"); return; }
+      return stop("end_turn");
+    }
     switch (input) {
       case "hello":
         text("user_message_chunk", input);
@@ -326,6 +346,7 @@ server.on("connection", (socket, request) => {
       sessionOptions.set(id, configOptions());
       const complete = () => {
         if (message.method === "session/load") historyText(`History of ${info.title}`);
+        if (token === "history-plan") send({ method: "session/update", params: { sessionId: id, update: { sessionUpdate: "plan", entries: [{ content: `Plan for ${id}`, priority: "low", status: "in_progress" }] } } });
         result(message.id, { configOptions: sessionOptions.get(id) });
       };
       if (token === "history-retention-pending" && loads === 1) {
@@ -358,7 +379,10 @@ server.on("connection", (socket, request) => {
     if (message.method === "session/prompt") {
       assert.ok(sessionOptions.has(id));
       const input = message.params.prompt[0].text;
-      if (input === "stats") {
+      if (token === "history-plan" && input === "plan-background") {
+        send({ method: "session/update", params: { sessionId: "new-1", update: { sessionUpdate: "plan", entries: [{ content: "Background plan", priority: "high", status: "pending" }] } } });
+        historyText("Background plan delivered");
+      } else if (input === "stats") {
         historyText(`New: ${newSessions}; Loads: ${loads}; Auth: ${authCalls}`);
       } else if (input === "rename") {
         const update = { sessionUpdate: "session_info_update", title: "Renamed session", updatedAt: "2026-11-09T12:00:00Z" };
@@ -462,6 +486,7 @@ server.on("connection", (socket, request) => {
       if (token.startsWith("auth-close-")) assert.equal(closes, 1, "Reopen must follow old-session release");
       loads++;
       if (message.method === "session/load") text("agent_message_chunk", "Restored history.");
+      if (planSent) update({ sessionUpdate: "plan", entries: [{ content: "Restored plan", priority: "low", status: "pending" }] });
       if (token.startsWith("auth-slow-")) return later(() => {
         if (token.endsWith("error")) error(message.id, "Slow session restoration failed");
         else result(message.id, { configOptions: options });
@@ -564,7 +589,7 @@ try {
     const forward = spawnSync("adb", ["reverse", "tcp:19437", "tcp:19437"], { stdio: "inherit" });
     assert.equal(forward.status, 0, "Could not forward the mock server port to Android");
   }
-  const files = selectedFile ? [selectedFile] : ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/tools.test.tsx", "tests/authentication.test.tsx", "tests/sessions.test.tsx", "tests/retention.test.tsx"];
+  const files = selectedFile ? [selectedFile] : ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/plan.test.tsx", "tests/tools.test.tsx", "tests/authentication.test.tsx", "tests/sessions.test.tsx", "tests/retention.test.tsx"];
   if (!android && !selectedFile) files.push("tests/connection-timeout.test.tsx", "tests/optimistic-change.test.tsx");
   for (const file of files) {
     const child = spawn(`${root}.nsh/toolchain/bin/nsh`, ["test", file, ...args], { cwd: root, stdio: "inherit" });

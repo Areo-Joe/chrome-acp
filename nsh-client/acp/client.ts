@@ -40,6 +40,29 @@ function metadata(value: JsonObject): JsonObject {
   return meta ? { _meta: meta } : {};
 }
 
+function variant(value: unknown, names: readonly string[]): string | undefined {
+  if (typeof value === "string") return names.includes(value) ? value : undefined;
+  const entries = Object.entries(object(value) ?? {});
+  return entries.length === 1 && entries[0][1] === null && names.includes(entries[0][0]) ? entries[0][0] : undefined;
+}
+
+/** Zed's locked v1 Plan serde: required entries, DefaultOnError<VecSkipError>,
+ * positional structs and externally tagged unit variants. Unknown names are skipped.
+ */
+export function decodePlan(value: unknown): acp.Plan {
+  const input = struct(value, ["entries", "_meta"]);
+  if (!input || !("entries" in input)) throw new Error("Invalid ACP plan: entries is required");
+  const entries: acp.Plan["entries"] = [];
+  for (const value of Array.isArray(input.entries) ? input.entries : []) {
+    const entry = struct(value, ["content", "priority", "status", "_meta"]);
+    if (!entry || typeof entry.content !== "string") continue;
+    const priority = variant(entry.priority, ["high", "medium", "low"]) as acp.PlanEntryPriority | undefined;
+    const status = variant(entry.status, ["pending", "in_progress", "completed"]) as acp.PlanEntryStatus | undefined;
+    if (priority && status) entries.push({ content: entry.content, priority, status, ...metadata(entry) });
+  }
+  return { entries, ...metadata(input) };
+}
+
 /** Session callbacks are synchronous; a new event-loop turn follows the SDK's
  * already-received dispatch microtasks, like Zed's foreground queue barrier. */
 function drainSessionDispatch(): Promise<void> {
@@ -540,7 +563,24 @@ export class AcpClient {
       if (!session.onPermission) return { outcome: { outcome: "cancelled" } };
       return session.onPermission(params, signal);
     });
-    const connection = app.connect(createWebSocketStream(url.toString(), { WebSocket: Socket, cookies: "omit" }));
+    const stream = createWebSocketStream(url.toString(), { WebSocket: Socket, cookies: "omit" });
+    // Canonicalize the ordinary v1 plan's serde representations before SDK
+    // validation. Framing, dispatch ordering and all other notifications stay SDK-owned.
+    const readable = stream.readable.pipeThrough(new TransformStream({
+      transform(message, controller) {
+        if ("method" in message && message.method === acp.methods.client.session.update && !("id" in message)) {
+          const params = object(message.params);
+          const update = object(params?.update);
+          if (params && update?.sessionUpdate === "plan") {
+            try {
+              message = { ...message, params: { ...params, update: { sessionUpdate: "plan", ...decodePlan(update) } } };
+            } catch { /* Leave invalid notifications for the SDK to reject. */ }
+          }
+        }
+        controller.enqueue(message);
+      },
+    }));
+    const connection = app.connect({ writable: stream.writable, readable });
     this.connection = connection;
     connection.closed.then(() => {
       if (this.connection !== connection) return;

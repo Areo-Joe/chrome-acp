@@ -1,6 +1,7 @@
 import { cleanup, Keyboard, Text, View } from "nsh";
 import { Button } from "nsh/base";
 import { Composer } from "../components/Composer";
+import { PlanView } from "../components/Plan";
 import { Authentication } from "../components/Authentication";
 import { SessionHistory } from "../components/SessionHistory";
 import { ThreadErrorCallout, ThreadView } from "../components/Thread";
@@ -26,6 +27,7 @@ function Conversation(props: { composer: ComposerState }) {
             <Text class="text-sm text-foreground">Retry session</Text>
           </Button>
         </If>
+        <PlanView thread={composer.thread} />
         <Composer state={composer} />
       </>
     }>
