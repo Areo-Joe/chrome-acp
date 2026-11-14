@@ -254,7 +254,7 @@ wrapper. The pinned AARs' native libraries are aligned for 16 KB pages.
 
 - `App.tsx`: connection-driven navigation.
 - `pages/`, `components/`: Connect / Chat pages and the bottom composer.
-- `icons/`: SVG icons from the official [Lucide](https://lucide.dev) 1.67.0 release, unmodified, with its license.
+- `icons/`: Unmodified SVGs from official [Lucide](https://lucide.dev) releases, with its license. Existing icons use 1.67.0; the loading `loader-circle` uses 1.70.0.
 - `acp/`: the ACP client over WebSocket.
 - `state/`: connection and ACP session/configuration state.
 - `native-host/`: Rust/AppKit host; connects to the dev server when given a URL.

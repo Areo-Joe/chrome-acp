@@ -12,6 +12,7 @@ import copy from "../icons/copy.svg";
 import fileX from "../icons/file-x.svg";
 import globe from "../icons/globe.svg";
 import hammer from "../icons/hammer.svg";
+import loaderCircle from "../icons/loader-circle.svg";
 import pencil from "../icons/pencil.svg";
 import search from "../icons/search.svg";
 import squareTerminal from "../icons/square-terminal.svg";
@@ -22,13 +23,14 @@ import x from "../icons/x.svg";
 const icons = {
   "arrow-down": arrowDown, "arrow-right-left": arrowRightLeft, "arrow-up": arrowUp, brain, "check-check": checkCheck, check,
   "chevron-down": chevronDown, "chevron-up": chevronUp, "circle-x": circleX, copy, "file-x": fileX,
-  globe, hammer, pencil, search, "square-terminal": squareTerminal, square, triangle, x,
+  globe, hammer, "loader-circle": loaderCircle, pencil, search, "square-terminal": squareTerminal, square, triangle, x,
 };
 
 export type IconName = keyof typeof icons;
 
 const tones = {
   muted: { light: "#737373", dark: "#a3a3a3" },
+  accent: { light: "#3b82f6", dark: "#3b82f6" },
   foreground: { light: "#0a0a0a", dark: "#fafafa" },
   "primary-foreground": { light: "#fafafa", dark: "#171717" },
   destructive: { light: "#dc2626", dark: "#f87171" },
