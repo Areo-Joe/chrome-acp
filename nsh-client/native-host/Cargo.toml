@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-nsh-platform-macos = { version = "=0.4.0", features = ["dev"] }
+nsh-platform-macos = { version = "=0.5.0", features = ["dev"] }
 nsh-client-image-codec = { path = "../image-codec" }

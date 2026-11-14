@@ -94,6 +94,20 @@ fn verify_archive(archive: &Path, expected: &str) -> Result<()> {
     Ok(())
 }
 
+fn download(work: &Path, version: &str, asset: &str, digest: &str) -> Result<PathBuf> {
+    let archive = work.join(asset);
+    let url = format!("https://github.com/longbridge/nsh/releases/download/v{version}/{asset}");
+    println!("Downloading NSH {version}: {url}");
+    process::run(
+        Command::new("curl")
+            .args(["--fail", "--location", "--retry", "3", "--output"])
+            .arg(&archive)
+            .arg(url),
+    )?;
+    verify_archive(&archive, digest)?;
+    Ok(archive)
+}
+
 pub fn prepare(root: &Path, cancelled: &AtomicBool) -> Result<Toolchain> {
     let target = match (env::consts::OS, env::consts::ARCH) {
         ("macos", "aarch64") => "macos-arm64",
@@ -103,6 +117,8 @@ pub fn prepare(root: &Path, cancelled: &AtomicBool) -> Result<Toolchain> {
     let version = pinned_version(root)?;
     let asset = format!("nsh-{target}.tar.gz");
     let digest = checksum(root, &asset)?;
+    let android_asset = "nsh-embed-android.zip";
+    let android_digest = checksum(root, android_asset)?;
     let base = env::var_os("XDG_CACHE_HOME").map(PathBuf::from).unwrap_or(
         PathBuf::from(env::var_os("HOME").context("HOME is not set")?).join(
             if cfg!(target_os = "macos") {
@@ -114,7 +130,7 @@ pub fn prepare(root: &Path, cancelled: &AtomicBool) -> Result<Toolchain> {
     );
     let parent = base.join("chrome-acp/nsh").join(&version);
     fs::create_dir_all(&parent)?;
-    let cache = parent.join(format!("{target}-{digest}"));
+    let cache = parent.join(format!("{target}-{digest}-{android_digest}"));
     // Kernel-owned locks are released even if the setup process is killed.
     let guard = OpenOptions::new()
         .create(true)
@@ -135,17 +151,8 @@ pub fn prepare(root: &Path, cancelled: &AtomicBool) -> Result<Toolchain> {
             Err(error) => return Err(error.into()),
         }
     }
-    let marker = format!("{version} {digest}");
+    let marker = format!("{version} {digest} {android_digest}");
     let ready = cache.join(".verified");
-    // Preserve caches written by the earlier setup implementation.
-    if !ready.exists()
-        && has_sdk(&cache)
-        && let Ok(old) = fs::read_to_string(cache.join(".verified.json"))
-        && old.contains(&format!("\"version\": \"{version}\""))
-        && old.contains(&format!("\"sha256\": \"{digest}\""))
-    {
-        fs::write(&ready, &marker)?;
-    }
     let valid = fs::read_to_string(&ready).is_ok_and(|s| s.trim() == marker) && has_sdk(&cache);
     if !valid {
         ensure!(
@@ -156,16 +163,7 @@ pub fn prepare(root: &Path, cancelled: &AtomicBool) -> Result<Toolchain> {
         let work = tempfile::Builder::new()
             .prefix(".download-")
             .tempdir_in(&parent)?;
-        let archive = work.path().join(&asset);
-        let url = format!("https://github.com/longbridge/nsh/releases/download/v{version}/{asset}");
-        println!("Downloading NSH {version}: {url}");
-        process::run(
-            Command::new("curl")
-                .args(["--fail", "--location", "--retry", "3", "--output"])
-                .arg(&archive)
-                .arg(url),
-        )?;
-        verify_archive(&archive, &digest)?;
+        let archive = download(work.path(), &version, &asset, &digest)?;
         process::run(
             Command::new("tar")
                 .args(["-xzf"])
@@ -174,6 +172,15 @@ pub fn prepare(root: &Path, cancelled: &AtomicBool) -> Result<Toolchain> {
                 .arg(work.path()),
         )?;
         let extracted = work.path().join("nsh");
+        // Since 0.5 the host archive contains only this machine's runtime.
+        // Keep the embedding SDK pinned and verified alongside the CLI.
+        let android_archive = download(work.path(), &version, android_asset, &android_digest)?;
+        zip::ZipArchive::new(File::open(&android_archive)?)?.extract(work.path())?;
+        fs::create_dir_all(extracted.join("embed"))?;
+        fs::rename(
+            work.path().join("nsh-embed-android"),
+            extracted.join("embed/android"),
+        )?;
         ensure!(
             has_sdk(&extracted),
             "NSH archive is missing its CLI or Android SDKs"

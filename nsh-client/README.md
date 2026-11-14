@@ -200,18 +200,26 @@ The mock server binds port 19437; it must be free.
 ## Pinned toolchain
 
 The exact `nsh-platform-macos` dependency in `native-host/Cargo.toml` is the single
-NSH version declaration (currently `=0.4.0`). `Cargo.lock` pins the macOS SDK's
+NSH version declaration (currently `=0.5.0`). `Cargo.lock` pins the macOS SDK's
 resolved dependencies. `nsh-toolchain.sha256` records the SHA-256 checksums of
 the official distribution archives for the supported development machines.
 
 `just macos` and `just android` call the Rust CLI in `cli/`, which prepares the
 toolchain before starting the host:
 
-1. Reads that version and selects the machine's official release archive.
-2. Downloads it, verifies its committed SHA-256, checks its CLI version and SDK
-   files, and publishes it to a user cache only after verification succeeds.
+1. Reads that version and selects the machine's official release archive and
+   the separate `nsh-embed-android.zip` embedding SDK.
+2. Downloads both archives, verifies their committed SHA-256 checksums, checks
+   the CLI version and SDK files, and publishes them to a user cache only after
+   verification succeeds.
 3. Links `.nsh/toolchain` to the cached distribution. The CLI, runtime and Android
    AARs all come from this directory, never from the global NSH installation.
+
+NSH 0.5 includes the development machine's native runtime in its CLI archive.
+Other platform runtimes are optional components, installed on demand by NSH
+(for example, Android device tests). Before working offline, add the ones you
+need with `.nsh/toolchain/bin/nsh component add android web`. The Android AARs
+used by our custom host are already installed by `just setup`.
 
 You can run `just setup` separately. Cached setup requires no network. Downloads
 are serialized with a per-version lock, so concurrent macOS / Android launches
