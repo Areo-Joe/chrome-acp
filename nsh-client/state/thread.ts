@@ -10,6 +10,7 @@ import {
   type SessionUpdate,
 } from "@agentclientprotocol/sdk";
 import { authenticationRequired, type AcpClient } from "../acp/client";
+import { applyUsage, type ContextUsage } from "./usage";
 import {
   applyToolCallPatch,
   createToolCallState,
@@ -134,6 +135,7 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
   const planVisible = signal(false);
   // View state survives hiding the plan and switching retained conversations.
   const planExpanded = signal(false);
+  const usage = signal<ContextUsage | null>(null);
   let keys = 0;
   let turnId = 0;
   let running: { id: number; done: Promise<void> } | null = null;
@@ -434,6 +436,9 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
     batch(() => {
       touch();
       switch (update.sessionUpdate) {
+        case "usage_update":
+          usage.set(applyUsage(usage(), update));
+          break;
         case "plan":
           plan.set({ entries: update.entries, ...(update._meta == null ? {} : { _meta: update._meta }) });
           // Zed's legacy plan always becomes visible, including identical updates.
@@ -621,13 +626,14 @@ export function createThread(client: AcpClient, options: { agentName: () => stri
     plan.set(null);
     planVisible.set(false);
     planExpanded.set(false);
+    usage.set(null);
     generating.set(false);
     error.set(null);
   }
 
   return {
     entries, generating, error, send, cancel, handleUpdate, toggleThought, requestPermission, authorize, awaitingPermission, waitingForConfirmation,
-    plan, planVisible, planExpanded,
+    plan, planVisible, planExpanded, usage,
     dismissPlan: () => planVisible.set(false),
     togglePlan: () => planExpanded.set(!planExpanded()),
     toggleToolCall: (entry: ToolCallEntry) => entry.expanded.set(!entry.expanded()),

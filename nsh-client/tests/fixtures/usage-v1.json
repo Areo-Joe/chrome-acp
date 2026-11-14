@@ -1,0 +1,2276 @@
+{
+  "reference": "Zed 62682ebde9; ACP v1 schema 1.15.1 with unstable; Rust serde + humanize_token_count + render_token_usage",
+  "cases": [
+    {
+      "name": "normal",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.125,
+          "currency": "USD",
+          "_meta": {
+            "rate": [
+              1
+            ]
+          }
+        },
+        "_meta": {
+          "ignored": true
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":0.125,\"currency\":\"USD\",\"_meta\":{\"rate\":[1]}},\"_meta\":{\"ignored\":true}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.125,
+          "currency": "USD",
+          "_meta": {
+            "rate": [
+              1
+            ]
+          }
+        },
+        "_meta": {
+          "ignored": true
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.12 USD"
+      }
+    },
+    {
+      "name": "zero",
+      "input": {
+        "used": 0,
+        "size": 0
+      },
+      "wire": "{\"used\":0,\"size\":0}",
+      "expected": {
+        "used": 0,
+        "size": 0
+      },
+      "presentation": {
+        "ratio": 0.0,
+        "progress": 0.0,
+        "warning": false,
+        "percentage": "0%",
+        "used": "0",
+        "size": "0",
+        "cost": null
+      }
+    },
+    {
+      "name": "zero capacity",
+      "input": {
+        "used": 100,
+        "size": 0
+      },
+      "wire": "{\"used\":100,\"size\":0}",
+      "expected": {
+        "used": 100,
+        "size": 0
+      },
+      "presentation": {
+        "ratio": 0.0,
+        "progress": 0.0,
+        "warning": false,
+        "percentage": "0%",
+        "used": "100",
+        "size": "0",
+        "cost": null
+      }
+    },
+    {
+      "name": "over capacity",
+      "input": {
+        "used": 200,
+        "size": 100
+      },
+      "wire": "{\"used\":200,\"size\":100}",
+      "expected": {
+        "used": 200,
+        "size": 100
+      },
+      "presentation": {
+        "ratio": 2.0,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "200%",
+        "used": "200",
+        "size": "100",
+        "cost": null
+      }
+    },
+    {
+      "name": "empty",
+      "input": {},
+      "wire": "{}",
+      "error": "missing field `used` at line 1 column 2"
+    },
+    {
+      "name": "missing used",
+      "input": {
+        "size": 100
+      },
+      "wire": "{\"size\":100}",
+      "error": "missing field `used` at line 1 column 12"
+    },
+    {
+      "name": "missing size",
+      "input": {
+        "used": 1
+      },
+      "wire": "{\"used\":1}",
+      "error": "missing field `size` at line 1 column 10"
+    },
+    {
+      "name": "sequence",
+      "input": [
+        2500,
+        10000
+      ],
+      "wire": "[2500,10000]",
+      "expected": {
+        "used": 2500,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "sequence cost",
+      "input": [
+        2500,
+        10000,
+        [
+          0.125,
+          "credits",
+          {
+            "x": [
+              1
+            ]
+          }
+        ],
+        {
+          "a": 1
+        }
+      ],
+      "wire": "[2500,10000,[0.125,\"credits\",{\"x\":[1]}],{\"a\":1}]",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.125,
+          "currency": "credits",
+          "_meta": {
+            "x": [
+              1
+            ]
+          }
+        },
+        "_meta": {
+          "a": 1
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.12 credits"
+      }
+    },
+    {
+      "name": "sequence too long",
+      "input": [
+        1,
+        100,
+        null,
+        null,
+        1
+      ],
+      "wire": "[1,100,null,null,1]",
+      "error": "trailing characters at line 1 column 18"
+    },
+    {
+      "name": "sequence missing size",
+      "input": [
+        1
+      ],
+      "wire": "[1]",
+      "error": "invalid length 1, expected struct UsageUpdate with 4 elements at line 1 column 3"
+    },
+    {
+      "name": "null",
+      "input": null,
+      "wire": "null",
+      "error": "invalid type: null, expected struct UsageUpdate at line 1 column 4"
+    },
+    {
+      "name": "nonobject",
+      "input": "bad",
+      "wire": "\"bad\"",
+      "error": "invalid type: string \"bad\", expected struct UsageUpdate at line 1 column 5"
+    },
+    {
+      "name": "used null",
+      "input": {
+        "used": null,
+        "size": 10000
+      },
+      "wire": "{\"used\":null,\"size\":10000}",
+      "error": "invalid type: null, expected u64 at line 1 column 12"
+    },
+    {
+      "name": "used \"10\"",
+      "input": {
+        "used": "10",
+        "size": 10000
+      },
+      "wire": "{\"used\":\"10\",\"size\":10000}",
+      "error": "invalid type: string \"10\", expected u64 at line 1 column 12"
+    },
+    {
+      "name": "used true",
+      "input": {
+        "used": true,
+        "size": 10000
+      },
+      "wire": "{\"used\":true,\"size\":10000}",
+      "error": "invalid type: boolean `true`, expected u64 at line 1 column 12"
+    },
+    {
+      "name": "used -1",
+      "input": {
+        "used": -1,
+        "size": 10000
+      },
+      "wire": "{\"used\":-1,\"size\":10000}",
+      "error": "invalid value: integer `-1`, expected u64 at line 1 column 10"
+    },
+    {
+      "name": "used 0.5",
+      "input": {
+        "used": 0.5,
+        "size": 10000
+      },
+      "wire": "{\"used\":0.5,\"size\":10000}",
+      "error": "invalid type: floating point `0.5`, expected u64 at line 1 column 11"
+    },
+    {
+      "name": "used 18446744073709551616",
+      "input": {
+        "used": 18446744073709551616,
+        "size": 10000
+      },
+      "wire": "{\"used\":18446744073709551616,\"size\":10000}",
+      "error": "invalid type: floating point `1.8446744073709552e+19`, expected u64 at line 1 column 28"
+    },
+    {
+      "name": "used 36893488147419103232",
+      "input": {
+        "used": 36893488147419103232,
+        "size": 10000
+      },
+      "wire": "{\"used\":36893488147419103232,\"size\":10000}",
+      "error": "invalid type: floating point `3.6893488147419103e+19`, expected u64 at line 1 column 28"
+    },
+    {
+      "name": "size null",
+      "input": {
+        "used": 2500,
+        "size": null
+      },
+      "wire": "{\"used\":2500,\"size\":null}",
+      "error": "invalid type: null, expected u64 at line 1 column 24"
+    },
+    {
+      "name": "size \"10\"",
+      "input": {
+        "used": 2500,
+        "size": "10"
+      },
+      "wire": "{\"used\":2500,\"size\":\"10\"}",
+      "error": "invalid type: string \"10\", expected u64 at line 1 column 24"
+    },
+    {
+      "name": "size true",
+      "input": {
+        "used": 2500,
+        "size": true
+      },
+      "wire": "{\"used\":2500,\"size\":true}",
+      "error": "invalid type: boolean `true`, expected u64 at line 1 column 24"
+    },
+    {
+      "name": "size -1",
+      "input": {
+        "used": 2500,
+        "size": -1
+      },
+      "wire": "{\"used\":2500,\"size\":-1}",
+      "error": "invalid value: integer `-1`, expected u64 at line 1 column 22"
+    },
+    {
+      "name": "size 0.5",
+      "input": {
+        "used": 2500,
+        "size": 0.5
+      },
+      "wire": "{\"used\":2500,\"size\":0.5}",
+      "error": "invalid type: floating point `0.5`, expected u64 at line 1 column 23"
+    },
+    {
+      "name": "size 18446744073709551616",
+      "input": {
+        "used": 2500,
+        "size": 18446744073709551616
+      },
+      "wire": "{\"used\":2500,\"size\":18446744073709551616}",
+      "error": "invalid type: floating point `1.8446744073709552e+19`, expected u64 at line 1 column 40"
+    },
+    {
+      "name": "size 36893488147419103232",
+      "input": {
+        "used": 2500,
+        "size": 36893488147419103232
+      },
+      "wire": "{\"used\":2500,\"size\":36893488147419103232}",
+      "error": "invalid type: floating point `3.6893488147419103e+19`, expected u64 at line 1 column 40"
+    },
+    {
+      "name": "cost null",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": null
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":null}",
+      "expected": {
+        "used": 2500,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "cost missing amount",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "currency": "USD"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"currency\":\"USD\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "cost missing currency",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":1}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "cost bad amount",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": "1",
+          "currency": "USD"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":\"1\",\"currency\":\"USD\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "cost bad currency",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1,
+          "currency": 4
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":1,\"currency\":4}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "cost bad metadata",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1,
+          "currency": "USD",
+          "_meta": true
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":1,\"currency\":\"USD\",\"_meta\":true}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1.0,
+          "currency": "USD"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "1.00 USD"
+      }
+    },
+    {
+      "name": "cost sequence",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": [
+          0.125,
+          "USD"
+        ]
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":[0.125,\"USD\"]}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.125,
+          "currency": "USD"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.12 USD"
+      }
+    },
+    {
+      "name": "cost sequence long",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": [
+          1,
+          "USD",
+          null,
+          0
+        ]
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":[1,\"USD\",null,0]}",
+      "expected": {
+        "used": 2500,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "cost empty currency",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0,
+          "currency": ""
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":0,\"currency\":\"\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.0,
+          "currency": ""
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.00 "
+      }
+    },
+    {
+      "name": "used formatting 999",
+      "input": {
+        "used": 999,
+        "size": 10000
+      },
+      "wire": "{\"used\":999,\"size\":10000}",
+      "expected": {
+        "used": 999,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.09989999979734421,
+        "progress": 0.09989999979734421,
+        "warning": false,
+        "percentage": "10%",
+        "used": "999",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 1000",
+      "input": {
+        "used": 1000,
+        "size": 10000
+      },
+      "wire": "{\"used\":1000,\"size\":10000}",
+      "expected": {
+        "used": 1000,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.10000000149011612,
+        "progress": 0.10000000149011612,
+        "warning": false,
+        "percentage": "10%",
+        "used": "1k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 1049",
+      "input": {
+        "used": 1049,
+        "size": 10000
+      },
+      "wire": "{\"used\":1049,\"size\":10000}",
+      "expected": {
+        "used": 1049,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.10490000247955322,
+        "progress": 0.10490000247955322,
+        "warning": false,
+        "percentage": "10%",
+        "used": "1k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 1050",
+      "input": {
+        "used": 1050,
+        "size": 10000
+      },
+      "wire": "{\"used\":1050,\"size\":10000}",
+      "expected": {
+        "used": 1050,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.10499999672174454,
+        "progress": 0.10499999672174454,
+        "warning": false,
+        "percentage": "11%",
+        "used": "1.1k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 1099",
+      "input": {
+        "used": 1099,
+        "size": 10000
+      },
+      "wire": "{\"used\":1099,\"size\":10000}",
+      "expected": {
+        "used": 1099,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.10989999771118164,
+        "progress": 0.10989999771118164,
+        "warning": false,
+        "percentage": "11%",
+        "used": "1.1k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 9949",
+      "input": {
+        "used": 9949,
+        "size": 10000
+      },
+      "wire": "{\"used\":9949,\"size\":10000}",
+      "expected": {
+        "used": 9949,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.9948999881744385,
+        "progress": 0.9948999881744385,
+        "warning": true,
+        "percentage": "99%",
+        "used": "9.9k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 9950",
+      "input": {
+        "used": 9950,
+        "size": 10000
+      },
+      "wire": "{\"used\":9950,\"size\":10000}",
+      "expected": {
+        "used": 9950,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.9950000047683716,
+        "progress": 0.9950000047683716,
+        "warning": true,
+        "percentage": "100%",
+        "used": "10k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 9999",
+      "input": {
+        "used": 9999,
+        "size": 10000
+      },
+      "wire": "{\"used\":9999,\"size\":10000}",
+      "expected": {
+        "used": 9999,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.9998999834060669,
+        "progress": 0.9998999834060669,
+        "warning": true,
+        "percentage": "100%",
+        "used": "10k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 10000",
+      "input": {
+        "used": 10000,
+        "size": 10000
+      },
+      "wire": "{\"used\":10000,\"size\":10000}",
+      "expected": {
+        "used": 10000,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 1.0,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "100%",
+        "used": "10k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 10499",
+      "input": {
+        "used": 10499,
+        "size": 10000
+      },
+      "wire": "{\"used\":10499,\"size\":10000}",
+      "expected": {
+        "used": 10499,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 1.0499000549316406,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "105%",
+        "used": "10k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 10500",
+      "input": {
+        "used": 10500,
+        "size": 10000
+      },
+      "wire": "{\"used\":10500,\"size\":10000}",
+      "expected": {
+        "used": 10500,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 1.0499999523162842,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "105%",
+        "used": "11k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 999499",
+      "input": {
+        "used": 999499,
+        "size": 10000
+      },
+      "wire": "{\"used\":999499,\"size\":10000}",
+      "expected": {
+        "used": 999499,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 99.94989776611328,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "9995%",
+        "used": "999k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 999500",
+      "input": {
+        "used": 999500,
+        "size": 10000
+      },
+      "wire": "{\"used\":999500,\"size\":10000}",
+      "expected": {
+        "used": 999500,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 99.94999694824219,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "9995%",
+        "used": "1000k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 999999",
+      "input": {
+        "used": 999999,
+        "size": 10000
+      },
+      "wire": "{\"used\":999999,\"size\":10000}",
+      "expected": {
+        "used": 999999,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 99.9999008178711,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "10000%",
+        "used": "1000k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 1000000",
+      "input": {
+        "used": 1000000,
+        "size": 10000
+      },
+      "wire": "{\"used\":1000000,\"size\":10000}",
+      "expected": {
+        "used": 1000000,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 100.0,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "10000%",
+        "used": "1M",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 1049999",
+      "input": {
+        "used": 1049999,
+        "size": 10000
+      },
+      "wire": "{\"used\":1049999,\"size\":10000}",
+      "expected": {
+        "used": 1049999,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 104.9999008178711,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "10500%",
+        "used": "1M",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 1050000",
+      "input": {
+        "used": 1050000,
+        "size": 10000
+      },
+      "wire": "{\"used\":1050000,\"size\":10000}",
+      "expected": {
+        "used": 1050000,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 105.0,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "10500%",
+        "used": "1.1M",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 9949999",
+      "input": {
+        "used": 9949999,
+        "size": 10000
+      },
+      "wire": "{\"used\":9949999,\"size\":10000}",
+      "expected": {
+        "used": 9949999,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 994.9998779296875,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "99500%",
+        "used": "9.9M",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 9950000",
+      "input": {
+        "used": 9950000,
+        "size": 10000
+      },
+      "wire": "{\"used\":9950000,\"size\":10000}",
+      "expected": {
+        "used": 9950000,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 995.0,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "99500%",
+        "used": "10M",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 9999999",
+      "input": {
+        "used": 9999999,
+        "size": 10000
+      },
+      "wire": "{\"used\":9999999,\"size\":10000}",
+      "expected": {
+        "used": 9999999,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 999.9998779296875,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "100000%",
+        "used": "10M",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 10000000",
+      "input": {
+        "used": 10000000,
+        "size": 10000
+      },
+      "wire": "{\"used\":10000000,\"size\":10000}",
+      "expected": {
+        "used": 10000000,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 1000.0,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "100000%",
+        "used": "10M",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 10499999",
+      "input": {
+        "used": 10499999,
+        "size": 10000
+      },
+      "wire": "{\"used\":10499999,\"size\":10000}",
+      "expected": {
+        "used": 10499999,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 1049.9998779296875,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "105000%",
+        "used": "10M",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "used formatting 10500000",
+      "input": {
+        "used": 10500000,
+        "size": 10000
+      },
+      "wire": "{\"used\":10500000,\"size\":10000}",
+      "expected": {
+        "used": 10500000,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 1050.0,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "105000%",
+        "used": "11M",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 999",
+      "input": {
+        "used": 2500,
+        "size": 999
+      },
+      "wire": "{\"used\":2500,\"size\":999}",
+      "expected": {
+        "used": 2500,
+        "size": 999
+      },
+      "presentation": {
+        "ratio": 2.50250244140625,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "250%",
+        "used": "2.5k",
+        "size": "999",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 1000",
+      "input": {
+        "used": 2500,
+        "size": 1000
+      },
+      "wire": "{\"used\":2500,\"size\":1000}",
+      "expected": {
+        "used": 2500,
+        "size": 1000
+      },
+      "presentation": {
+        "ratio": 2.5,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "250%",
+        "used": "2.5k",
+        "size": "1k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 1049",
+      "input": {
+        "used": 2500,
+        "size": 1049
+      },
+      "wire": "{\"used\":2500,\"size\":1049}",
+      "expected": {
+        "used": 2500,
+        "size": 1049
+      },
+      "presentation": {
+        "ratio": 2.3832221031188965,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "238%",
+        "used": "2.5k",
+        "size": "1k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 1050",
+      "input": {
+        "used": 2500,
+        "size": 1050
+      },
+      "wire": "{\"used\":2500,\"size\":1050}",
+      "expected": {
+        "used": 2500,
+        "size": 1050
+      },
+      "presentation": {
+        "ratio": 2.3809523582458496,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "238%",
+        "used": "2.5k",
+        "size": "1.1k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 1099",
+      "input": {
+        "used": 2500,
+        "size": 1099
+      },
+      "wire": "{\"used\":2500,\"size\":1099}",
+      "expected": {
+        "used": 2500,
+        "size": 1099
+      },
+      "presentation": {
+        "ratio": 2.2747952938079834,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "227%",
+        "used": "2.5k",
+        "size": "1.1k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 9949",
+      "input": {
+        "used": 2500,
+        "size": 9949
+      },
+      "wire": "{\"used\":2500,\"size\":9949}",
+      "expected": {
+        "used": 2500,
+        "size": 9949
+      },
+      "presentation": {
+        "ratio": 0.2512815296649933,
+        "progress": 0.2512815296649933,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "9.9k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 9950",
+      "input": {
+        "used": 2500,
+        "size": 9950
+      },
+      "wire": "{\"used\":2500,\"size\":9950}",
+      "expected": {
+        "used": 2500,
+        "size": 9950
+      },
+      "presentation": {
+        "ratio": 0.2512562870979309,
+        "progress": 0.2512562870979309,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 9999",
+      "input": {
+        "used": 2500,
+        "size": 9999
+      },
+      "wire": "{\"used\":2500,\"size\":9999}",
+      "expected": {
+        "used": 2500,
+        "size": 9999
+      },
+      "presentation": {
+        "ratio": 0.2500250041484833,
+        "progress": 0.2500250041484833,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 10000",
+      "input": {
+        "used": 2500,
+        "size": 10000
+      },
+      "wire": "{\"used\":2500,\"size\":10000}",
+      "expected": {
+        "used": 2500,
+        "size": 10000
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 10499",
+      "input": {
+        "used": 2500,
+        "size": 10499
+      },
+      "wire": "{\"used\":2500,\"size\":10499}",
+      "expected": {
+        "used": 2500,
+        "size": 10499
+      },
+      "presentation": {
+        "ratio": 0.23811791837215424,
+        "progress": 0.23811791837215424,
+        "warning": false,
+        "percentage": "24%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 10500",
+      "input": {
+        "used": 2500,
+        "size": 10500
+      },
+      "wire": "{\"used\":2500,\"size\":10500}",
+      "expected": {
+        "used": 2500,
+        "size": 10500
+      },
+      "presentation": {
+        "ratio": 0.2380952388048172,
+        "progress": 0.2380952388048172,
+        "warning": false,
+        "percentage": "24%",
+        "used": "2.5k",
+        "size": "11k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 999499",
+      "input": {
+        "used": 2500,
+        "size": 999499
+      },
+      "wire": "{\"used\":2500,\"size\":999499}",
+      "expected": {
+        "used": 2500,
+        "size": 999499
+      },
+      "presentation": {
+        "ratio": 0.0025012530386447906,
+        "progress": 0.0025012530386447906,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "999k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 999500",
+      "input": {
+        "used": 2500,
+        "size": 999500
+      },
+      "wire": "{\"used\":2500,\"size\":999500}",
+      "expected": {
+        "used": 2500,
+        "size": 999500
+      },
+      "presentation": {
+        "ratio": 0.002501250710338354,
+        "progress": 0.002501250710338354,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "1000k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 999999",
+      "input": {
+        "used": 2500,
+        "size": 999999
+      },
+      "wire": "{\"used\":2500,\"size\":999999}",
+      "expected": {
+        "used": 2500,
+        "size": 999999
+      },
+      "presentation": {
+        "ratio": 0.0025000025052577257,
+        "progress": 0.0025000025052577257,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "1000k",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 1000000",
+      "input": {
+        "used": 2500,
+        "size": 1000000
+      },
+      "wire": "{\"used\":2500,\"size\":1000000}",
+      "expected": {
+        "used": 2500,
+        "size": 1000000
+      },
+      "presentation": {
+        "ratio": 0.0024999999441206455,
+        "progress": 0.0024999999441206455,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "1M",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 1049999",
+      "input": {
+        "used": 2500,
+        "size": 1049999
+      },
+      "wire": "{\"used\":2500,\"size\":1049999}",
+      "expected": {
+        "used": 2500,
+        "size": 1049999
+      },
+      "presentation": {
+        "ratio": 0.0023809545673429966,
+        "progress": 0.0023809545673429966,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "1M",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 1050000",
+      "input": {
+        "used": 2500,
+        "size": 1050000
+      },
+      "wire": "{\"used\":2500,\"size\":1050000}",
+      "expected": {
+        "used": 2500,
+        "size": 1050000
+      },
+      "presentation": {
+        "ratio": 0.0023809524718672037,
+        "progress": 0.0023809524718672037,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "1.1M",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 9949999",
+      "input": {
+        "used": 2500,
+        "size": 9949999
+      },
+      "wire": "{\"used\":2500,\"size\":9949999}",
+      "expected": {
+        "used": 2500,
+        "size": 9949999
+      },
+      "presentation": {
+        "ratio": 0.0002512563078198582,
+        "progress": 0.0002512563078198582,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "9.9M",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 9950000",
+      "input": {
+        "used": 2500,
+        "size": 9950000
+      },
+      "wire": "{\"used\":2500,\"size\":9950000}",
+      "expected": {
+        "used": 2500,
+        "size": 9950000
+      },
+      "presentation": {
+        "ratio": 0.00025125627871602774,
+        "progress": 0.00025125627871602774,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "10M",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 9999999",
+      "input": {
+        "used": 2500,
+        "size": 9999999
+      },
+      "wire": "{\"used\":2500,\"size\":9999999}",
+      "expected": {
+        "used": 2500,
+        "size": 9999999
+      },
+      "presentation": {
+        "ratio": 0.0002500000118743628,
+        "progress": 0.0002500000118743628,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "10M",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 10000000",
+      "input": {
+        "used": 2500,
+        "size": 10000000
+      },
+      "wire": "{\"used\":2500,\"size\":10000000}",
+      "expected": {
+        "used": 2500,
+        "size": 10000000
+      },
+      "presentation": {
+        "ratio": 0.0002500000118743628,
+        "progress": 0.0002500000118743628,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "10M",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 10499999",
+      "input": {
+        "used": 2500,
+        "size": 10499999
+      },
+      "wire": "{\"used\":2500,\"size\":10499999}",
+      "expected": {
+        "used": 2500,
+        "size": 10499999
+      },
+      "presentation": {
+        "ratio": 0.00023809526464901865,
+        "progress": 0.00023809526464901865,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "10M",
+        "cost": null
+      }
+    },
+    {
+      "name": "size formatting 10500000",
+      "input": {
+        "used": 2500,
+        "size": 10500000
+      },
+      "wire": "{\"used\":2500,\"size\":10500000}",
+      "expected": {
+        "used": 2500,
+        "size": 10500000
+      },
+      "presentation": {
+        "ratio": 0.0002380952355451882,
+        "progress": 0.0002380952355451882,
+        "warning": false,
+        "percentage": "0%",
+        "used": "2.5k",
+        "size": "11M",
+        "cost": null
+      }
+    },
+    {
+      "name": "cost formatting 0",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":0,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.0,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.00 credits"
+      }
+    },
+    {
+      "name": "cost formatting -0.0",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": -0.0,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":-0.0,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": -0.0,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "-0.00 credits"
+      }
+    },
+    {
+      "name": "cost formatting 1e-05",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1e-05,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":1e-05,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1e-05,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.0000 credits"
+      }
+    },
+    {
+      "name": "cost formatting 5e-05",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 5e-05,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":5e-05,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 5e-05,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.0001 credits"
+      }
+    },
+    {
+      "name": "cost formatting 0.00015",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.00015,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":0.00015,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.00015,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.0001 credits"
+      }
+    },
+    {
+      "name": "cost formatting 0.005",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.005,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":0.005,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.005,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.0050 credits"
+      }
+    },
+    {
+      "name": "cost formatting 0.00999",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.00999,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":0.00999,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.00999,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.0100 credits"
+      }
+    },
+    {
+      "name": "cost formatting 0.01",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.01,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":0.01,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.01,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.01 credits"
+      }
+    },
+    {
+      "name": "cost formatting 0.125",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.125,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":0.125,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.125,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.12 credits"
+      }
+    },
+    {
+      "name": "cost formatting 0.375",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.375,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":0.375,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 0.375,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.38 credits"
+      }
+    },
+    {
+      "name": "cost formatting 1.005",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1.005,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":1.005,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1.005,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "1.00 credits"
+      }
+    },
+    {
+      "name": "cost formatting 2.675",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 2.675,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":2.675,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 2.675,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "2.67 credits"
+      }
+    },
+    {
+      "name": "cost formatting -0.005",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": -0.005,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":-0.005,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": -0.005,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "-0.01 credits"
+      }
+    },
+    {
+      "name": "cost formatting -0.125",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": -0.125,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":-0.125,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": -0.125,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "-0.12 credits"
+      }
+    },
+    {
+      "name": "cost formatting 1e+21",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1e+21,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":1e+21,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1e+21,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "1000000000000000000000.00 credits"
+      }
+    },
+    {
+      "name": "cost formatting 1e-300",
+      "input": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1e-300,
+          "currency": "credits"
+        }
+      },
+      "wire": "{\"used\":2500,\"size\":10000,\"cost\":{\"amount\":1e-300,\"currency\":\"credits\"}}",
+      "expected": {
+        "used": 2500,
+        "size": 10000,
+        "cost": {
+          "amount": 1e-300,
+          "currency": "credits"
+        }
+      },
+      "presentation": {
+        "ratio": 0.25,
+        "progress": 0.25,
+        "warning": false,
+        "percentage": "25%",
+        "used": "2.5k",
+        "size": "10k",
+        "cost": "0.0000 credits"
+      }
+    },
+    {
+      "name": "ratio 84/100",
+      "input": {
+        "used": 84,
+        "size": 100
+      },
+      "wire": "{\"used\":84,\"size\":100}",
+      "expected": {
+        "used": 84,
+        "size": 100
+      },
+      "presentation": {
+        "ratio": 0.8399999737739563,
+        "progress": 0.8399999737739563,
+        "warning": false,
+        "percentage": "84%",
+        "used": "84",
+        "size": "100",
+        "cost": null
+      }
+    },
+    {
+      "name": "ratio 85/100",
+      "input": {
+        "used": 85,
+        "size": 100
+      },
+      "wire": "{\"used\":85,\"size\":100}",
+      "expected": {
+        "used": 85,
+        "size": 100
+      },
+      "presentation": {
+        "ratio": 0.8500000238418579,
+        "progress": 0.8500000238418579,
+        "warning": true,
+        "percentage": "85%",
+        "used": "85",
+        "size": "100",
+        "cost": null
+      }
+    },
+    {
+      "name": "ratio 86/100",
+      "input": {
+        "used": 86,
+        "size": 100
+      },
+      "wire": "{\"used\":86,\"size\":100}",
+      "expected": {
+        "used": 86,
+        "size": 100
+      },
+      "presentation": {
+        "ratio": 0.8600000143051147,
+        "progress": 0.8600000143051147,
+        "warning": true,
+        "percentage": "86%",
+        "used": "86",
+        "size": "100",
+        "cost": null
+      }
+    },
+    {
+      "name": "ratio 169/200",
+      "input": {
+        "used": 169,
+        "size": 200
+      },
+      "wire": "{\"used\":169,\"size\":200}",
+      "expected": {
+        "used": 169,
+        "size": 200
+      },
+      "presentation": {
+        "ratio": 0.8450000286102295,
+        "progress": 0.8450000286102295,
+        "warning": false,
+        "percentage": "85%",
+        "used": "169",
+        "size": "200",
+        "cost": null
+      }
+    },
+    {
+      "name": "ratio 1689/2000",
+      "input": {
+        "used": 1689,
+        "size": 2000
+      },
+      "wire": "{\"used\":1689,\"size\":2000}",
+      "expected": {
+        "used": 1689,
+        "size": 2000
+      },
+      "presentation": {
+        "ratio": 0.8445000052452087,
+        "progress": 0.8445000052452087,
+        "warning": false,
+        "percentage": "84%",
+        "used": "1.7k",
+        "size": "2k",
+        "cost": null
+      }
+    },
+    {
+      "name": "ratio 1/8",
+      "input": {
+        "used": 1,
+        "size": 8
+      },
+      "wire": "{\"used\":1,\"size\":8}",
+      "expected": {
+        "used": 1,
+        "size": 8
+      },
+      "presentation": {
+        "ratio": 0.125,
+        "progress": 0.125,
+        "warning": false,
+        "percentage": "13%",
+        "used": "1",
+        "size": "8",
+        "cost": null
+      }
+    },
+    {
+      "name": "ratio 1/40",
+      "input": {
+        "used": 1,
+        "size": 40
+      },
+      "wire": "{\"used\":1,\"size\":40}",
+      "expected": {
+        "used": 1,
+        "size": 40
+      },
+      "presentation": {
+        "ratio": 0.02500000037252903,
+        "progress": 0.02500000037252903,
+        "warning": false,
+        "percentage": "3%",
+        "used": "1",
+        "size": "40",
+        "cost": null
+      }
+    },
+    {
+      "name": "ratio 1/200",
+      "input": {
+        "used": 1,
+        "size": 200
+      },
+      "wire": "{\"used\":1,\"size\":200}",
+      "expected": {
+        "used": 1,
+        "size": 200
+      },
+      "presentation": {
+        "ratio": 0.004999999888241291,
+        "progress": 0.004999999888241291,
+        "warning": false,
+        "percentage": "1%",
+        "used": "1",
+        "size": "200",
+        "cost": null
+      }
+    },
+    {
+      "name": "ratio 16777217/20000000",
+      "input": {
+        "used": 16777217,
+        "size": 20000000
+      },
+      "wire": "{\"used\":16777217,\"size\":20000000}",
+      "expected": {
+        "used": 16777217,
+        "size": 20000000
+      },
+      "presentation": {
+        "ratio": 0.838860809803009,
+        "progress": 0.838860809803009,
+        "warning": false,
+        "percentage": "84%",
+        "used": "17M",
+        "size": "20M",
+        "cost": null
+      }
+    },
+    {
+      "name": "ratio 10000000/1",
+      "input": {
+        "used": 10000000,
+        "size": 1
+      },
+      "wire": "{\"used\":10000000,\"size\":1}",
+      "expected": {
+        "used": 10000000,
+        "size": 1
+      },
+      "presentation": {
+        "ratio": 10000000.0,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "1000000000%",
+        "used": "10M",
+        "size": "1",
+        "cost": null
+      }
+    },
+    {
+      "name": "ratio 4294967296/1",
+      "input": {
+        "used": 4294967296,
+        "size": 1
+      },
+      "wire": "{\"used\":4294967296,\"size\":1}",
+      "expected": {
+        "used": 4294967296,
+        "size": 1
+      },
+      "presentation": {
+        "ratio": 4294967296.0,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "4294967295%",
+        "used": "4295M",
+        "size": "1",
+        "cost": null
+      }
+    },
+    {
+      "name": "ratio 18014398509481984/18014398509481984",
+      "input": {
+        "used": 18014398509481984,
+        "size": 18014398509481984
+      },
+      "wire": "{\"used\":18014398509481984,\"size\":18014398509481984}",
+      "expected": {
+        "used": 18014398509481984,
+        "size": 18014398509481984
+      },
+      "presentation": {
+        "ratio": 1.0,
+        "progress": 1.0,
+        "warning": true,
+        "percentage": "100%",
+        "used": "18014398509M",
+        "size": "18014398509M",
+        "cost": null
+      }
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import { Button, Input } from "nsh/base";
 import { commandHint, commandMatches, configChoices, type ComposerState } from "../state/composer";
 import { ConfigPicker } from "./ConfigPicker";
 import { Icon } from "./Icon";
+import { ContextUsageView } from "./ContextUsage";
 
 export function Composer(props: { state: ComposerState }) {
   const state = props.state;
@@ -98,6 +99,7 @@ export function Composer(props: { state: ComposerState }) {
               />
             </If>
           </View>
+          <ContextUsageView thread={state.thread} />
           <If
             when={state.thread.generating()}
             else={

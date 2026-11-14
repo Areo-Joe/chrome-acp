@@ -288,3 +288,9 @@ cargo +stable check --manifest-path native-host/Cargo.toml --locked
 
 Android APK: `android-host/app/build/outputs/apk/debug/app-debug.apk`.
 Dev logs: `.nsh/macos-dev.log` and `.nsh/android-dev.log`.
+
+Context usage follows ordinary ACP v1 `usage_update`: the composer shows a
+context ring with Context/Cost details, warning at 85%. A missing, null, or
+malformed optional cost preserves the last cumulative cost. Sessions retain
+independent usage; rebuilding a thread clears it before replay. See
+[the usage comparison](docs/ZED_USAGE.md) for the exact Zed references and tests.

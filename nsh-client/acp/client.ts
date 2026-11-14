@@ -63,6 +63,20 @@ export function decodePlan(value: unknown): acp.Plan {
   return { entries, ...metadata(input) };
 }
 
+/** Ordinary v1 UsageUpdate / Cost, using Zed's locked serde field order and defaults. */
+export function decodeUsage(value: unknown): acp.UsageUpdate {
+  const input = struct(value, ["used", "size", "cost", "_meta"]);
+  const unsigned = (value: unknown): value is number => typeof value === "number"
+    && Number.isInteger(value) && value >= 0 && value < 2 ** 64;
+  if (!input || !unsigned(input.used) || !unsigned(input.size)) throw new Error("Invalid ACP usage_update: used and size must be u64 integers");
+  const cost = struct(input.cost, ["amount", "currency", "_meta"]);
+  return {
+    used: input.used, size: input.size, ...metadata(input),
+    ...(cost && typeof cost.amount === "number" && Number.isFinite(cost.amount) && typeof cost.currency === "string"
+      ? { cost: { amount: cost.amount, currency: cost.currency, ...metadata(cost) } } : {}),
+  };
+}
+
 /** Session callbacks are synchronous; a new event-loop turn follows the SDK's
  * already-received dispatch microtasks, like Zed's foreground queue barrier. */
 function drainSessionDispatch(): Promise<void> {
@@ -564,17 +578,26 @@ export class AcpClient {
       return session.onPermission(params, signal);
     });
     const stream = createWebSocketStream(url.toString(), { WebSocket: Socket, cookies: "omit" });
-    // Canonicalize the ordinary v1 plan's serde representations before SDK
+    // Canonicalize ordinary v1 plan/usage serde representations before SDK
     // validation. Framing, dispatch ordering and all other notifications stay SDK-owned.
     const readable = stream.readable.pipeThrough(new TransformStream({
       transform(message, controller) {
         if ("method" in message && message.method === acp.methods.client.session.update && !("id" in message)) {
           const params = object(message.params);
           const update = object(params?.update);
-          if (params && update?.sessionUpdate === "plan") {
+          if (params && update && (update.sessionUpdate === "plan" || update.sessionUpdate === "usage_update")) {
             try {
-              message = { ...message, params: { ...params, update: { sessionUpdate: "plan", ...decodePlan(update) } } };
-            } catch { /* Leave invalid notifications for the SDK to reject. */ }
+              const decoded = update.sessionUpdate === "plan" ? decodePlan(update) : decodeUsage(update);
+              message = { ...message, params: { ...params, update: { sessionUpdate: update.sessionUpdate, ...decoded } } };
+            } catch (error) {
+              // The SDK's wideInt lacks Rust's u64 upper bound. Reject invalid
+              // usage here rather than letting its looser validator accept it.
+              if (update.sessionUpdate === "usage_update") {
+                console.warn("Received invalid ACP usage_update:", error);
+                return;
+              }
+              // Leave invalid plan notifications for the SDK to reject.
+            }
           }
         }
         controller.enqueue(message);

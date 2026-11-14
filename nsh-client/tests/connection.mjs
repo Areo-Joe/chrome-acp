@@ -59,6 +59,7 @@ server.on("connection", (socket, request) => {
   let closes = 0;
   let promptCalls = 0;
   let planSent = false;
+  let usageSent = false;
   let staleConfigurationReply = null;
   const authMethods = token === "auth-none" ? [] : token === "auth-terminal-only"
     ? [{ type: "terminal", id: "terminal-login", name: "Terminal sign-in" }]
@@ -108,6 +109,25 @@ server.on("connection", (socket, request) => {
     const stop = (stopReason) => result(message.id, { stopReason });
     cancelled = false;
     onCancel = null;
+    if (input.startsWith("usage")) {
+      usageSent = true;
+      const usage = { sessionUpdate: "usage_update", used: 2500, size: 10000 };
+      if (input === "usage") usage.cost = { amount: 0.125, currency: "USD" };
+      if (input === "usage-warning") usage.used = 8500;
+      if (input === "usage-null") usage.cost = null;
+      if (input === "usage-invalid") usage.cost = { amount: "bad", currency: "USD" };
+      if (input === "usage-zero") { usage.used = 100; usage.size = 0; }
+      if (input === "usage-over") { usage.used = 200; usage.size = 100; }
+      if (input === "usage-replace") usage.cost = { amount: 9, currency: "credits" };
+      if (input === "usage-tiny") usage.cost = { amount: 0.005, currency: "USD" };
+      if (input === "usage-no-notification") return result(message.id, { stopReason: "end_turn", usage: { inputTokens: 99, outputTokens: 88 } });
+      update(usage);
+      if (input === "usage-fail") return error(message.id, "Usage prompt failed");
+      if (input === "usage-refuse") return stop("refusal");
+      if (input === "usage-limit") return stop("max_tokens");
+      if (input === "usage-slow") { onCancel = () => stop("cancelled"); return; }
+      return stop("end_turn");
+    }
     if (input.startsWith("plan")) {
       planSent = true;
       let entries = [
@@ -336,7 +356,8 @@ server.on("connection", (socket, request) => {
       const attempt = (loadAttempts.get(id) ?? 0) + 1;
       loadAttempts.set(id, attempt);
       if (token === "history-auth" && !authenticated) return error(message.id, "Sign in to open this session", -32000);
-      if (token === "history-load-error" && attempt === 1) {
+      if (["history-load-error", "history-usage-load-error"].includes(token) && attempt === 1) {
+        if (token === "history-usage-load-error") send({ method: "session/update", params: { sessionId: id, update: { sessionUpdate: "usage_update", used: 999, size: 1000, cost: { amount: 99, currency: "USD" } } } });
         socket._socket.cork();
         error(message.id, "History replay failed");
         historyText("Discarded failed replay");
@@ -347,6 +368,7 @@ server.on("connection", (socket, request) => {
       const complete = () => {
         if (message.method === "session/load") historyText(`History of ${info.title}`);
         if (token === "history-plan") send({ method: "session/update", params: { sessionId: id, update: { sessionUpdate: "plan", entries: [{ content: `Plan for ${id}`, priority: "low", status: "in_progress" }] } } });
+        if (token.startsWith("history-usage") || token === "history-retention-usage") send({ method: "session/update", params: { sessionId: id, update: { sessionUpdate: "usage_update", used: id === "saved-a" ? 2000 : 3000, size: 10000, cost: { amount: 2, currency: "credits" } } } });
         result(message.id, { configOptions: sessionOptions.get(id) });
       };
       if (token === "history-retention-pending" && loads === 1) {
@@ -379,7 +401,10 @@ server.on("connection", (socket, request) => {
     if (message.method === "session/prompt") {
       assert.ok(sessionOptions.has(id));
       const input = message.params.prompt[0].text;
-      if (token === "history-plan" && input === "plan-background") {
+      if ((token === "history-usage" || token === "history-retention-usage") && input === "usage-background") {
+        send({ method: "session/update", params: { sessionId: "new-1", update: { sessionUpdate: "usage_update", used: 9000, size: 10000, cost: { amount: 12, currency: "credits" } } } });
+        historyText("Background usage delivered");
+      } else if (token === "history-plan" && input === "plan-background") {
         send({ method: "session/update", params: { sessionId: "new-1", update: { sessionUpdate: "plan", entries: [{ content: "Background plan", priority: "high", status: "pending" }] } } });
         historyText("Background plan delivered");
       } else if (input === "stats") {
@@ -486,6 +511,7 @@ server.on("connection", (socket, request) => {
       if (token.startsWith("auth-close-")) assert.equal(closes, 1, "Reopen must follow old-session release");
       loads++;
       if (message.method === "session/load") text("agent_message_chunk", "Restored history.");
+      if (usageSent) update({ sessionUpdate: "usage_update", used: 0, size: 10000 });
       if (planSent) update({ sessionUpdate: "plan", entries: [{ content: "Restored plan", priority: "low", status: "pending" }] });
       if (token.startsWith("auth-slow-")) return later(() => {
         if (token.endsWith("error")) error(message.id, "Slow session restoration failed");
@@ -589,7 +615,7 @@ try {
     const forward = spawnSync("adb", ["reverse", "tcp:19437", "tcp:19437"], { stdio: "inherit" });
     assert.equal(forward.status, 0, "Could not forward the mock server port to Android");
   }
-  const files = selectedFile ? [selectedFile] : ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/plan.test.tsx", "tests/tools.test.tsx", "tests/authentication.test.tsx", "tests/sessions.test.tsx", "tests/retention.test.tsx"];
+  const files = selectedFile ? [selectedFile] : ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/plan.test.tsx", "tests/usage.test.tsx", "tests/tools.test.tsx", "tests/authentication.test.tsx", "tests/sessions.test.tsx", "tests/retention.test.tsx"];
   if (!android && !selectedFile) files.push("tests/connection-timeout.test.tsx", "tests/optimistic-change.test.tsx");
   for (const file of files) {
     const child = spawn(`${root}.nsh/toolchain/bin/nsh`, ["test", file, ...args], { cwd: root, stdio: "inherit" });
