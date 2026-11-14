@@ -38,9 +38,9 @@ test("a sent message streams the reply, its thought, and ends the turn", async (
   // The user can reopen a closed thought.
   await app.press("id:thought-toggle");
   await app.waitUntil(() => joined(app).includes("Considering the greeting"));
-  // Only trailing whitespace is dropped.
+  // Zed build_chunks_from_creases trims the outer leading/trailing whitespace.
   await send(app, "  again");
-  await app.waitUntil(() => joined(app).includes("Echo: ··again"));
+  await app.waitUntil(() => joined(app).includes("Echo: again"));
   await app.press("id:disconnect");
 });
 

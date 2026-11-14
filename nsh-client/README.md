@@ -52,7 +52,7 @@ RPC succeeds, fails, or the connection closes. Rejection reveals the latest
 confirmed value and an error without dropping the connection. Disconnect or Back returns to the
 connection form.
 
-Send submits the draft, without trailing whitespace, as a `session/prompt`; the message shows at once,
+Send submits the draft, without outer leading/trailing whitespace, as a `session/prompt`; the message shows at once,
 and an agent's echo of it is not shown twice. The reply streams in as Markdown,
 revealed smoothly, with the agent's thinking open while it streams and collapsed
 once the agent moves on. Stop sends `session/cancel` and ends the turn at once.
@@ -63,6 +63,13 @@ message queue. An empty generating composer shows Stop. Queued messages send
 in FIFO order on ordinary v1 completion; Stop pauses the queue. Each entry can
 be edited, removed or sent immediately after cancellation settles. See
 [the queue comparison](docs/ZED_QUEUE.md) for the state machine and recovery rules.
+
+Agents advertising v1 image support enable **Add Images** and image paste/drop.
+Images are previewed, removable, and sent in their position among text blocks;
+image-only messages are supported. The custom hosts share Zed's Rust PNG
+preparation, dimension and binary size limits. Images survive queue editing,
+cancellation rollback, sign-in recovery, draft eviction and history reload.
+See [the image comparison](docs/ZED_IMAGES.md).
 
 Tool calls show in the thread as Zed shows them: a line with the tool's icon and
 title that opens to its input and output, or a card for edits (with their diff),
@@ -162,7 +169,7 @@ with the oldest local conversation activity evicted first. Views without an
 established thread are eligible regardless of load support; established threads
 require load support and an idle state. Running turns, pending permissions and
 unfinished prompts are protected; established resume-only sessions stay in
-memory. Text drafts and small session metadata outlive an evicted view, so opening
+memory. Drafts, including image sources, and small session metadata outlive an evicted view, so opening
 it again loads history and restores its draft. A pending release blocks same-ID
 reopening until optional close and queued dispatch finish. The state API exposes
 `maxIdleRetainedThreads` to override the default, including zero.
@@ -252,6 +259,12 @@ and a USB-debuggable device or emulator. On macOS the recipe locates JDK 17;
 elsewhere set `JAVA_HOME`. Set `ANDROID_HOME` / `ANDROID_SDK_ROOT` for a custom SDK
 location (the recipe defaults to `~/Library/Android/sdk`). Gradle is pinned by its
 wrapper. The pinned AARs' native libraries are aligned for 16 KB pages.
+The shared image codec also requires NDK 29.0.14033849 (resolved by Gradle),
+Rust stable and these Android targets:
+
+```sh
+rustup target add --toolchain stable aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+```
 
 ## Layout and Android Studio
 

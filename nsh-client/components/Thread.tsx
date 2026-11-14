@@ -5,6 +5,8 @@ import { Icon } from "./Icon";
 import { Spinner } from "./Spinner";
 import { isHiddenToolCall } from "../state/tool-call";
 import { ToolCallView } from "./ToolCall";
+import { ImageBlockView } from "./Images";
+import { blockMarkdown } from "../state/thread";
 
 export function ThreadView(props: { thread: Thread }) {
   const thread = props.thread;
@@ -122,9 +124,16 @@ function Entry(props: { entry: () => ThreadEntry; thread: Thread }) {
 }
 
 function UserMessage(props: { entry: () => UserEntry }) {
+  const blocks = () => { props.entry().markdown(); return props.entry().blocks; };
   return (
     <View testID="user-message" class="rounded-lg border border-border bg-muted/30 px-3 py-3">
-      <Text style={{ userSelect: "text" }} class="text-base text-foreground">{props.entry().markdown()}</Text>
+      <If when={blocks().some(block => block.type === "image")} else={
+        <Text style={{ userSelect: "text" }} class="text-base text-foreground">{props.entry().markdown()}</Text>
+      }>
+        <Each of={blocks()}>{block => <If when={block().type === "image"} else={
+          <Text style={{ userSelect: "text" }} class="text-base text-foreground">{blockMarkdown(block())}</Text>
+        }>{() => { const value = block(); return value.type === "image" ? <ImageBlockView image={value} testID="user-image" /> : null; }}</If>}</Each>
+      </If>
     </View>
   );
 }

@@ -1,6 +1,8 @@
 import { cleanup, Clipboard, effect, keymap, platform, Scroll, signal, Text, View, type InputRef } from "nsh";
 import { Button, Input } from "nsh/base";
-import { queuedText, type ComposerState, type QueuedMessage } from "../state/composer";
+import { queuedEditorText, type ComposerState, type QueuedMessage } from "../state/composer";
+import { ImageBlockView } from "./Images";
+import { isLocalFile, pastedImages } from "../state/images";
 import { Icon } from "./Icon";
 
 export function MessageQueueView(props: { state: ComposerState }) {
@@ -40,7 +42,7 @@ function QueueRow(props: { entry: QueuedMessage; state: ComposerState }) {
   let focusTimer: ReturnType<typeof setTimeout> | undefined;
   const editorVersion = signal(0);
   const height = signal(24);
-  const text = () => queuedText(props.entry.content);
+  const text = () => queuedEditorText(props.entry.content);
   const first = () => state.queued()[0]?.id === id;
   cleanup(() => {
     if (focusTimer !== undefined) clearTimeout(focusTimer);
@@ -69,8 +71,14 @@ function QueueRow(props: { entry: QueuedMessage; state: ComposerState }) {
     // the shortcut as Zed's InputAttempted event, preserving the selection.
     cleanup(keymap.bind("mod+v", () => {
       const offset = selection.end;
-      void Clipboard.readText().then(value => {
-        if (state.queueFocused() === id && value.length) state.editQueued(id, { text: value, offset });
+      void Clipboard.readText().then(async value => {
+        if (state.queueFocused() !== id) return;
+        if (value.length) { state.editQueued(id, { text: value, offset }); return; }
+        const bitmap = await Clipboard.hasImage() ? await Clipboard.readImage() : null;
+        const sources = bitmap ? [bitmap.url] : (await Clipboard.readFiles()).filter(isLocalFile);
+        if (state.queueFocused() === id && sources.length && state.editQueued(id, { text: "", offset })) {
+          state.addImages(sources, bitmap !== null);
+        }
       }).catch(state.thread.reportError);
     }, { when: "always" }));
   });
@@ -80,6 +88,11 @@ function QueueRow(props: { entry: QueuedMessage; state: ComposerState }) {
       <Icon name="circle" size={12} tone={first() ? "accent" : "muted"} />
     </View>
     <View testID={`queue-focus-${id}`} onPress={() => { input?.focus(); state.queueFocused.set(id); }} class="flex-1" style={{ minWidth: 120 }}>
+      <View class="flex-row flex-wrap gap-1">
+        <Each of={props.entry.content.filter(block => block.type === "image")}>
+          {image => <ImageBlockView image={image()} compact />}
+        </Each>
+      </View>
       <Each of={[editorVersion()]} key={version => version}>{version => <Input testID={`queue-input-${id}`} ref={node => {
         input = node;
         if (state.queueFocused() === id) {
@@ -107,8 +120,10 @@ function QueueRow(props: { entry: QueuedMessage; state: ComposerState }) {
           composing = active;
           if (committed) nativeEdit(nativeValue, compositionCursor);
         }}
-        onPaste={({ text: value, files, uris }) => {
-          if (!files.length && !uris.length && value.length) state.editQueued(id, { text: value, offset: selection.end });
+        onPaste={event => {
+          if (event.text.length) { state.editQueued(id, { text: event.text, offset: selection.end }); return; }
+          const images = pastedImages(event);
+          if (images.sources.length && state.editQueued(id, { text: "", offset: selection.end })) state.addImages(images.sources, images.clipboard);
         }}
         class="text-sm text-muted-foreground" style={{ height: height(), padding: 0, lineHeight: 20 }} />}</Each>
     </View>

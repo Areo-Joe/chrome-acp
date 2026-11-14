@@ -44,9 +44,10 @@ Desktop Enter sends,
 Mod+Enter follows ordinary send, Mod+Shift+Enter sends immediately, and
 empty-editor Up edits the last queue entry. Shift+Enter is ignored in queued previews;
 touch keyboards keep newline entry and the action buttons. Queue previews use
-one to ten lines, inside a 160px scroll area. Existing attachment composition is
-still unavailable; unsupported edit attempts preserve the queued source and
-report an error. Native-agent steering is outside the external ACP v1 path.
+one to ten lines, inside a 160px scroll area. Text and image composition are
+supported; see [the image comparison](ZED_IMAGES.md). Unsupported edit attempts
+preserve the queued source and report an error. Native-agent steering is outside
+the external ACP v1 path.
 
 Validation:
 

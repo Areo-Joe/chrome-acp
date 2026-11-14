@@ -3,6 +3,7 @@ import { historyInfoPatch, historyTimestamp, type HistorySession } from "../acp/
 import type { Connection } from "./connection";
 import { createComposer, type ComposerState } from "./composer";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type { DraftSnapshot } from "./draft";
 
 export type OpenSession = { key: number; info: HistorySession; composer: ComposerState };
 
@@ -26,7 +27,7 @@ export function createSessions(connection: Connection, settings: { maxIdleRetain
   const confirmDelete = signal<string | null>(null);
   const patches = new Map<string, Map<keyof HistorySession, { revision: number; value: unknown }>>();
   // Like Zed's draft/metadata stores, these survive a view without retaining its thread.
-  const savedDrafts = new Map<string, string>();
+  const savedDrafts = new Map<string, DraftSnapshot>();
   const savedQueues = new Map<string, ContentBlock[][]>();
   const releasedInfo = new Map<string, HistorySession>();
   let revision = 0;
@@ -116,7 +117,8 @@ export function createSessions(connection: Connection, settings: { maxIdleRetain
       if (loaded) void load();
     } });
     if (info) {
-      composer.draft.set(savedDrafts.get(info.sessionId) ?? "");
+      const input = savedDrafts.get(info.sessionId);
+      if (input) composer.restoreInput(input);
       composer.restoreQueue(savedQueues.get(info.sessionId) ?? []);
     }
     const view = { key, info: details, composer };
@@ -167,16 +169,16 @@ export function createSessions(connection: Connection, settings: { maxIdleRetain
     const selected = active()?.key;
     const snapshot = views().map((view) => ({
       view, id: view.composer.id(), hasThread: view.composer.hasThread(),
-      draft: view.composer.draft(), idle: view.composer.thread.idleForRetention(),
+      draft: view.composer.savedInput(), idle: view.composer.thread.idleForRetention(),
       queued: view.composer.queued().map(entry => entry.content),
-      sending: view.composer.queueLoading(), recovering: view.composer.recoveringQueue(),
+      sending: view.composer.queueLoading() || view.composer.imageLoading(), recovering: view.composer.recoveringQueue(),
       updatedAt: view.composer.thread.activity(),
     }));
     untracked(() => {
       if (disposed) return;
       for (const entry of snapshot) {
         if (entry.id === null) continue;
-        if (entry.draft.length) savedDrafts.set(entry.id, entry.draft);
+        if (entry.draft.text.length) savedDrafts.set(entry.id, entry.draft);
         else savedDrafts.delete(entry.id);
         if (entry.queued.length) savedQueues.set(entry.id, entry.queued);
         else savedQueues.delete(entry.id);
@@ -187,7 +189,7 @@ export function createSessions(connection: Connection, settings: { maxIdleRetain
         // recovery owner alive. Settled queues can live in the input store.
         if (entry.sending || entry.recovering) return false;
         // Saved input without a session ID has no independent draft-store key.
-        if (entry.id === null && (entry.draft.length > 0 || entry.queued.length > 0)) return false;
+        if (entry.id === null && (entry.draft.text.length > 0 || entry.queued.length > 0)) return false;
         // Zed checks the root thread first: an absent root does not require load.
         if (!entry.hasThread) return true;
         return client!.agentCapabilities?.loadSession === true && entry.idle;

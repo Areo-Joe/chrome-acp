@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
                 factory = { context ->
                     NshView(context).also { view ->
                         nsh = view
+                        ImageCodec.register(view)
                         view.setErrorListener { Log.e("nsh-client", it) }
                         val devServer = if (BuildConfig.DEBUG) intent.getStringExtra("dev_server") else null
                         if (devServer != null) {

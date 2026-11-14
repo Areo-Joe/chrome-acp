@@ -11,7 +11,7 @@
 | `available_commands`：名称、说明、参数 hint | `message_editor.rs:49`、`:111`、`:642` | 输入 `/` 按前缀过滤；点击填入命令；有参数时补空格并展示 hint；命令完全由 agent 提供，支持动态更新 |
 | session `config_options`：模型、模式、思考强度等 | `crates/agent_ui/src/config_options.rs`；`thread_view.rs:5453` | 按返回的 ID、名称、选项、当前值生成选择器；支持 select、分组与 boolean；超过 5 项提供搜索；选择后立即显示目标值，等待 agent 确认 |
 | 旧版 session modes / models | `mode_selector.rs`、`agent_model_selector.rs` | 无 config options 时回退旧版 mode；模型通过当前共享协议的 model config option 提供 |
-| `prompt_capabilities.image`、`embedded_context` | `message_editor.rs:49`；`thread_view.rs:6580` | 暂未接图片 / 文件 / 项目上下文入口；后续按能力启用，并接宿主能力 |
+| `prompt_capabilities.image`、`embedded_context` | `message_editor.rs:49`；`thread_view.rs:6580` | 图片已实现，见 [图片对照](ZED_IMAGES.md)；文件 / 项目上下文入口仍暂缓 |
 | session 运行状态、草稿是否为空、上下文是否加载完成 | `thread_view.rs:6456` | 生成中显示 Stop；空闲时 Send，空白草稿禁用；session 初始化失败可查看错误并断开 |
 | token usage、profile、follow、fast/thinking、自有 skills | `thread_view.rs:5319`、`message_editor.rs:49` | 暂缓；其中部分属于 Zed 的项目或内置 agent 功能，不能假定任意 ACP agent 都会提供 |
 
@@ -31,7 +31,7 @@ Zed 发送按钮：上下文加载中显示 loading；生成中且草稿为空�
 | 结束 | `acp_thread.rs:7408` | 只有同一轮才回到空闲；`turn_id` 已变则忽略结果；`max_tokens` 显示 Output Limit Reached；`refusal` 删除最后一条用户消息及之后条目，显示 Request Refused，以 agent 名称指明拒绝方（`thread_view.rs:13036`）；失败显示 An Error Happened，信息按 Markdown 渲染（`thread_view.rs:12710`、`:12756`、`:13052`）；都可关闭，拒绝和失败可复制信息，输出上限不可复制 |
 | 停止 | `acp_thread.rs:7588` `cancel`、`:7630` `request_cancellation` | 发 `session/cancel` 通知，立即回到空闲；agent 在回复 `cancelled` 前发来的内容照常显示 |
 
-发送时滚动到底部；之后用户离底部 48 pt 以内才跟随新内容。普通 plan、usage 和 Queue 已分别实现；图片 / 文件附件、历史消息编辑和重发仍暂缓。
+发送时滚动到底部；之后用户离底部 48 pt 以内才跟随新内容。普通 plan、usage、Queue 和图片附件已分别实现；文件上下文、历史消息编辑和重发仍暂缓。
 
 ## 工具调用与权限请求
 

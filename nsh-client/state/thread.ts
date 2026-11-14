@@ -88,12 +88,13 @@ const canMerge = (existing: string | null, incoming: string | null) =>
   existing === null || incoming === null || existing === incoming;
 
 /** A content block as Markdown: text as is, others as links or images. */
-function blockMarkdown(block: ContentBlock): string {
+export function blockMarkdown(block: ContentBlock): string {
   switch (block.type) {
     case "text":
       return block.text;
     case "image":
-      return `![image](${block.uri ?? `data:${block.mimeType};base64,${block.data}`})`;
+      // ACP's URI identifies the source; the image itself is carried in data.
+      return `![image](data:${block.mimeType};base64,${block.data})`;
     case "resource_link":
       return `[@${block.name}](${block.uri})`;
     case "resource":

@@ -45,6 +45,7 @@ val bundleNsh = tasks.register<BundleNsh>("bundleNsh") {
 android {
     namespace = "com.chromeacp.nshclient"
     compileSdk = 37
+    ndkVersion = "29.0.14033849"
 
     defaultConfig {
         applicationId = "com.chromeacp.nshclient"
@@ -64,8 +65,25 @@ android {
     }
 }
 
+abstract class BuildImageCodec : Exec() {
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+}
+val buildImageCodec = tasks.register<BuildImageCodec>("buildImageCodec") {
+    description = "Build Zed-compatible image preparation for every Android ABI"
+    workingDir(nshClient)
+    inputs.files(fileTree(nshClient.resolve("image-codec")) { exclude("target/**") })
+    inputs.property("ndkVersion", android.ndkVersion)
+    outputDirectory.set(layout.buildDirectory.dir("generated/imageCodec"))
+    doFirst {
+        commandLine("bash", nshClient.resolve("image-codec/build-android.sh"),
+            androidComponents.sdkComponents.ndkDirectory.get().asFile, outputDirectory.get().asFile)
+    }
+}
+
 androidComponents.onVariants { variant ->
     variant.sources.assets?.addGeneratedSourceDirectory(bundleNsh, BundleNsh::outputDirectory)
+    variant.sources.jniLibs?.addGeneratedSourceDirectory(buildImageCodec, BuildImageCodec::outputDirectory)
 }
 
 dependencies {

@@ -2,5 +2,12 @@
   "name": "nsh-client",
   "id": "com.example.nshclient",
   "version": "1.0.0",
-  "build": 1
+  "build": 1,
+  "capabilities": {
+    "network": { "hosts": ["*"] },
+    "clipboard": true,
+    "picker": true,
+    "openUrl": true,
+    "host": ["image.normalize"]
+  }
 }

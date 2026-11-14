@@ -7,6 +7,12 @@ import { createConnection } from "./state/connection";
 function App() {
   const connection = createConnection();
   const result = signal<unknown>(null);
+  // Native image tests exercise the editor, using the same ACP connection
+  // setup without synthesizing keystrokes into the unrelated connect form.
+  cleanup(host.on("queue-connect", payload => {
+    const request = payload as { address: string; token: string; directory: string };
+    connection.connect(request.address, request.token, request.directory);
+  }));
   cleanup(host.on("queue-control-clear", () => result.set(null)));
   cleanup(() => connection.disconnect());
   cleanup(host.on("queue-control", payload => {

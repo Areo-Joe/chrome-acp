@@ -1,0 +1,501 @@
+{
+  "reference": "Zed 62682ebde9 build_chunks_from_creases; UTF-8 spans from Rust, UTF-16 native editor offsets",
+  "cases": [
+    {
+      "name": "case 0: \"\"",
+      "draft": {
+        "text": "",
+        "images": []
+      },
+      "expected": []
+    },
+    {
+      "name": "case 1: \"   \"",
+      "draft": {
+        "text": "   ",
+        "images": []
+      },
+      "expected": []
+    },
+    {
+      "name": "case 2: \"  plain text \\n\"",
+      "draft": {
+        "text": "  plain text \n",
+        "images": []
+      },
+      "expected": [
+        {
+          "type": "text",
+          "text": "plain text"
+        }
+      ]
+    },
+    {
+      "name": "case 3: \"￼\"",
+      "draft": {
+        "text": "￼",
+        "images": [
+          {
+            "id": 0,
+            "offset": 0,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        }
+      ]
+    },
+    {
+      "name": "case 4: \"￼ \"",
+      "draft": {
+        "text": "￼ ",
+        "images": [
+          {
+            "id": 0,
+            "offset": 0,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        }
+      ]
+    },
+    {
+      "name": "case 5: \"before￼\"",
+      "draft": {
+        "text": "before￼",
+        "images": [
+          {
+            "id": 0,
+            "offset": 6,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "text",
+          "text": "before"
+        },
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        }
+      ]
+    },
+    {
+      "name": "case 6: \"￼after\"",
+      "draft": {
+        "text": "￼after",
+        "images": [
+          {
+            "id": 0,
+            "offset": 0,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        },
+        {
+          "type": "text",
+          "text": "after"
+        }
+      ]
+    },
+    {
+      "name": "case 7: \"before ￼ after\"",
+      "draft": {
+        "text": "before ￼ after",
+        "images": [
+          {
+            "id": 0,
+            "offset": 7,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "text",
+          "text": "before "
+        },
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        },
+        {
+          "type": "text",
+          "text": " after"
+        }
+      ]
+    },
+    {
+      "name": "case 8: \"￼￼\"",
+      "draft": {
+        "text": "￼￼",
+        "images": [
+          {
+            "id": 0,
+            "offset": 0,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          },
+          {
+            "id": 1,
+            "offset": 1,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=2"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        },
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=2"
+        }
+      ]
+    },
+    {
+      "name": "case 9: \"￼ ￼ \"",
+      "draft": {
+        "text": "￼ ￼ ",
+        "images": [
+          {
+            "id": 0,
+            "offset": 0,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          },
+          {
+            "id": 1,
+            "offset": 2,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=2"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        },
+        {
+          "type": "text",
+          "text": " "
+        },
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=2"
+        }
+      ]
+    },
+    {
+      "name": "case 10: \"  ￼ \\n ￼  \"",
+      "draft": {
+        "text": "  ￼ \n ￼  ",
+        "images": [
+          {
+            "id": 0,
+            "offset": 2,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          },
+          {
+            "id": 1,
+            "offset": 6,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=2"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        },
+        {
+          "type": "text",
+          "text": " \n "
+        },
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=2"
+        }
+      ]
+    },
+    {
+      "name": "case 11: \"你🙂￼\\n尾巴\"",
+      "draft": {
+        "text": "你🙂￼\n尾巴",
+        "images": [
+          {
+            "id": 0,
+            "offset": 3,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "text",
+          "text": "你🙂"
+        },
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        },
+        {
+          "type": "text",
+          "text": "\n尾巴"
+        }
+      ]
+    },
+    {
+      "name": "case 12: \"\\n￼\\n\"",
+      "draft": {
+        "text": "\n￼\n",
+        "images": [
+          {
+            "id": 0,
+            "offset": 1,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        }
+      ]
+    },
+    {
+      "name": "case 13: \"a￼b￼c\"",
+      "draft": {
+        "text": "a￼b￼c",
+        "images": [
+          {
+            "id": 0,
+            "offset": 1,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          },
+          {
+            "id": 1,
+            "offset": 3,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=2"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "text",
+          "text": "a"
+        },
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        },
+        {
+          "type": "text",
+          "text": "b"
+        },
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=2"
+        },
+        {
+          "type": "text",
+          "text": "c"
+        }
+      ]
+    },
+    {
+      "name": "case 14: \" \\t￼   tail  \"",
+      "draft": {
+        "text": " \t￼   tail  ",
+        "images": [
+          {
+            "id": 0,
+            "offset": 2,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        },
+        {
+          "type": "text",
+          "text": "   tail"
+        }
+      ]
+    },
+    {
+      "name": "case 15: \"￼\\t \\n\"",
+      "draft": {
+        "text": "￼\t \n",
+        "images": [
+          {
+            "id": 0,
+            "offset": 0,
+            "name": "Image",
+            "block": {
+              "type": "image",
+              "mimeType": "image/png",
+              "data": "AA==",
+              "uri": "zed:///agent/pasted-image?name=1"
+            }
+          }
+        ]
+      },
+      "expected": [
+        {
+          "type": "image",
+          "mimeType": "image/png",
+          "data": "AA==",
+          "uri": "zed:///agent/pasted-image?name=1"
+        }
+      ]
+    }
+  ]
+}

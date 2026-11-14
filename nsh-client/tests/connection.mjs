@@ -30,7 +30,7 @@ const server = new WebSocketServer({ server: http, verifyClient: ({ req }, done)
   if (url.pathname !== "/acp") return done(false, 404);
   done(url.searchParams.get("token") !== "invalid", 401);
 } });
-http.listen(19437, "127.0.0.1");
+http.listen(Number(process.env.ACP_TEST_PORT ?? 19437), "127.0.0.1");
 await once(http, "listening");
 let connects = 0;
 const timers = new Set();
@@ -67,6 +67,24 @@ server.on("connection", (socket, request) => {
   const queuePrompts = [];
   const queueCancels = [];
   const queuePending = new Map();
+  const imageHistory = new Map();
+  function replayImages(id) {
+    for (const content of imageHistory.get(id) ?? []) send({ method: "session/update", params: { sessionId: id,
+      update: { sessionUpdate: "user_message_chunk", content } } });
+  }
+  function imagePrompt(message) {
+    const blocks = message.params.prompt;
+    if (!blocks.some(block => block.type === "image")) return false;
+    const id = message.params.sessionId;
+    if (token === "auth-images" && !authenticated) { error(message.id, "Credentials expired", -32000); return true; }
+    imageHistory.set(id, blocks);
+    for (const content of blocks) send({ method: "session/update", params: { sessionId: id,
+      update: { sessionUpdate: "user_message_chunk", content } } });
+    send({ method: "session/update", params: { sessionId: id,
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Received ${blocks.filter(block => block.type === "image").length} images` } } } });
+    result(message.id, { stopReason: "end_turn" });
+    return true;
+  }
   function finishQueue(id, reason) {
     const turn = queuePending.get(id);
     if (!turn) return;
@@ -77,7 +95,7 @@ server.on("connection", (socket, request) => {
   }
   const queueControl = {
     finish: finishQueue,
-    snapshot: () => ({ prompts: queuePrompts, cancels: queueCancels, pending: [...queuePending.keys()] }),
+    snapshot: () => ({ prompts: queuePrompts, cancels: queueCancels, imageFixtureDirectory: new URL("./fixtures/", import.meta.url).href, pending: [...queuePending.keys()] }),
   };
   queueControls.set(token, queueControl);
   socket.on("close", () => { if (queueControls.get(token) === queueControl) queueControls.delete(token); });
@@ -135,6 +153,7 @@ server.on("connection", (socket, request) => {
   // Scripted turns, chosen by the prompt's text.
   function prompt(message) {
     assert.equal(message.params.sessionId, "test-session");
+    if (imagePrompt(message)) return;
     assert.equal(message.params.prompt.length, 1);
     assert.equal(message.params.prompt[0].type, "text");
     const input = message.params.prompt[0].text;
@@ -407,7 +426,7 @@ server.on("connection", (socket, request) => {
       }
       sessionOptions.set(id, configOptions());
       const complete = () => {
-        if (message.method === "session/load") historyText(`History of ${info.title}`);
+        if (message.method === "session/load") { replayImages(id); historyText(`History of ${info.title}`); }
         if (token === "history-plan") send({ method: "session/update", params: { sessionId: id, update: { sessionUpdate: "plan", entries: [{ content: `Plan for ${id}`, priority: "low", status: "in_progress" }] } } });
         if (token.startsWith("history-usage") || token === "history-retention-usage") send({ method: "session/update", params: { sessionId: id, update: { sessionUpdate: "usage_update", used: id === "saved-a" ? 2000 : 3000, size: 10000, cost: { amount: 2, currency: "credits" } } } });
         result(message.id, { configOptions: sessionOptions.get(id) });
@@ -441,6 +460,7 @@ server.on("connection", (socket, request) => {
     }
     if (message.method === "session/prompt") {
       assert.ok(sessionOptions.has(id));
+      if (imagePrompt(message)) return;
       if (queuePrompt(message)) return;
       const input = message.params.prompt[0].text;
       if ((token === "history-usage" || token === "history-retention-usage") && input === "usage-background") {
@@ -489,7 +509,7 @@ server.on("connection", (socket, request) => {
   socket.on("message", (data) => {
     const message = JSON.parse(data.toString());
     assert.equal(message.jsonrpc, "2.0");
-    if (message.method === "session/prompt") queuePrompts.push({ sessionId: message.params.sessionId, text: message.params.prompt.map(block => block.text ?? "").join("") });
+    if (message.method === "session/prompt") queuePrompts.push({ sessionId: message.params.sessionId, text: message.params.prompt.map(block => block.text ?? "").join(""), content: message.params.prompt });
     if (message.method === "session/cancel") queueCancels.push(message.params.sessionId);
     assert.equal("type" in message, false, "Only JSON-RPC objects are sent");
     if (message.method === undefined) {
@@ -512,7 +532,7 @@ server.on("connection", (socket, request) => {
         else result(message.id, { sessionId: "test-session", configOptions: options });
       }, 1200);
       if (token === "auth-fake") return error(message.id, "Authentication required");
-      if (token.startsWith("auth") && !token.startsWith("auth-slow-") && !token.startsWith("auth-close-") && !["auth-advertised", "auth-agent-logout", "auth-late-config", "auth-prompt", "auth-resume", "auth-no-restore"].includes(token) && !authenticated) {
+      if (token.startsWith("auth") && !token.startsWith("auth-slow-") && !token.startsWith("auth-close-") && !["auth-advertised", "auth-agent-logout", "auth-late-config", "auth-prompt", "auth-images", "auth-resume", "auth-no-restore"].includes(token) && !authenticated) {
         return error(message.id, token === "auth-single" ? "Authentication required" : token === "auth-empty-description" ? "" : "Please **sign in** to continue.", -32000);
       }
       result(message.id, {
@@ -555,7 +575,7 @@ server.on("connection", (socket, request) => {
       assert.equal(message.method, token === "auth-resume" || token === "auth-close-resume" || token.startsWith("auth-slow-resume-") ? "session/resume" : "session/load");
       if (token.startsWith("auth-close-")) assert.equal(closes, 1, "Reopen must follow old-session release");
       loads++;
-      if (message.method === "session/load") text("agent_message_chunk", "Restored history.");
+      if (message.method === "session/load") { replayImages("test-session"); text("agent_message_chunk", "Restored history."); }
       if (usageSent) update({ sessionUpdate: "usage_update", used: 0, size: 10000 });
       if (planSent) update({ sessionUpdate: "plan", entries: [{ content: "Restored plan", priority: "low", status: "pending" }] });
       if (token.startsWith("auth-slow-")) return later(() => {
@@ -639,7 +659,7 @@ server.on("connection", (socket, request) => {
       if (token === "agent-error") error(message.id, "Agent unavailable");
       else result(message.id, {
         protocolVersion: 1,
-        agentCapabilities: token.startsWith("history") ? {
+        agentCapabilities: { ...(token.startsWith("history") ? {
           loadSession: !["history-resume", "history-retention-resume", "history-failed-resume", "history-list-only"].includes(token),
           sessionCapabilities: {
             ...(token === "history-retention-no-list" ? {} : { list: {} }), ...(token.startsWith("history-retention") && token !== "history-retention-no-close" ? { close: {} } : {}), ...(token === "history-no-delete" ? {} : { delete: {} }), ...(token === "history-list-only" ? {} : { resume: {} }),
@@ -648,7 +668,7 @@ server.on("connection", (socket, request) => {
         } : token.startsWith("auth") ? {
           loadSession: !token.startsWith("auth-slow-resume-") && !["auth-resume", "auth-close-resume", "auth-no-restore"].includes(token),
           sessionCapabilities: token === "auth-no-restore" ? {} : { resume: {}, ...(token.startsWith("auth-close-") ? { close: {} } : {}) },
-        } : {},
+        } : {}), ...(token.includes("images") && token !== "images-disabled" ? { promptCapabilities: { image: true } } : {}) },
         ...((token.startsWith("auth") || token === "history-auth") ? { authMethods } : {}),
         agentInfo: { name: "mock", title: "Mock Agent", version: "1" },
       });
@@ -662,7 +682,7 @@ try {
     const forward = spawnSync("adb", ["reverse", "tcp:19437", "tcp:19437"], { stdio: "inherit" });
     assert.equal(forward.status, 0, "Could not forward the mock server port to Android");
   }
-  const files = selectedFile ? [selectedFile] : ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/plan.test.tsx", "tests/usage.test.tsx", "tests/queue.test.tsx", "tests/tools.test.tsx", "tests/authentication.test.tsx", "tests/sessions.test.tsx", "tests/retention.test.tsx"];
+  const files = selectedFile ? [selectedFile] : ["tests/connection.test.tsx", "tests/composer.test.tsx", "tests/thread.test.tsx", "tests/plan.test.tsx", "tests/usage.test.tsx", "tests/queue.test.tsx", "tests/images.test.tsx", "tests/tools.test.tsx", "tests/authentication.test.tsx", "tests/sessions.test.tsx", "tests/retention.test.tsx"];
   if (!android && !selectedFile) files.push("tests/connection-timeout.test.tsx", "tests/optimistic-change.test.tsx");
   for (const file of files) {
     const child = spawn(`${root}.nsh/toolchain/bin/nsh`, ["test", file, ...args], { cwd: root, stdio: "inherit" });

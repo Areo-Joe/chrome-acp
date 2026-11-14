@@ -1,0 +1,15 @@
+[package]
+name = "nsh-client-image-codec"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+base64 = "0.22"
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "pnm", "tiff"] }
+serde_json = "1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"

@@ -291,7 +291,7 @@ test("retained background queues continue on their own session and never enter t
   await app.press("id:open-chat-1");
   await ready(app);
   await app.waitUntil(() => texts(app).includes("Reply in new-1: background follow-up"));
-  expect((await control(app, "history")).prompts).toEqual([
+  expect((await control(app, "history")).prompts.map(({ sessionId, text }) => ({ sessionId, text }))).toEqual([
     { sessionId: "new-1", text: "queue-root" }, { sessionId: "new-1", text: "background follow-up" },
   ]);
   expect(app.shows("id:message-queue")).toBe(false);
