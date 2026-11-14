@@ -67,8 +67,11 @@ Zed 发送按钮：上下文加载中显示 loading；生成中且草稿为空�
 3. 新建会话对齐 Zed v1（本地 revision `62682ebde9` 的 `agent_servers/src/acp/v1.rs`）：收到 `session/new` 响应后，先初始化配置与 mode，再注册 session 并通知 UI。处理 `session/update` 时尚未注册或 ID 不匹配的通知记录警告并忽略，不缓存、不回放；注册后消费命令、配置和 mode 通知。此行为仅针对新建会话，未来 `session/load` 的响应前历史回放须单独实现。
 4. 配置变更发送 `session/set_config_option`，boolean 请求带 `type: "boolean"`；旧 mode 发送 `session/set_mode`。等待对应 RPC 响应结束乐观变更：成功时展示响应的实际值，即使值被规范化或选项被移除，也立即结束等待。期间的匹配通知只更新服务端状态，不提前确认 RPC；后续失败仍可展示。mode 请求期间收到的权威通知会保留，空成功响应只在没有更新时采用请求值。SDK 根据请求 ID 关联错误，迟到失败不会取消后续配置变更。保留乐观目标值和 300 ms 延迟 loading；配置变更没有固定超时，对应 RPC 结束前持续等待并阻止下一次变更。session 创建仍为 30 秒超时。
 5. session / 配置错误保留连接并展示错误；连接关闭、Disconnect、Chat 返回操作回到连接页，销毁草稿与 session 监听器。连接页内存中的地址和 token 保留。
+6. initialize 信息归属于连接，对齐 Zed v1 的 `AcpConnection.agent_capabilities` 与 `auth_methods`：解码及版本校验成功后保存 agent info、capabilities 和认证方式，再发出 Connected。创建 session 或 session 失败保留这些信息；断开、连接失败及重连前清空。缺省或格式无效的可选字段按 Rust schema 回落默认值；能力布尔值默认 false、认证列表默认空，缺省/null 的可选能力对象与 `{}` 区分。认证方式保留有效 ID、名称、说明、terminal 参数与环境变量以及 `_meta`；Zed 的内部 v2 类型转换不用于这里的存储。本轮只保存与暴露数据，不增加认证执行或能力声明。Zed 为本地 Gemini 启动命令合成的登录方式属于进程启动适配，此 WebSocket 客户端只保存服务端声明的方式。
 
 当前协议行为以 Zed 的 `agent_servers/src/acp/v1.rs` 和 `AcpThread` 的 prompt-completion 路径为对齐基准。Zed 内部共享的 `acp_v2` 类型不代表连接使用 v2 协议；此实现使用 ACP SDK（2.4.0）的 v1 schema 和官方 JSON-RPC 实现。协议模式默认 `v1`，`auto` 为 TODO / unimplemented。
+
+initialize 解码基准是本地 Zed `62682ebde9` 的 Cargo.lock：Rust SDK `5.0.0` 使用 schema `1.15.1`，启用 `unstable`。必须先看 schema 再看 `auth_methods::from_v1`：该版本 v1 的 `AuthMethod` 有 terminal 分支和 untagged agent fallback；字符串 terminal 首先走 terminal 分支；数字标签 0 也会按 serde 的枚举索引先尝试 terminal，字段无效时允许回落 agent。其他 type（包括未知字符串）尝试按 agent 解析。格式无效的认证条目按 `VecSkipError` 跳过；显式字符串 terminal 的无效定义不会降级成 agent。可选字段遵循 `DefaultOnError`，terminal 的 args/env 遵循 `DefaultOnNull`；未知普通字段被忽略，合法 `_meta` 原样保留。`tests/fixtures/initialize-v1.json` 的 38 组输入及预期值由该 Rust schema 实际解码生成，覆盖默认值、错误类型、条目跳过、元数据和 serde 位置序列。必填协议版本无效时初始化失败、清空数据并允许重试。
 
 `state/optimistic-change.ts` 抽出单次乐观 RPC 变更的生命周期：接收 RPC Promise、当前值检查和错误回调，管理临时目标值、延迟 loading 及销毁；当前值检查仅用于跳过重复选择，操作由对应 Promise 的成功或失败结束。`state/composer.ts` 负责 ACP 字段映射和目标值的显示覆盖；服务端数据始终单独保留，因此失败时也能保留等待期间收到的其他配置更新。
 
@@ -77,4 +80,4 @@ Zed 发送按钮：上下文加载中显示 loading；生成中且草稿为空�
 ## 验证范围
 
 `node tests/connection.mjs` 覆盖连接、跳转、断开、草稿、命令、配置确认 / 拒绝、旧 mode、无配置以及 session 失败；`tests/thread.test.tsx` 用 mock 按 prompt 文本编排的回合覆盖流式回复与思考展开、回显去重、停止、拒绝、输出上限和失败；`tests/tools.test.tsx` 覆盖工具状态与展开 / 收起、权限允许与拒绝、edit diff 自动展开、停止时取消等待中的请求、agent 撤回请求、工具完成时自动应答、视口外请求的等待确认浮条，以及未知工具更新。mock 记录每个权限请求的应答，由测试核对。独立的乐观变更用例通过手动时钟验证延迟 loading、超过 15 秒仍等待响应并阻止再次变更、取消、销毁和过期请求失败隔离。
-`--target android` 在连接的 Android 设备上运行同一组交互（手动时钟用例除外）。UI 测试使用 ACP mock endpoint；`node --test tests/acp-client.mjs` 另外覆盖请求关联、纯响应确认、断线清理和非 ACP 服务端的拒绝。真实产品 agent 和真机仍需各自联调。
+`--target android` 在连接的 Android 设备上运行同一组交互（手动时钟用例除外）。UI 测试使用 ACP mock endpoint；`node --test tests/acp-client.mjs` 另外覆盖请求关联、纯响应确认、断线清理和非 ACP 服务端的拒绝，以及 initialize 数据在 Connected 回调前可读、session 生命周期内保留、缺省值、断开清理、初始化失败和取消后重连隔离。真实产品 agent 和真机仍需各自联调。

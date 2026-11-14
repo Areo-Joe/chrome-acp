@@ -5,6 +5,105 @@ export type ConnectionState = "disconnected" | "connecting" | "connected" | "err
 export type AcpProtocolMode = "v1" | "auto";
 export const DEFAULT_ACP_PROTOCOL_MODE: AcpProtocolMode = "v1";
 
+type JsonObject = Record<string, unknown>;
+
+function object(value: unknown): JsonObject | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : undefined;
+}
+
+// Serde structs also accept positional sequences, with trailing default fields omitted.
+function struct(value: unknown, fields: readonly string[]): JsonObject | undefined {
+  if (!Array.isArray(value)) return object(value);
+  if (value.length > fields.length) return undefined;
+  return Object.fromEntries(value.map((item, index) => [fields[index], item]));
+}
+
+function metadata(value: JsonObject): JsonObject {
+  const meta = object(value._meta);
+  return meta ? { _meta: meta } : {};
+}
+
+/** Mirrors Zed's locked schema 1.15.1, including its enabled v1 extensions.
+ * Optional fields use DefaultOnError; authentication arrays use VecSkipError.
+ * Unknown fields outside _meta are ignored by serde.
+ */
+function decodeInitialize(value: unknown): acp.InitializeResponse {
+  const input = struct(value, ["protocolVersion", "agentCapabilities", "authMethods", "agentInfo", "_meta"]);
+  const version = input?.protocolVersion;
+  if (!input || typeof version !== "number" || !Number.isInteger(version) || version < 0 || version > 65535) {
+    throw new Error("Invalid ACP initialize response: protocolVersion must be an unsigned 16-bit integer");
+  }
+
+  type Capability = { flags?: readonly string[]; required?: Record<string, Capability>; optional?: Record<string, Capability> };
+  function capabilities(value: unknown, spec: Capability): JsonObject | undefined {
+    const flags = spec.flags ?? [];
+    const required = Object.entries(spec.required ?? {});
+    const optional = Object.entries(spec.optional ?? {});
+    const input = struct(value, [...flags, ...required.map(([key]) => key), ...optional.map(([key]) => key), "_meta"]);
+    if (!input) return undefined;
+    const result = metadata(input);
+    for (const key of flags) result[key] = typeof input[key] === "boolean" ? input[key] : false;
+    for (const [key, child] of required) result[key] = capabilities(input[key], child) ?? capabilities({}, child)!;
+    for (const [key, child] of optional) {
+      const decoded = capabilities(input[key], child);
+      if (decoded) result[key] = decoded;
+    }
+    return result;
+  }
+
+  const agentSpec: Capability = {
+    flags: ["loadSession"],
+    required: {
+      promptCapabilities: { flags: ["image", "audio", "embeddedContext"] },
+      mcpCapabilities: { flags: ["http", "sse", "acp"] },
+      sessionCapabilities: { optional: {
+        list: {}, delete: {}, additionalDirectories: {},
+        systemPrompt: { optional: { mode: { optional: { override: {} } } } },
+        fork: {}, archive: {}, status: {}, title: {}, resume: {}, close: {},
+      } },
+      auth: { optional: { status: {}, logout: {} } },
+    },
+    optional: { providers: {} },
+  };
+  const agentCapabilities = (capabilities(input.agentCapabilities, agentSpec) ?? capabilities({}, agentSpec)!) as acp.AgentCapabilities;
+
+  const authMethods: acp.AuthMethod[] = [];
+  for (const value of Array.isArray(input.authMethods) ? input.authMethods : []) {
+    const method = struct(value, ["id", "name", "description", "_meta"]);
+    if (!method || typeof method.id !== "string" || typeof method.name !== "string") continue;
+    const common = {
+      id: method.id, name: method.name,
+      ...(typeof method.description === "string" ? { description: method.description } : {}),
+      ...metadata(method),
+    };
+    const explicitTerminal = method.type === "terminal";
+    // Serde accepts numeric variant index 0 as terminal before its untagged fallback.
+    if (explicitTerminal || method.type === 0) {
+      const args = method.args ?? [];
+      const env = method.env ?? {};
+      const variables = object(env);
+      if (Array.isArray(args) && args.every((arg) => typeof arg === "string")
+        && variables && Object.values(variables).every((value) => typeof value === "string")) {
+        authMethods.push({
+          ...common, type: "terminal",
+          ...(args.length ? { args } : {}),
+          ...(Object.keys(variables).length ? { env: variables as Record<string, string> } : {}),
+        });
+        continue;
+      }
+      // Only the literal terminal tag blocks agent fallback after a schema failure.
+      if (explicitTerminal) continue;
+    }
+    authMethods.push(common);
+  }
+
+  const info = struct(input.agentInfo, ["name", "title", "version", "_meta"]);
+  const agentInfo = info && typeof info.name === "string" && typeof info.version === "string"
+    ? { name: info.name, version: info.version, ...(typeof info.title === "string" ? { title: info.title } : {}), ...metadata(info) }
+    : undefined;
+  return { protocolVersion: version, agentCapabilities, authMethods, ...(agentInfo ? { agentInfo } : {}), ...metadata(input) };
+}
+
 export interface AcpClientSettings {
   url: string;
   cwd: string;
@@ -21,6 +120,8 @@ export class AcpClient {
   private creatingSession = false;
   private closeMessage: string | undefined;
   private _agentInfo: acp.Implementation | null = null;
+  private _agentCapabilities: acp.AgentCapabilities | null = null;
+  private _authMethods: acp.AuthMethod[] = [];
   private _configOptions: acp.SessionConfigOption[] | null = null;
   private _sessionModes: acp.SessionModeState | null = null;
   private _availableCommands: acp.AvailableCommand[] = [];
@@ -36,6 +137,9 @@ export class AcpClient {
   constructor(settings: AcpClientSettings) { this.settings = settings; }
 
   get agentInfo() { return this._agentInfo; }
+  /** Connection-scoped initialize data, available before the connected callback. */
+  get agentCapabilities(): Readonly<acp.AgentCapabilities> | null { return this._agentCapabilities; }
+  get authMethods(): readonly acp.AuthMethod[] { return this._authMethods; }
   get configOptions() { return this._configOptions; }
   get sessionModes() { return this._sessionModes; }
   get availableCommands() { return this._availableCommands; }
@@ -67,6 +171,7 @@ export class AcpClient {
       // TODO: Match Zed's acp-beta negotiation: try v2, fall back to v1 only on version incompatibility.
       throw new Error("ACP protocol mode 'auto' is unimplemented.");
     }
+    this.resetConnectionState();
     this.closeMessage = undefined;
     this.onState?.("connecting");
     const url = new URL(this.settings.url);
@@ -128,18 +233,21 @@ export class AcpClient {
       this.connection = null;
       this.socket?.close();
       this.socket = null;
-      this.resetSession();
+      this.resetConnectionState();
       this.onState?.(this.closeMessage ? "error" : "disconnected", this.closeMessage);
     });
     try {
-      const result = await connection.agent.request(acp.methods.agent.initialize, {
+      const response = await connection.agent.request(acp.methods.agent.initialize, {
         protocolVersion: acp.PROTOCOL_VERSION,
         clientInfo: { name: "nsh-client", version: "1.0.0" },
         clientCapabilities: { session: { configOptions: { boolean: {} } } },
       });
       if (this.connection !== connection) throw new Error("Connection closed");
+      const result = decodeInitialize(response);
       if (result.protocolVersion !== acp.PROTOCOL_VERSION) throw new Error(`Unsupported ACP protocol version: ${result.protocolVersion}`);
       this._agentInfo = result.agentInfo ?? null;
+      this._agentCapabilities = result.agentCapabilities ?? {};
+      this._authMethods = result.authMethods ?? [];
       this.onState?.("connected");
     } catch (reason) {
       const error = new Error(this.closeMessage || (reason instanceof Error ? reason.message : "Agent initialization failed"));
@@ -148,7 +256,7 @@ export class AcpClient {
         connection.close(error);
         this.socket?.close();
         this.socket = null;
-        this.resetSession();
+        this.resetConnectionState();
         this.onState?.("error", error.message);
         this.onError?.(error.message);
       }
@@ -223,8 +331,16 @@ export class AcpClient {
     connection?.close();
     this.socket?.close();
     this.socket = null;
-    this.resetSession();
+    this.resetConnectionState();
     this.onState?.("disconnected");
+  }
+
+  private resetConnectionState(): void {
+    // Zed creates a fresh AcpConnection per connection; this client can be reused.
+    this._agentInfo = null;
+    this._agentCapabilities = null;
+    this._authMethods = [];
+    this.resetSession();
   }
 
   private resetSession(): void {

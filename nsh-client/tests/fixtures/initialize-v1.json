@@ -1,0 +1,1547 @@
+{
+  "reference": {
+    "zedRevision": "62682ebde9e70b8a77a95863a2b16e9d59bf65eb",
+    "rustSdk": "5.0.0",
+    "schema": "1.15.1",
+    "features": [
+      "unstable"
+    ],
+    "operation": "serde_json::from_str::<agent_client_protocol_schema::v1::InitializeResponse>, then serde_json::to_value",
+    "serde": "1.0.229",
+    "serdeJson": "1.0.151",
+    "serdeWith": "3.22.0"
+  },
+  "cases": [
+    {
+      "name": "missing optional fields",
+      "input": {
+        "protocolVersion": 1
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": []
+      }
+    },
+    {
+      "name": "all optional fields null",
+      "input": {
+        "protocolVersion": 1,
+        "agentCapabilities": null,
+        "authMethods": null,
+        "agentInfo": null
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": []
+      }
+    },
+    {
+      "name": "optional fields have invalid scalar types",
+      "input": {
+        "protocolVersion": 1,
+        "agentCapabilities": "bad",
+        "authMethods": {},
+        "agentInfo": 42
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": []
+      }
+    },
+    {
+      "name": "invalid capability booleans",
+      "input": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": "false",
+          "promptCapabilities": {
+            "image": 1,
+            "audio": true,
+            "embeddedContext": null
+          },
+          "mcpCapabilities": {
+            "http": "yes",
+            "sse": true,
+            "acp": false
+          }
+        }
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": true,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": true,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": []
+      }
+    },
+    {
+      "name": "invalid nested capability structs",
+      "input": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "promptCapabilities": 42,
+          "mcpCapabilities": false,
+          "sessionCapabilities": "bad",
+          "auth": true,
+          "providers": false
+        }
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": []
+      }
+    },
+    {
+      "name": "optional capabilities distinguish null from empty",
+      "input": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "sessionCapabilities": {
+            "list": {},
+            "delete": null,
+            "additionalDirectories": true,
+            "resume": {},
+            "close": 42,
+            "fork": {},
+            "archive": {},
+            "status": {},
+            "title": {},
+            "systemPrompt": {
+              "mode": {
+                "override": {}
+              }
+            }
+          },
+          "auth": {
+            "status": {},
+            "logout": null
+          },
+          "providers": {}
+        }
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {
+            "list": {},
+            "systemPrompt": {
+              "mode": {
+                "override": {}
+              }
+            },
+            "fork": {},
+            "archive": {},
+            "status": {},
+            "title": {},
+            "resume": {}
+          },
+          "auth": {
+            "status": {}
+          },
+          "providers": {}
+        },
+        "authMethods": []
+      }
+    },
+    {
+      "name": "capability metadata and unknown fields",
+      "input": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "unknown": true,
+          "_meta": {
+            "x": [
+              null,
+              true,
+              {
+                "nested": "value"
+              }
+            ]
+          },
+          "promptCapabilities": {
+            "_meta": {},
+            "unknown": 3
+          },
+          "sessionCapabilities": {
+            "list": {
+              "_meta": {
+                "x": 1
+              },
+              "unknown": true
+            },
+            "unknown": {}
+          },
+          "auth": {
+            "_meta": [],
+            "logout": {
+              "_meta": "bad"
+            }
+          }
+        },
+        "_meta": {
+          "extension": {
+            "value": null
+          }
+        }
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false,
+            "_meta": {}
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {
+            "list": {
+              "_meta": {
+                "x": 1
+              }
+            }
+          },
+          "auth": {
+            "logout": {}
+          },
+          "_meta": {
+            "x": [
+              null,
+              true,
+              {
+                "nested": "value"
+              }
+            ]
+          }
+        },
+        "authMethods": [],
+        "_meta": {
+          "extension": {
+            "value": null
+          }
+        }
+      }
+    },
+    {
+      "name": "valid authentication definitions",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "id": "implicit",
+            "name": "Login"
+          },
+          {
+            "type": "agent",
+            "id": "explicit",
+            "name": "Login",
+            "description": "",
+            "_meta": {}
+          },
+          {
+            "type": "terminal",
+            "id": "term",
+            "name": "Login",
+            "description": null,
+            "args": [
+              "auth",
+              ""
+            ],
+            "env": {
+              "EMPTY": "",
+              "A": "b"
+            },
+            "_meta": {
+              "terminal-auth": {
+                "args": [
+                  "a"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "implicit",
+            "name": "Login"
+          },
+          {
+            "id": "explicit",
+            "name": "Login",
+            "description": "",
+            "_meta": {}
+          },
+          {
+            "type": "terminal",
+            "id": "term",
+            "name": "Login",
+            "args": [
+              "auth",
+              ""
+            ],
+            "env": {
+              "EMPTY": "",
+              "A": "b"
+            },
+            "_meta": {
+              "terminal-auth": {
+                "args": [
+                  "a"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "nonterminal tags use agent fallback",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": "future-auth",
+            "id": "0",
+            "name": "Login",
+            "args": [
+              "ignored"
+            ],
+            "env": {
+              "ignored": true
+            }
+          },
+          {
+            "type": "",
+            "id": "1",
+            "name": "Login",
+            "args": [
+              "ignored"
+            ],
+            "env": {
+              "ignored": true
+            }
+          },
+          {
+            "type": null,
+            "id": "2",
+            "name": "Login",
+            "args": [
+              "ignored"
+            ],
+            "env": {
+              "ignored": true
+            }
+          },
+          {
+            "type": 42,
+            "id": "3",
+            "name": "Login",
+            "args": [
+              "ignored"
+            ],
+            "env": {
+              "ignored": true
+            }
+          },
+          {
+            "type": true,
+            "id": "4",
+            "name": "Login",
+            "args": [
+              "ignored"
+            ],
+            "env": {
+              "ignored": true
+            }
+          },
+          {
+            "type": {},
+            "id": "5",
+            "name": "Login",
+            "args": [
+              "ignored"
+            ],
+            "env": {
+              "ignored": true
+            }
+          },
+          {
+            "type": [],
+            "id": "6",
+            "name": "Login",
+            "args": [
+              "ignored"
+            ],
+            "env": {
+              "ignored": true
+            }
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "0",
+            "name": "Login"
+          },
+          {
+            "id": "1",
+            "name": "Login"
+          },
+          {
+            "id": "2",
+            "name": "Login"
+          },
+          {
+            "id": "3",
+            "name": "Login"
+          },
+          {
+            "id": "4",
+            "name": "Login"
+          },
+          {
+            "id": "5",
+            "name": "Login"
+          },
+          {
+            "id": "6",
+            "name": "Login"
+          }
+        ]
+      }
+    },
+    {
+      "name": "invalid authentication items are skipped",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          null,
+          42,
+          "bad",
+          {},
+          {
+            "id": 123,
+            "name": "Login"
+          },
+          {
+            "id": "missing-name"
+          },
+          {
+            "id": "a",
+            "name": false
+          },
+          {
+            "id": "valid",
+            "name": "Retained"
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "valid",
+            "name": "Retained"
+          }
+        ]
+      }
+    },
+    {
+      "name": "invalid terminal arguments never falls back to agent",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": "terminal",
+            "id": "term",
+            "name": "Login",
+            "args": [
+              false
+            ]
+          },
+          {
+            "id": "valid",
+            "name": "Retained"
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "valid",
+            "name": "Retained"
+          }
+        ]
+      }
+    },
+    {
+      "name": "invalid terminal argument scalar never falls back to agent",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": "terminal",
+            "id": "term",
+            "name": "Login",
+            "args": "bad"
+          },
+          {
+            "id": "valid",
+            "name": "Retained"
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "valid",
+            "name": "Retained"
+          }
+        ]
+      }
+    },
+    {
+      "name": "invalid terminal environment never falls back to agent",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": "terminal",
+            "id": "term",
+            "name": "Login",
+            "env": {
+              "A": 42
+            }
+          },
+          {
+            "id": "valid",
+            "name": "Retained"
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "valid",
+            "name": "Retained"
+          }
+        ]
+      }
+    },
+    {
+      "name": "invalid terminal environment scalar never falls back to agent",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": "terminal",
+            "id": "term",
+            "name": "Login",
+            "env": []
+          },
+          {
+            "id": "valid",
+            "name": "Retained"
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "valid",
+            "name": "Retained"
+          }
+        ]
+      }
+    },
+    {
+      "name": "terminal null arguments and environment become empty",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": "terminal",
+            "id": "term",
+            "name": "Login",
+            "args": null,
+            "env": null
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "type": "terminal",
+            "id": "term",
+            "name": "Login"
+          }
+        ]
+      }
+    },
+    {
+      "name": "terminal missing arguments and environment",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": "terminal",
+            "id": "term",
+            "name": "Login"
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "type": "terminal",
+            "id": "term",
+            "name": "Login"
+          }
+        ]
+      }
+    },
+    {
+      "name": "malformed auth optional fields default independently",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "id": "a",
+            "name": "Login",
+            "description": 42,
+            "_meta": []
+          },
+          {
+            "type": "terminal",
+            "id": "b",
+            "name": "Login",
+            "description": {},
+            "_meta": true
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "a",
+            "name": "Login"
+          },
+          {
+            "type": "terminal",
+            "id": "b",
+            "name": "Login"
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty strings and opaque metadata are retained",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "id": "",
+            "name": "",
+            "description": "",
+            "_meta": {
+              "__proto__": {
+                "x": 1
+              },
+              "nested": [
+                null,
+                true
+              ]
+            }
+          }
+        ],
+        "agentInfo": {
+          "name": "",
+          "version": "",
+          "title": "",
+          "_meta": {}
+        }
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "",
+            "name": "",
+            "description": "",
+            "_meta": {
+              "__proto__": {
+                "x": 1
+              },
+              "nested": [
+                null,
+                true
+              ]
+            }
+          }
+        ],
+        "agentInfo": {
+          "name": "",
+          "title": "",
+          "version": "",
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "name": "valid agent info optional fields default",
+      "input": {
+        "protocolVersion": 1,
+        "agentInfo": {
+          "name": "agent",
+          "version": "1",
+          "title": 42,
+          "_meta": false,
+          "unknown": true
+        }
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [],
+        "agentInfo": {
+          "name": "agent",
+          "version": "1"
+        }
+      }
+    },
+    {
+      "name": "invalid agent info is absent",
+      "input": {
+        "protocolVersion": 1,
+        "agentInfo": {
+          "name": false,
+          "version": "1"
+        }
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": []
+      }
+    },
+    {
+      "name": "agent info requires version",
+      "input": {
+        "protocolVersion": 1,
+        "agentInfo": {
+          "name": "agent"
+        }
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": []
+      }
+    },
+    {
+      "name": "struct sequences follow serde",
+      "input": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "sessionCapabilities": {
+            "list": [],
+            "resume": [
+              {
+                "extension": 1
+              }
+            ]
+          },
+          "promptCapabilities": [
+            true,
+            false,
+            true,
+            {
+              "x": 1
+            }
+          ],
+          "auth": [
+            {},
+            {}
+          ]
+        },
+        "authMethods": [
+          [
+            "id",
+            "Login"
+          ],
+          [
+            "meta",
+            "Login",
+            null,
+            {
+              "x": 1
+            }
+          ]
+        ],
+        "agentInfo": [
+          "agent",
+          null,
+          "1",
+          {
+            "x": 1
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": true,
+            "audio": false,
+            "embeddedContext": true,
+            "_meta": {
+              "x": 1
+            }
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {
+            "list": {},
+            "resume": {
+              "_meta": {
+                "extension": 1
+              }
+            }
+          },
+          "auth": {
+            "status": {},
+            "logout": {}
+          }
+        },
+        "authMethods": [
+          {
+            "id": "id",
+            "name": "Login"
+          },
+          {
+            "id": "meta",
+            "name": "Login",
+            "_meta": {
+              "x": 1
+            }
+          }
+        ],
+        "agentInfo": {
+          "name": "agent",
+          "version": "1",
+          "_meta": {
+            "x": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "overlong struct sequences default or skip",
+      "input": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "sessionCapabilities": {
+            "list": [
+              {},
+              {}
+            ]
+          },
+          "promptCapabilities": [
+            true,
+            false,
+            true,
+            {},
+            "extra"
+          ]
+        },
+        "authMethods": [
+          [
+            "id",
+            "Login",
+            null,
+            {},
+            "extra"
+          ]
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": []
+      }
+    },
+    {
+      "name": "invalid protocol version null",
+      "input": {
+        "protocolVersion": null
+      },
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "invalid protocol version true",
+      "input": {
+        "protocolVersion": true
+      },
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "invalid protocol version \"1\"",
+      "input": {
+        "protocolVersion": "1"
+      },
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "invalid protocol version -1",
+      "input": {
+        "protocolVersion": -1
+      },
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "invalid protocol version 65536",
+      "input": {
+        "protocolVersion": 65536
+      },
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "invalid protocol version 1.5",
+      "input": {
+        "protocolVersion": 1.5
+      },
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "missing required version",
+      "input": {},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "nonobject response",
+      "input": true,
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "positional initialize response",
+      "input": [
+        1,
+        {},
+        [],
+        {
+          "name": "agent",
+          "version": "1"
+        }
+      ],
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [],
+        "agentInfo": {
+          "name": "agent",
+          "version": "1"
+        }
+      }
+    },
+    {
+      "name": "numeric zero selects terminal",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": 0,
+            "id": "login",
+            "name": "Login"
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "type": "terminal",
+            "id": "login",
+            "name": "Login"
+          }
+        ]
+      }
+    },
+    {
+      "name": "numeric zero preserves terminal data",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": 0,
+            "id": "login",
+            "name": "Login",
+            "args": [
+              "auth",
+              ""
+            ],
+            "env": {
+              "EMPTY": "",
+              "MODE": "interactive"
+            },
+            "_meta": {
+              "nested": [
+                null,
+                true
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "type": "terminal",
+            "id": "login",
+            "name": "Login",
+            "args": [
+              "auth",
+              ""
+            ],
+            "env": {
+              "MODE": "interactive",
+              "EMPTY": ""
+            },
+            "_meta": {
+              "nested": [
+                null,
+                true
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "numeric zero invalid args falls back to agent",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": 0,
+            "id": "login",
+            "name": "Login",
+            "args": [
+              false
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "login",
+            "name": "Login"
+          }
+        ]
+      }
+    },
+    {
+      "name": "numeric zero invalid env falls back to agent",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": 0,
+            "id": "login",
+            "name": "Login",
+            "env": {
+              "MODE": 42
+            }
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "login",
+            "name": "Login"
+          }
+        ]
+      }
+    },
+    {
+      "name": "numeric zero missing required fields is skipped",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": 0,
+            "id": 42,
+            "name": "Login"
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": []
+      }
+    },
+    {
+      "name": "nonzero numeric tag uses agent fallback",
+      "input": {
+        "protocolVersion": 1,
+        "authMethods": [
+          {
+            "type": 1,
+            "id": "login",
+            "name": "Login"
+          }
+        ]
+      },
+      "expected": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "loadSession": false,
+          "promptCapabilities": {
+            "image": false,
+            "audio": false,
+            "embeddedContext": false
+          },
+          "mcpCapabilities": {
+            "http": false,
+            "sse": false,
+            "acp": false
+          },
+          "sessionCapabilities": {},
+          "auth": {}
+        },
+        "authMethods": [
+          {
+            "id": "login",
+            "name": "Login"
+          }
+        ]
+      }
+    }
+  ]
+}

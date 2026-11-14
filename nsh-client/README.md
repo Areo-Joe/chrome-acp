@@ -80,6 +80,28 @@ Protocol selection is `"v1" | "auto"`, with `DEFAULT_ACP_PROTOCOL_MODE = "v1"`.
 and fails before opening a connection. Current implementation and Zed comparisons
 target ACP v1; v2 negotiation and fallback are deferred.
 
+Like Zed's v1 connection, `AcpClient` keeps the agent's initialize capabilities
+and advertised authentication methods on the connection. `agentInfo`,
+`agentCapabilities` and `authMethods` are available before the connected callback
+and survive session creation and session errors. Before initialization and after
+disconnect they are `null`, `null` and `[]`. Initialize responses are decoded
+against the behavior of Zed's locked Rust schema 1.15.1: omitted or malformed
+optional capability fields receive defaults, invalid auth entries are skipped,
+and valid `_meta` is retained. Missing capability booleans become `false`;
+optional capability objects distinguish absent/null from `{}`. Reconnecting
+starts with cleared data. Login execution and capability-dependent features will
+use this data in subsequent work.
+
+Rust's v1 auth decoder treats the literal `terminal` tag specially. Numeric
+variant index `0` first attempts terminal decoding and may fall back to agent
+if its terminal fields are invalid; other tags use the agent fallback. Malformed
+definitions with the literal `terminal` tag are skipped. Required ID/name fields must be strings;
+terminal args/env must contain strings (null or omitted args/env become empty).
+The client follows those rules before publishing any initialize data.
+`tests/fixtures/initialize-v1.json` records inputs and outputs from the exact
+Rust schema used by the local Zed reference; protocol tests compare against
+these results without needing Rust at test time.
+
 `nsh-client` is a pnpm project of its own, with its own `package.json` and
 lockfile, outside the repository's workspace. Run `pnpm install` in `nsh-client/`
 (Node.js 26) before type checking, building or testing. For protocol/UI tests
