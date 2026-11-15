@@ -28,6 +28,7 @@ import {
   type FileChange,
 } from "./files.js";
 import { TerminalManager } from "./terminals.js";
+import { getSpawnOptions } from "./agent.js";
 
 // Get the directory of this file to resolve public folder path
 const __filename = fileURLToPath(import.meta.url);
@@ -501,6 +502,10 @@ async function handleConnect(ws: WSContext): Promise<void> {
       cwd: AGENT_CWD,
       stdio: ["pipe", "pipe", "inherit"],
       env: AGENT_ENV,
+      // On Windows, `.cmd`/`.bat` agents must run through the shell or
+      // Node refuses to spawn them (CVE-2024-27980: ENOENT for bare names,
+      // EINVAL for full paths). Scoped to that case only.
+      ...getSpawnOptions(AGENT_COMMAND),
     });
 
     state.process = agentProcess;
@@ -510,8 +515,14 @@ async function handleConnect(ws: WSContext): Promise<void> {
       log.error("Failed to spawn agent", { error: error.message });
       state.process = null;
       state.connection = null;
+      // `.ps1` scripts cannot be spawned even through a shell — point the
+      // user at the `.cmd` wrapper instead of leaving a bare EFTYPE error.
+      const hint =
+        process.platform === "win32" && /\.ps1$/i.test(AGENT_COMMAND)
+          ? " PowerShell (.ps1) scripts cannot be spawned directly; use the .cmd wrapper instead."
+          : "";
       send(ws, "error", {
-        message: `Failed to spawn agent: ${error.message}`,
+        message: `Failed to spawn agent "${AGENT_COMMAND}": ${error.message}${hint}`,
       });
     });
 
@@ -604,7 +615,7 @@ async function handleConnect(ws: WSContext): Promise<void> {
   } catch (error) {
     log.error("Failed to connect", { error: (error as Error).message });
     send(ws, "error", {
-      message: `Failed to connect: ${(error as Error).message}`,
+      message: `Failed to connect to agent "${AGENT_COMMAND}": ${(error as Error).message}`,
     });
   }
 }
