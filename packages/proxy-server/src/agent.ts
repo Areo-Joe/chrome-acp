@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import type { JsonRpcMessage } from "./types.js";
 
 export interface AgentConfig {
@@ -47,6 +47,28 @@ export type AgentMessageHandler = (message: JsonRpcMessage) => void;
 export type AgentErrorHandler = (error: string) => void;
 export type AgentCloseHandler = (code: number | null) => void;
 
+/**
+ * Spawn options for starting an agent command.
+ *
+ * On Windows, Node >=18.20.2/20.12.2 refuses to spawn `.cmd`/`.bat` files
+ * directly (CVE-2024-27980): a bare name fails with ENOENT and a full
+ * `.cmd` path fails with EINVAL. Running those through the shell fixes both.
+ * Scoped to Windows + `.cmd`/`.bat` so other platforms and plain binaries
+ * keep the existing behaviour (`shell: true` changes argument quoting).
+ *
+ * The `platform` parameter exists so the Windows branch can be tested on
+ * other platforms; it defaults to the current process platform.
+ */
+export function getSpawnOptions(
+  cmd: string,
+  platform: NodeJS.Platform = process.platform,
+): Pick<SpawnOptions, "shell"> {
+  if (platform === "win32" && /\.(cmd|bat)$/i.test(cmd)) {
+    return { shell: true };
+  }
+  return {};
+}
+
 export class AgentProcess {
   private process: ChildProcess | null = null;
   private onMessage: AgentMessageHandler | null = null;
@@ -69,6 +91,7 @@ export class AgentProcess {
     this.process = spawn(parsed.cmd, fullArgs, {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
+      ...getSpawnOptions(parsed.cmd),
     });
 
     // Read stdout (ACP messages from agent)
@@ -94,7 +117,9 @@ export class AgentProcess {
 
     this.process.on("error", (error) => {
       console.error("[Agent] Process error:", error);
-      this.onError?.(error.message);
+      this.onError?.(
+        `Failed to spawn agent "${parsed.cmd}": ${error.message}`,
+      );
     });
   }
 
